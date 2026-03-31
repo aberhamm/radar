@@ -4,9 +4,14 @@
   "description": "Agentic consulting tool that investigates headless CMS codebases and produces structured, scored delivery outputs",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "repo-audit-delivery-agent": "dist/index.js"
+  },
   "scripts": {
     "build": "tsc",
+    "start": "tsx src/index.ts",
     "dev": "tsx src/index.ts",
+    "analyze": "tsx src/index.ts analyze",
     "test": "vitest run",
     "test:unit": "vitest run test/tools/",
     "test:e2e": "vitest run test/e2e/ --timeout 60000",
@@ -30,6 +35,7 @@
     ]
   },
   "dependencies": {
+    "commander": "^14.0.3",
     "dotenv": "^17.3.1",
     "portkey-ai": "^3.0.3"
   },
