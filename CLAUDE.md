@@ -31,8 +31,11 @@ Do not skip ahead. Each phase depends on the previous one being solid.
 
 - TypeScript
 - Node.js
+- pnpm (package manager)
 - Pi (agent runtime — tool registration, agent loop, system prompts)
-- Portkey AI gateway (`portkey-ai` npm package) → Amazon Bedrock (Claude Sonnet) for the LLM provider (v1)
+- Portkey AI gateway (`portkey-ai` npm package) → Amazon Bedrock for the LLM provider (v1)
+- Claude Sonnet 4.6 — main agent model (investigation loop, reasoning, tool selection)
+- Claude Haiku 4.5 — lightweight tasks (file triage, narrative generation, finding dedup)
 
 ## Provider setup
 
@@ -51,13 +54,24 @@ Setup:
 2. In Portkey dashboard: Virtual Keys → Create → Select "Bedrock" → Enter AWS Access Key ID, Secret Access Key, Region
 3. Ensure Claude models are enabled in your AWS Bedrock console
 
-The Portkey SDK (`portkey-ai`) provides an OpenAI-compatible client. Use Bedrock model IDs like `us.anthropic.claude-sonnet-4-20250514-v1:0`, not Anthropic-format IDs. See section 14 of the spec for full details.
+The Portkey SDK (`portkey-ai`) provides an OpenAI-compatible client. Use Bedrock model IDs (verify exact IDs in Chunk 0 spike):
+- Sonnet 4.6: `us.anthropic.claude-sonnet-4-6-v1:0` (primary, investigation loop)
+- Haiku 4.5: `us.anthropic.claude-haiku-4-5-20251001-v1:0` (file triage, narrative, dedup)
+
+See section 14 of the spec for full provider details.
 
 ## Testing
 
-- Every tool gets a unit test with a minimal fixture repo in `test/fixtures/`
-- Integration tests run the full agent against fixture repos
-- Test against two real public repos for validation:
+Framework: Vitest (unit and e2e)
+
+- **Unit tests** — Every tool gets a happy path + one error case test against `test/fixtures/sitecore-minimal/`
+- **E2e tests** — Run the full agent loop against fixture repo, assert:
+  - All 12 brief sections populated
+  - Scorecard categories scored (red/yellow/green)
+  - Findings have evidence, filePath, severity
+  - Output files written to disk
+  - Use longer Vitest timeout (~60s) since e2e waits on LLM round-trips
+- **Manual validation** against two real public repos:
   - `Sitecore/xmcloud-starter-js`
   - `remkoj/optimizely-saas-starter`
 
