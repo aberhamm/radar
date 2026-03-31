@@ -1,0 +1,24 @@
+{
+  "name": "sitecore-minimal",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "bootstrap": "ts-node scripts/bootstrap.ts"
+  },
+  "dependencies": {
+    "@sitecore-jss/sitecore-jss-nextjs": "21.6.0",
+    "@sitecore-jss/sitecore-jss-react": "21.6.0",
+    "next": "14.1.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.10.0",
+    "@types/react": "18.2.38",
+    "typescript": "5.3.2"
+  }
+}
