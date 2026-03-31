@@ -27,3 +27,6 @@ coverage/
 
 # Logs
 *.log
+
+# Agent output
+output/
