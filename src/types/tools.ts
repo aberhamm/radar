@@ -230,3 +230,73 @@ export interface AnalyzeEnvUsageOutput {
   publicCount: number;
   serverCount: number;
 }
+
+// --- Repo tools (clone) ---
+
+export interface CloneRepoInput {
+  url: string;
+  branch?: string;
+}
+
+export interface CloneRepoOutput {
+  localPath: string;
+  defaultBranch: string;
+  lastCommit: { hash: string; date: string };
+}
+
+// --- Dependency tools (npm query) ---
+
+export interface QueryNpmVersionsInput {
+  packages: string[];
+}
+
+export interface QueryNpmVersionsOutput {
+  versions: Record<string, import('./state.js').ResolvedVersion>;
+  fromCache: boolean;
+  cacheAge?: string;
+}
+
+// --- Analysis tools (middleware) ---
+
+export interface AnalyzeMiddlewareInput {
+  repoPath: string;
+}
+
+export interface AnalyzeMiddlewareOutput {
+  exists: boolean;
+  path?: string;
+  matchers?: string[];
+  detectedPurposes: string[];
+  imports: string[];
+}
+
+// --- Web tools ---
+
+export interface WebSearchInput {
+  query: string;
+  siteFilter?: string;
+  maxResults?: number;
+}
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface WebSearchOutput {
+  results: SearchResult[];
+}
+
+export interface FetchUrlInput {
+  url: string;
+  maxLength?: number;
+  extractSelectors?: string[];
+}
+
+export interface FetchUrlOutput {
+  url: string;
+  title: string;
+  content: string;
+  truncated: boolean;
+}
