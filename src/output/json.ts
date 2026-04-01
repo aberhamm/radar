@@ -11,6 +11,9 @@ export interface FullExport {
     goalType: string;
     repoName: string;
     repoSource: string;
+    terminationReason?: string;
+    toolCallsUsed?: number;
+    toolCallBudget?: number;
   };
   scorecard: Scorecard;
   findings: AgentState['findings'];

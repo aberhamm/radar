@@ -354,6 +354,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   );
 
   const fullExport = buildFullExport(state, scorecard, sections, metrics);
+  fullExport.metadata.terminationReason = terminationReason;
+  fullExport.metadata.toolCallsUsed = state.toolCallCount;
+  fullExport.metadata.toolCallBudget = toolCallBudget;
   const exportJson = serializeExport(fullExport);
 
   // Write output files (always — even on error, for partial results)
