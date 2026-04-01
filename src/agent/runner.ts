@@ -176,6 +176,27 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let budgetWarningHalfSent = false;
   let budgetWarning5Sent = false;
   let modelSwitched = false; // true once agent calls switch_to_fast_model
+  const canSwitchModel = piFastModel.id !== piModel.id;
+
+  /**
+   * Switch the active model mid-loop by mutating the model object in place.
+   *
+   * Pi's _runLoop() captures `const model = this._state.model` once at the
+   * start and passes it into the agent-loop config. setModel() replaces the
+   * _state reference but the loop still holds the old object. By mutating
+   * the original object's properties, the change is visible to the running
+   * loop immediately — no abort/restart needed.
+   */
+  function switchModelInPlace(): void {
+    if (!canSwitchModel) return;
+    // Mutate piModel (the object the loop holds a reference to)
+    Object.assign(piModel, {
+      id: piFastModel.id,
+      name: piFastModel.name,
+      cost: piFastModel.cost,
+      maxTokens: piFastModel.maxTokens,
+    });
+  }
   // Capture assistant reasoning text from message events for the investigation log.
   // Pi sends text content blocks alongside tool calls in the same assistant message.
   let lastAssistantReasoning = '';
@@ -273,13 +294,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // Intent-based model switch: agent signals it's done investigating
     if (toolName === 'switch_to_fast_model' && !modelSwitched) {
       modelSwitched = true;
-      if (piFastModel.id !== piModel.id) {
-        agent.setModel(piFastModel);
+      if (canSwitchModel) {
+        const fastId = piFastModel.id;
+        switchModelInPlace();
         config.onStep?.({
           step: stepCount,
           action: 'model_switch',
           type: 'budget_warning',
-          result: `Switched to fast model (${piFastModel.id}) for writing phase. Agent signaled investigation complete.`,
+          result: `Switched to fast model (${fastId}) for writing phase. Agent signaled investigation complete.`,
         });
       }
     }
@@ -296,14 +318,15 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     if (remaining <= 5 && remaining > 0 && !budgetWarning5Sent && assembledRef.sections === null) {
       budgetWarning5Sent = true;
       // Force switch to fast model if agent hasn't done it yet
-      if (!modelSwitched && piFastModel.id !== piModel.id) {
+      if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
-        agent.setModel(piFastModel);
+        const fastId = piFastModel.id;
+        switchModelInPlace();
         config.onStep?.({
           step: stepCount,
           action: 'model_switch',
           type: 'budget_warning',
-          result: `Switched to fast model (${piFastModel.id}) — budget critical.`,
+          result: `Switched to fast model (${fastId}) — budget critical.`,
         });
       }
       agent.steer({
@@ -434,9 +457,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // (terminationReason may have been set to 'completed' by afterToolCall hook)
     if (assembledRef.sections === null && (terminationReason as string) !== 'completed') {
       // Ensure fast model for retry nudges — just needs to write, not reason
-      if (!modelSwitched && piFastModel.id !== piModel.id) {
+      // Post-loop: setModel works here since continue() starts a new _runLoop
+      if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
-        agent.setModel(piFastModel);
+        switchModelInPlace();
+        agent.setModel(piModel); // also update _state for the new _runLoop
       }
       // Retry with nudge (max 2)
       for (let retry = 0; retry < 2; retry++) {
