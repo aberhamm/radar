@@ -24,6 +24,14 @@ describe('buildGoalPrompt', () => {
     expect(prompt).toContain('hotspots');
   });
 
+  it('builds security-review prompt', () => {
+    const prompt = buildGoalPrompt('security-review', '/tmp/repo', 50, 5);
+    expect(prompt).toContain('/tmp/repo');
+    expect(prompt).toContain('security');
+    expect(prompt).toContain('record_finding');
+    expect(prompt).toContain('assemble_output');
+  });
+
   it('throws on unknown goal', () => {
     expect(() =>
       buildGoalPrompt('nonsense' as any, '/tmp', 50, 5),

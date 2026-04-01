@@ -1,4 +1,5 @@
 import { Agent } from '@mariozechner/pi-agent-core';
+import { randomUUID } from 'node:crypto';
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
@@ -83,8 +84,10 @@ export interface StepEvent {
   fullResult?: string;
   /** Tool call arguments (only in verbose mode) */
   args?: string;
-  /** Type of event: tool_call, finding, budget_warning, text_response */
-  type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output';
+  /** Type of event: tool_call, finding, budget_warning, text_response, assemble_output, model_switch */
+  type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output' | 'model_switch';
+  /** Identifies which tool calls ran in the same parallel batch (same assistant turn) */
+  batchId?: string;
 }
 
 export interface RunResult {
@@ -200,6 +203,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // Capture assistant reasoning text from message events for the investigation log.
   // Pi sends text content blocks alongside tool calls in the same assistant message.
   let lastAssistantReasoning = '';
+  /** Shared batchId for all tool calls in the same parallel assistant turn */
+  let currentBatchId: string = randomUUID();
 
   // beforeToolCall: budget enforcement
   const beforeToolCall = async (
@@ -284,6 +289,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       reasoning: reasoning.slice(0, 100),
       result: resultText.slice(0, 100),
       type: isAssemble ? 'assemble_output' : isFinding ? 'finding' : 'tool_call',
+      batchId: currentBatchId,
       ...(config.verbose ? {
         fullReasoning: reasoning,
         fullResult: resultText,
@@ -325,7 +331,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         config.onStep?.({
           step: stepCount,
           action: 'model_switch',
-          type: 'budget_warning',
+          type: 'model_switch',
           result: `Switched to fast model (${fastId}) — budget critical.`,
         });
       }
@@ -415,8 +421,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     afterToolCall,
   });
 
-  // Subscribe to events for usage tracking + reasoning capture
+  // Subscribe to events for usage tracking, reasoning capture, and batchId rotation
   agent.subscribe((event: AgentEvent) => {
+    if (event.type === 'message_start' && event.message && 'role' in event.message && event.message.role === 'assistant') {
+      // New assistant turn — rotate the batchId so parallel tool calls in this turn share it
+      currentBatchId = randomUUID();
+    }
     if (event.type === 'message_end' && event.message && 'role' in event.message && event.message.role === 'assistant') {
       const msg = event.message;
       trackUsage(state, msg.model, {
