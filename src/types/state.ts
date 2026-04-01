@@ -4,7 +4,7 @@
 
 import type { Finding } from './findings.js';
 
-export type GoalType = 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check';
+export type GoalType = 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review';
 
 export interface InvestigationEntry {
   step: number;

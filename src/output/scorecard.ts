@@ -6,7 +6,7 @@ import type { GoalType } from '../types/state.js';
  * Scorecard categories — maps finding categories to scorecard display categories.
  * Multiple finding categories can roll up into one scorecard category.
  */
-const CATEGORY_MAP: Record<string, FindingCategory[]> = {
+const ONBOARDING_CATEGORY_MAP: Record<string, FindingCategory[]> = {
   'Stack & Framework': ['stack', 'nextjs'],
   'CMS Integration': ['cms-integration'],
   'Preview & Editing': ['preview-editing'],
@@ -15,6 +15,20 @@ const CATEGORY_MAP: Record<string, FindingCategory[]> = {
   Dependencies: ['dependencies'],
   Deployment: ['deployment'],
 };
+
+const SECURITY_CATEGORY_MAP: Record<string, FindingCategory[]> = {
+  'Secrets & Environment': ['security'],
+  'Authentication & Authorization': ['architecture'],
+  'Security Headers': ['configuration'],
+  'Dependency Security': ['dependencies'],
+  'Input Validation': ['security'],
+  'Data Exposure': ['security'],
+};
+
+function getCategoryMap(goal: GoalType): Record<string, FindingCategory[]> {
+  if (goal === 'security-review') return SECURITY_CATEGORY_MAP;
+  return ONBOARDING_CATEGORY_MAP;
+}
 
 const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 5,
@@ -38,7 +52,8 @@ export function computeScorecard(
 ): Scorecard {
   const categories: CategoryScore[] = [];
 
-  for (const [displayName, findingCategories] of Object.entries(CATEGORY_MAP)) {
+  const categoryMap = getCategoryMap(goalType);
+  for (const [displayName, findingCategories] of Object.entries(categoryMap)) {
     const categoryFindings = findings.filter((f) =>
       findingCategories.includes(f.category),
     );

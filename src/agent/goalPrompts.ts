@@ -62,6 +62,20 @@ Focus on: dependency currency (any critical version gaps), security issues
 Keep investigation shallow and fast — stay under 15 tool calls.
 
 Produce a pass/fail result with a summary of any blocking issues found.`,
+
+  'security-review': (localPath) => `You have access to a repository at ${localPath}.
+Conduct a security-focused code review of this project.
+
+You are a security consultant, not a linter. Your review should identify real
+security vulnerabilities, misconfigurations, and risks — with evidence from the code.
+
+Investigate all six security scorecard categories: secrets & environment,
+authentication & authorization, security headers, dependency security,
+input validation, and data exposure. Follow your security review rules.
+
+IMPORTANT: Record findings throughout your investigation.
+You must record at least 6 findings — one per security category minimum.
+Every scorecard category must have at least one finding.`,
 };
 
 /**

@@ -55,7 +55,26 @@ describe('listRuleFiles', () => {
     expect(files).toContain('goal-onboarding.md');
     expect(files).toContain('goal-audit.md');
     expect(files).toContain('goal-migration.md');
-    expect(files.length).toBe(6);
+    expect(files).toContain('goal-security-review.md');
+    expect(files.length).toBe(7);
+  });
+});
+
+describe('security-review goal', () => {
+  it('goal-security-review.md loads without error', () => {
+    const content = loadRule('goal-security-review.md');
+    expect(content).not.toBeNull();
+    expect(content).toContain('Security Review Goal');
+  });
+
+  it('buildSystemPrompt includes security-review rules', () => {
+    const prompt = buildSystemPrompt('security-review', 'unknown');
+    expect(prompt).toContain('Core investigation rules');
+    expect(prompt).toContain('Security Review Goal');
+  });
+
+  it('validateRules passes for security-review with unknown platform', () => {
+    expect(validateRules('security-review', 'unknown')).toEqual([]);
   });
 });
 

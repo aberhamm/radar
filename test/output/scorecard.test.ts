@@ -66,4 +66,24 @@ describe('computeScorecard', () => {
     const sc = computeScorecard('test-repo', 'audit', findings);
     expect(sc.topRisks.length).toBe(5);
   });
+
+  it('security-review scorecard has 6 categories', () => {
+    const sc = computeScorecard('test-repo', 'security-review', []);
+    expect(sc.overallScore).toBe('green');
+    expect(sc.categories.length).toBe(6);
+    expect(sc.topRisks).toEqual([]);
+  });
+
+  it('security-review scorecard has security-specific category names', () => {
+    const sc = computeScorecard('test-repo', 'security-review', []);
+    const primaryCategories = sc.categories.map((c) => c.category);
+    // First category maps to 'security'
+    expect(primaryCategories[0]).toBe('security');
+    // Third category maps to 'configuration' (Security Headers)
+    expect(primaryCategories[2]).toBe('configuration');
+    // Fourth category maps to 'dependencies' (Dependency Security)
+    expect(primaryCategories[3]).toBe('dependencies');
+    // Fifth category maps to 'security' (Input Validation)
+    expect(primaryCategories[4]).toBe('security');
+  });
 });
