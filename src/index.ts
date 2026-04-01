@@ -3,14 +3,17 @@
 import { Command } from 'commander';
 import path from 'node:path';
 import fs from 'node:fs';
+import readline from 'node:readline';
 import { createProvider } from './providers/factory.js';
-import { runAgent, type StepEvent } from './agent/runner.js';
+import { runAgent, type StepEvent, type RunResult } from './agent/runner.js';
 import { buildSystemPrompt, listRuleFiles, validateRules } from './agent/systemPrompt.js';
 import { buildGoalPrompt } from './agent/goalPrompts.js';
 import { getToolDefinitions } from './tools/registry.js';
 import { cloneRepo } from './tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from './tools/dependency/queryNpmVersions.js';
 import type { GoalType } from './types/state.js';
+import { checkGhAuth, postOnboardingIssue, postCiCheckComment } from './output/githubHook.js';
+import { renderComparison, type ComparisonInput } from './output/comparisonRenderer.js';
 
 // Load .env
 import 'dotenv/config';
@@ -33,6 +36,8 @@ program
   .option('--dry-run', 'Show configuration without running')
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .option('--json', 'Output summary as JSON (for CI integration)')
+  .option('--github-output', 'Post results to GitHub (issue or PR comment)')
+  .option('--pr <number>', 'PR number for ci-check goal comments', parseInt)
   .action(async (opts) => {
     try {
       const exitCode = await handleAnalyze(opts);
@@ -92,7 +97,227 @@ program
     }
   });
 
+program
+  .command('compare')
+  .description('Run side-by-side comparison of two repositories')
+  .requiredOption('--repos <paths...>', 'Two repository paths or URLs to compare')
+  .option('--goal <type>', 'Analysis goal: onboarding, audit, migration, component-map, ci-check', 'onboarding')
+  .option('--platform <name>', 'Platform override: sitecore, optimizely (auto-detected if omitted)')
+  .option('--output <dir>', 'Output directory', './output')
+  .option('--budget <n>', 'Tool call budget per repo', '50')
+  .option('--verbose', 'Show real-time agent reasoning and tool calls')
+  .action(async (opts) => {
+    try {
+      const exitCode = await handleCompare(opts);
+      if (exitCode !== 0) process.exit(exitCode);
+    } catch (err) {
+      console.error(`\nError: ${(err as Error).message}`);
+      process.exit(2);
+    }
+  });
+
 program.parse();
+
+/**
+ * Compare command — runs agent on two repos sequentially, then renders comparison.
+ * Returns exit code: 0 = success, 1 = any red, 2 = both repos errored
+ */
+async function handleCompare(opts: {
+  repos: string[];
+  goal: string;
+  platform?: string;
+  output: string;
+  budget: string;
+  verbose?: boolean;
+}): Promise<number> {
+  if (opts.repos.length !== 2) {
+    throw new Error('--repos requires exactly two repository paths or URLs.');
+  }
+
+  const goal = opts.goal as GoalType;
+  const validGoals = ['onboarding', 'audit', 'migration', 'component-map', 'ci-check'];
+  if (!validGoals.includes(goal)) {
+    throw new Error(`Invalid goal: ${goal}. Valid: ${validGoals.join(', ')}`);
+  }
+
+  const budget = parseInt(opts.budget, 10);
+  const platform = opts.platform ?? 'unknown';
+  const outputDir = opts.output;
+  const verbose = opts.verbose ?? false;
+
+  // Resolve npm versions once for both runs
+  console.log('Resolving npm versions...');
+  const npmResult = await queryNpmVersions({ packages: TRACKED_PACKAGES });
+  const versionCount = Object.keys(npmResult.versions).length;
+  console.log(
+    `  ${versionCount} packages resolved${npmResult.fromCache ? ` (cached, ${npmResult.cacheAge})` : ''}`,
+  );
+
+  // Create provider
+  const provider = createProvider();
+  console.log(`Provider: ${provider.name}\n`);
+
+  const results: Array<{ repoInput: string; result?: RunResult; repoName: string; error?: string }> = [];
+
+  // Run agent sequentially on each repo
+  for (let i = 0; i < 2; i++) {
+    const repoInput = opts.repos[i];
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`  Repo ${i + 1} of 2: ${repoInput}`);
+    console.log(`${'='.repeat(60)}\n`);
+
+    try {
+      // Resolve repo path
+      let repoPath: string;
+      let repoName: string;
+      let repoSource: 'github' | 'local';
+      let repoUrl: string | undefined;
+
+      if (repoInput.startsWith('http://') || repoInput.startsWith('https://')) {
+        console.log(`Cloning ${repoInput}...`);
+        const cloneResult = await cloneRepo({ url: repoInput });
+        repoPath = cloneResult.localPath;
+        repoName = repoInput.split('/').pop()?.replace('.git', '') ?? 'unknown';
+        repoSource = 'github';
+        repoUrl = repoInput;
+        console.log(`  Cloned to ${repoPath} (${cloneResult.defaultBranch}, ${cloneResult.lastCommit.hash.slice(0, 7)})`);
+      } else {
+        repoPath = path.resolve(repoInput);
+        if (!fs.existsSync(repoPath)) {
+          throw new Error(`Repository path not found: ${repoPath}`);
+        }
+        repoName = path.basename(repoPath);
+        repoSource = 'local';
+      }
+
+      console.log(`Starting investigation (goal: ${goal}, budget: ${budget})...\n`);
+
+      const result = await runAgent({
+        provider,
+        repoPath,
+        repoName,
+        repoSource,
+        repoUrl,
+        goal,
+        platform: platform !== 'unknown' ? platform : undefined,
+        toolCallBudget: budget,
+        outputDir,
+        verbose,
+        onStep: (step) => {
+          if (verbose) {
+            formatVerboseStep(step);
+          } else {
+            const truncated = step.result?.slice(0, 60) ?? '';
+            console.log(`  [Step ${step.step}] ${step.action} → ${truncated}`);
+          }
+        },
+      });
+
+      console.log(`\n  [${repoName}] Done: ${result.scorecard.overallScore.toUpperCase()}, ${result.state.findings.length} findings`);
+      results.push({ repoInput, result, repoName });
+    } catch (err) {
+      const repoName = repoInput.split('/').pop()?.replace('.git', '') ?? repoInput;
+      const errorMsg = (err as Error).message;
+      console.error(`\n  [${repoName}] Error: ${errorMsg}`);
+      results.push({ repoInput, repoName, error: errorMsg });
+    }
+  }
+
+  // Generate comparison output
+  console.log(`\n${'='.repeat(60)}`);
+  console.log('  Generating comparison report...');
+  console.log(`${'='.repeat(60)}\n`);
+
+  // Ensure output directory exists
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const [resA, resB] = results;
+
+  // If both failed, report and exit
+  if (!resA.result && !resB.result) {
+    const errorReport = [
+      `# Comparison Report: ${resA.repoName} vs ${resB.repoName}`,
+      '',
+      '> Both repositories failed to analyze.',
+      '',
+      `**${resA.repoName}:** ${resA.error}`,
+      '',
+      `**${resB.repoName}:** ${resB.error}`,
+    ].join('\n');
+    const outPath = path.join(outputDir, 'comparison.md');
+    fs.writeFileSync(outPath, errorReport, 'utf-8');
+    console.log(`  Written: ${outPath}`);
+    console.error('\nBoth repositories failed. See comparison.md for details.');
+    return 2;
+  }
+
+  // If one failed, produce partial comparison with error note
+  if (!resA.result || !resB.result) {
+    const successResult = (resA.result ?? resB.result)!;
+    const successName = resA.result ? resA.repoName : resB.repoName;
+    const failedName = resA.result ? resB.repoName : resA.repoName;
+    const failedError = resA.result ? resB.error : resA.error;
+
+    const partialReport = [
+      `# Comparison Report: ${resA.repoName} vs ${resB.repoName}`,
+      '',
+      `> Generated by **repo-audit-delivery-agent** | ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+      '',
+      '---',
+      '',
+      '## Error',
+      '',
+      `Analysis of **${failedName}** failed: ${failedError}`,
+      '',
+      `Only **${successName}** was analyzed successfully.`,
+      '',
+      '---',
+      '',
+      `## ${successName} Results`,
+      '',
+      `**Overall Score:** ${successResult.scorecard.overallScore.toUpperCase()}`,
+      `**Findings:** ${successResult.state.findings.length}`,
+      '',
+      'See the individual brief for full details.',
+    ].join('\n');
+
+    const outPath = path.join(outputDir, 'comparison.md');
+    fs.writeFileSync(outPath, partialReport, 'utf-8');
+    console.log(`  Written: ${outPath}`);
+    console.log(`\n  Note: ${failedName} failed — partial comparison only.`);
+    return successResult.scorecard.overallScore === 'red' ? 1 : 0;
+  }
+
+  // Both succeeded — render full comparison
+  const inputA: ComparisonInput = {
+    repoName: resA.repoName,
+    scorecard: resA.result.scorecard,
+    findings: resA.result.state.findings,
+    briefMarkdown: resA.result.briefMarkdown,
+  };
+  const inputB: ComparisonInput = {
+    repoName: resB.repoName,
+    scorecard: resB.result.scorecard,
+    findings: resB.result.state.findings,
+    briefMarkdown: resB.result.briefMarkdown,
+  };
+
+  const comparisonMd = renderComparison(inputA, inputB);
+  const outPath = path.join(outputDir, 'comparison.md');
+  fs.writeFileSync(outPath, comparisonMd, 'utf-8');
+
+  console.log(`  Written: ${outPath}`);
+  console.log('');
+  console.log(`  ${resA.repoName}: ${resA.result.scorecard.overallScore.toUpperCase()} (${resA.result.state.findings.length} findings)`);
+  console.log(`  ${resB.repoName}: ${resB.result.scorecard.overallScore.toUpperCase()} (${resB.result.state.findings.length} findings)`);
+  console.log('');
+
+  // Exit code: worst of the two
+  const hasRed =
+    resA.result.scorecard.overallScore === 'red' ||
+    resB.result.scorecard.overallScore === 'red';
+  return hasRed ? 1 : 0;
+}
 
 /**
  * Returns exit code: 0 = green/yellow, 1 = any red category, 2 = agent error
@@ -106,6 +331,8 @@ async function handleAnalyze(opts: {
   dryRun?: boolean;
   verbose?: boolean;
   json?: boolean;
+  githubOutput?: boolean;
+  pr?: number;
 }): Promise<number> {
   const repoInput = opts.repo;
   if (!repoInput) {
@@ -185,6 +412,17 @@ async function handleAnalyze(opts: {
 
   const verbose = opts.verbose ?? false;
 
+  // Budget extension callback — interactive prompt for TTY, auto-assemble for CI
+  const isInteractive = process.stdin.isTTY && !opts.json;
+  const onBudgetExhausted = isInteractive
+    ? async (state: { findings: number; toolCalls: number; budget: number }) => {
+        const answer = await askYesNo(
+          `\n  Budget reached (${state.toolCalls} calls, ${state.findings} findings). Continue for 50 more? [y/N] `,
+        );
+        return answer;
+      }
+    : undefined;
+
   const result = await runAgent({
     provider,
     repoPath,
@@ -196,6 +434,7 @@ async function handleAnalyze(opts: {
     toolCallBudget: budget,
     outputDir,
     verbose,
+    onBudgetExhausted,
     onStep: (step) => {
       if (verbose) {
         formatVerboseStep(step);
@@ -269,6 +508,35 @@ async function handleAnalyze(opts: {
     console.log(`  ✓ ${p}`);
   }
   console.log('');
+
+  // GitHub output hook
+  if (opts.githubOutput) {
+    const authStatus = checkGhAuth();
+    if (!authStatus.authenticated || !authStatus.repoAccess) {
+      console.error(`[github-output] Skipping: ${authStatus.error}`);
+    } else if (goal === 'onboarding') {
+      console.log('[github-output] Posting onboarding issue...');
+      const issueResult = postOnboardingIssue(repoName, result.briefMarkdown);
+      if (issueResult.error) {
+        console.error(`[github-output] ${issueResult.error}`);
+      } else {
+        console.log(`[github-output] Issue created: ${issueResult.url}`);
+      }
+    } else if (goal === 'ci-check') {
+      const prNumber = opts.pr ?? parseInt(process.env.GITHUB_PR_NUMBER ?? '', 10);
+      if (!prNumber || isNaN(prNumber)) {
+        console.error('[github-output] Skipping: no PR number (use --pr or set GITHUB_PR_NUMBER)');
+      } else {
+        console.log(`[github-output] Commenting on PR #${prNumber}...`);
+        const commentResult = postCiCheckComment(prNumber, result.briefMarkdown);
+        if (commentResult.error) {
+          console.error(`[github-output] ${commentResult.error}`);
+        } else {
+          console.log(`[github-output] Comment posted: ${commentResult.url}`);
+        }
+      }
+    }
+  }
 
   // Exit code: 0 = green/yellow, 1 = any red, 2 = error
   if (result.terminationReason === 'error') return 2;
@@ -391,4 +659,16 @@ function wrapText(text: string, width: number): string[] {
     }
   }
   return lines;
+}
+
+// --- Interactive prompt ---
+
+function askYesNo(prompt: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === 'y');
+    });
+  });
 }

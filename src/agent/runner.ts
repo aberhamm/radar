@@ -51,6 +51,12 @@ export interface RunnerConfig {
   onStep?: (step: StepEvent) => void;
   /** Enable verbose output with full reasoning and arguments */
   verbose?: boolean;
+  /**
+   * Called when tool call budget is exhausted. Return true to extend
+   * by 50 more calls, false to stop and assemble with current findings.
+   * If not provided, auto-assembles (CI-safe default).
+   */
+  onBudgetExhausted?: (state: { findings: number; toolCalls: number; budget: number }) => Promise<boolean>;
 }
 
 export interface StepEvent {
@@ -155,13 +161,19 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error' = 'budget_exhausted';
   let errorDetail: string | undefined;
 
-  // Agent loop
+  // Agent loop — currentBudget is mutable for budget extension
+  let currentBudget = toolCallBudget;
+  state.toolCallBudget = currentBudget;
+  let agentDone = false;
+
   try {
-  while (state.toolCallCount < toolCallBudget) {
+  // Outer loop handles budget extension; inner loop is the main agent cycle
+  while (!agentDone) {
+  while (state.toolCallCount < currentBudget) {
     stepCount++;
 
     // Call LLM — use higher token limit when we're near budget (likely assembling output)
-    const remaining = toolCallBudget - state.toolCallCount;
+    const remaining = currentBudget - state.toolCallCount;
     const isNearEnd = remaining <= 10;
     const response = await config.provider.chat(messages, {
       tools,
@@ -285,7 +297,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
 
       // Budget warning: nudge the agent to wrap up when near the limit
-      const remaining = toolCallBudget - state.toolCallCount;
+      const remaining = currentBudget - state.toolCallCount;
       if (remaining <= 5 && remaining > 0 && assembleOutputSections === null) {
         messages.push({
           role: 'user',
@@ -294,7 +306,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       } else if (remaining <= 15 && remaining > 0 && assembleOutputSections === null) {
         messages.push({
           role: 'user',
-          content: `⚠️ You have ${remaining} tool calls remaining out of ${toolCallBudget}. Stop investigating. Record your findings now with record_finding, then call assemble_output with written content for every required section of the brief.`,
+          content: `⚠️ You have ${remaining} tool calls remaining out of ${currentBudget}. Stop investigating. Record your findings now with record_finding, then call assemble_output with written content for every required section of the brief.`,
         });
       }
 
@@ -334,6 +346,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     if (consecutiveEmptyResponses >= MAX_EMPTY_RESPONSES) {
       // Force termination — agent is stuck
       terminationReason = 'stuck';
+      agentDone = true;
       break;
     }
 
@@ -342,11 +355,42 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       role: 'user',
       content: 'Please continue investigating or call assemble_output if ready.',
     });
-  }
+  } // end inner while (tool call loop)
 
+  // Determine next action after inner loop exits
   if (assembleOutputSections !== null) {
     terminationReason = 'completed';
+    agentDone = true;
+  } else if (terminationReason === 'stuck') {
+    agentDone = true;
+  } else if (state.toolCallCount >= currentBudget && config.onBudgetExhausted) {
+    // Budget exhausted — ask whether to extend
+    const shouldExtend = await config.onBudgetExhausted({
+      findings: state.findings.length,
+      toolCalls: state.toolCallCount,
+      budget: currentBudget,
+    });
+    if (shouldExtend) {
+      currentBudget += 50;
+      state.toolCallBudget = currentBudget;
+      config.onStep?.({
+        step: stepCount,
+        action: 'budget_extended',
+        type: 'budget_warning',
+        result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
+      });
+      messages.push({
+        role: 'user',
+        content: `Budget extended by 50 to ${currentBudget} total tool calls. Continue your investigation and call assemble_output when ready.`,
+      });
+      // Loop back to inner while — currentBudget increased, so condition is true again
+    } else {
+      agentDone = true; // User declined extension
+    }
+  } else {
+    agentDone = true; // Budget exhausted, no callback
   }
+  } // end outer while (!agentDone)
 
   } catch (err) {
     // Graceful degradation: produce partial output with whatever we have
@@ -373,13 +417,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state.investigationLog,
     state.fetchedDocs,
     state.toolCallCount,
-    toolCallBudget,
+    currentBudget,
   );
 
   const fullExport = buildFullExport(state, scorecard, sections, metrics);
   fullExport.metadata.terminationReason = terminationReason;
   fullExport.metadata.toolCallsUsed = state.toolCallCount;
-  fullExport.metadata.toolCallBudget = toolCallBudget;
+  fullExport.metadata.toolCallBudget = currentBudget;
   const exportJson = serializeExport(fullExport);
 
   // Write output files (always — even on error, for partial results)
@@ -398,7 +442,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     const debugContent = [
       `Termination: ${terminationReason}`,
       errorDetail ? `Error: ${errorDetail}` : '',
-      `Tool calls: ${state.toolCallCount} / ${toolCallBudget}`,
+      `Tool calls: ${state.toolCallCount} / ${currentBudget}`,
       `Findings: ${state.findings.length}`,
       `Steps: ${stepCount}`,
       `Sections: ${Object.keys(sections).length}`,
