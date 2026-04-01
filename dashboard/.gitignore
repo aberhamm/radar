@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+dashboard/AGENTS.md
+dashboard/README.md
+AGENTS.md
+CLAUDE.md
+README.md
+package-lock.json
