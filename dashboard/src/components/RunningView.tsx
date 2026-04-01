@@ -1,6 +1,6 @@
 'use client';
 
-import type { StepEvent } from '@agent/agent/runner.js';
+import type { StepEvent } from '@agent/agent/runner';
 import { EventStream } from './EventStream';
 import { StatsPanel } from './StatsPanel';
 import { BudgetPausedView } from './BudgetPausedView';

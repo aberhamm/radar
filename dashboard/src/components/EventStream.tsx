@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { StepEvent } from '@agent/agent/runner.js';
+import type { StepEvent } from '@agent/agent/runner';
 
 interface EventStreamProps {
   events: StepEvent[];

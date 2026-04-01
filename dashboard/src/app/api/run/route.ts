@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/agentSession';
-import { runAgent } from '@agent/agent/runner.js';
+import { runAgent } from '@agent/agent/runner';
 import path from 'node:path';
 
 export async function POST(req: NextRequest) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
         repoPath,
         repoName,
         repoSource: 'local',
-        goal: goal as import('@agent/types/state.js').GoalType,
+        goal: goal as import('@agent/types/state').GoalType,
         verbose: true,
         onStep: (event) => {
           const run = session.currentRun;

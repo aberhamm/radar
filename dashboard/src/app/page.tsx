@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { StepEvent } from '@agent/agent/runner.js';
-import type { Scorecard, RunMetrics } from '@agent/types/output.js';
+import type { StepEvent } from '@agent/agent/runner';
+import type { Scorecard, RunMetrics } from '@agent/types/output';
 import { TopBar } from '@/components/TopBar';
 import { IdleView } from '@/components/IdleView';
 import { RunningView } from '@/components/RunningView';

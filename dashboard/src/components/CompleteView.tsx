@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { Scorecard, RunMetrics, CategoryScore } from '@agent/types/output.js';
-import type { StepEvent } from '@agent/agent/runner.js';
+import type { Scorecard, RunMetrics, CategoryScore } from '@agent/types/output';
+import type { StepEvent } from '@agent/agent/runner';
 import { EventStream } from './EventStream';
 
 interface CompleteViewProps {

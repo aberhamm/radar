@@ -1,4 +1,4 @@
-import type { RunResult, StepEvent } from '@agent/agent/runner.js';
+import type { RunResult, StepEvent } from '@agent/agent/runner';
 
 export type SessionStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error';
 
