@@ -8,6 +8,7 @@ import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
 import { buildFullExport, serializeExport } from '../output/json.js';
 import { loadModelConfig } from '../config/models.js';
+import { stripRepoPrefix } from '../tools/utils/stripRepoPrefix.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -265,13 +266,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         // Execute the tool
         const result = await executeTool(toolCall, state);
 
-        // Log investigation step
+        // Log investigation step — strip repo root from results to avoid leaking local paths
         const reasoning = response.content ?? '';
+        const cleanResult = result.replaceAll(config.repoPath, '');
         state.investigationLog.push({
           step: stepCount,
           action: toolCall.function.name,
           reasoning: reasoning.slice(0, 200),
-          result: result.slice(0, 200),
+          result: cleanResult.slice(0, 200),
         });
 
         const isFinding = toolCall.function.name === 'record_finding';

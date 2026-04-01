@@ -1,0 +1,14 @@
+{
+  // This tsconfig has trailing commas and comments — common in real projects
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "strict": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["src/*"],
+    },
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx",],
+  "exclude": ["node_modules",]
+}

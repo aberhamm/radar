@@ -55,6 +55,17 @@ function normalizePathArgs(args: Record<string, unknown>): Record<string, unknow
     }
   }
   // Also normalize arrays of paths (e.g. read_files_batch)
+  // LLM sometimes sends paths as a stringified JSON array instead of an actual array
+  if (typeof args['paths'] === 'string') {
+    try {
+      const parsed = JSON.parse(args['paths'] as string);
+      if (Array.isArray(parsed)) {
+        args['paths'] = parsed;
+      }
+    } catch {
+      // Not valid JSON — ignore, will fail downstream with a clear error
+    }
+  }
   if (Array.isArray(args['paths'])) {
     args['paths'] = (args['paths'] as string[]).map((p) => p.replace(/^[/\\]+/, '') || '.');
   }

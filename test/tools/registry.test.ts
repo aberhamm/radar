@@ -121,6 +121,43 @@ describe('executeTool', () => {
     expect(parsed.entries.length).toBeGreaterThan(0);
   });
 
+  it('coerces stringified JSON array for paths argument', async () => {
+    const state = makeState();
+    const result = await executeTool(
+      {
+        id: 'call_coerce',
+        type: 'function',
+        function: {
+          name: 'read_files_batch',
+          arguments: JSON.stringify({ paths: '["package.json"]' }),
+        },
+      },
+      state,
+    );
+    const parsed = JSON.parse(result);
+    // Should succeed — paths was coerced from string to array
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.files).toBeDefined();
+  });
+
+  it('handles non-JSON string for paths argument gracefully', async () => {
+    const state = makeState();
+    const result = await executeTool(
+      {
+        id: 'call_bad_paths',
+        type: 'function',
+        function: {
+          name: 'read_files_batch',
+          arguments: JSON.stringify({ paths: 'not-valid-json' }),
+        },
+      },
+      state,
+    );
+    const parsed = JSON.parse(result);
+    // Should fail with a clear error (not a crash)
+    expect(parsed.error).toBeDefined();
+  });
+
   it('tracks filesRead on read_file', async () => {
     const state = makeState();
     await executeTool(

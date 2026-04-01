@@ -44,6 +44,34 @@ export class PortkeyProvider implements ModelProvider {
       maxTokens?: number;
     },
   ): Promise<ChatCompletionResponse> {
+    const MAX_RETRIES = 2;
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const delayMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      try {
+        return await this._doChat(messages, options);
+      } catch (err) {
+        lastError = err as Error;
+      }
+    }
+
+    throw lastError!;
+  }
+
+  private async _doChat(
+    messages: ChatMessage[],
+    options?: {
+      tools?: ToolDefinition[];
+      model?: string;
+      temperature?: number;
+      maxTokens?: number;
+    },
+  ): Promise<ChatCompletionResponse> {
     const response = await this.client.chat.completions.create({
       model: options?.model ?? DEFAULT_MODEL,
       messages: messages.map((m) => ({

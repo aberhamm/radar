@@ -50,7 +50,9 @@ export async function parseTsconfig(
 
   try {
     // Strip comments (tsconfig allows them) but preserve strings
-    const cleaned = stripJsonComments(result.content);
+    let cleaned = stripJsonComments(result.content);
+    // Remove trailing commas before } or ] (common in tsconfig)
+    cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
     const config = JSON.parse(cleaned);
     const co = config.compilerOptions ?? {};
 
