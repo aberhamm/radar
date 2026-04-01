@@ -19,8 +19,8 @@ Pi's `Agent` class replaces the hand-rolled `DirectLoopRunner`. Key integration 
 | Component | Implementation |
 |-----------|---------------|
 | Model config | `src/config/piModel.ts` — builds `Model<'openai-completions'>` from env vars |
-| Tool adapter | `src/tools/piToolAdapter.ts` — wraps 18 tools + assemble_output as Pi `AgentTool[]` |
-| Stub testing | `src/providers/piStubAdapter.ts` — wraps StubProvider as Pi `streamFn` |
+| Tool adapter | `src/tools/piToolAdapter.ts` — all 20 tools as Pi `AgentTool[]` with TypeBox schemas |
+| Stub testing | Pi's native `registerFauxProvider` — scripted responses via `fauxAssistantMessage`/`fauxToolCall` |
 | Runner | `src/agent/runner.ts` — creates Pi Agent, uses `beforeToolCall`/`afterToolCall` hooks |
 
 ### Key Technical Details
@@ -51,7 +51,7 @@ const piModel: Model<'openai-completions'> = {
 
 **Budget enforcement**: `beforeToolCall` checks tool call count and blocks when exhausted (optionally extending via `onBudgetExhausted` callback). `afterToolCall` injects steering messages at 15 and 5 remaining calls.
 
-**Stub testing**: Pi's documented `streamFn` constructor option injects a custom stream function. `createStubStreamFn(stub)` converts StubProvider's scripted responses to Pi's `AssistantMessageEventStream`.
+**Stub testing**: Pi's native `registerFauxProvider` + `fauxAssistantMessage`/`fauxToolCall` provide scripted LLM responses for e2e tests. No custom adapter needed.
 
 ## Portkey + Bedrock Verification
 
@@ -90,7 +90,7 @@ FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 - [x] Tool calling works through Pi's AgentTool format
 - [x] Events stream correctly (agent_start, tool_execution_*, agent_end)
 - [x] Token usage is returned
-- [x] StubProvider works via Pi's streamFn for testing
-- [x] E2e test passes with Pi Agent (30 test files, 102 tests)
+- [x] Faux provider works via Pi's native `registerFauxProvider` for testing
+- [x] E2e test passes with Pi Agent (30 test files, 104 tests)
 - [x] Budget enforcement via beforeToolCall/afterToolCall hooks
 - [x] assemble_output captured via closure ref + agent.abort()

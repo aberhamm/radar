@@ -86,11 +86,11 @@ Goal Prompt
     |
     v
 +--------------------------------------------------+
-|  DirectLoopRunner (observe -> reason -> act)      |
+|  Pi Agent (observe -> reason -> act)              |
 |                                                   |
 |  System instructions (consulting rules from .md)  |
 |  Reference knowledge (platform-specific .md)      |
-|  Registered tools (20 deterministic functions)    |
+|  Pi AgentTools (20 deterministic functions)       |
 |  Working state (findings, file cache, log)        |
 +--------------------------------------------------+
     |
@@ -98,11 +98,11 @@ Goal Prompt
 Output Assembler -> scorecard + brief + JSON export
 ```
 
-- **Tools** -- Pure functions that return facts (file contents, parsed configs, grep results, npm versions). They never call an LLM.
+- **Tools** -- Pure functions that return facts (file contents, parsed configs, grep results, npm versions). They never call an LLM. Wrapped as Pi `AgentTool[]` with TypeBox schemas.
 - **Rules** -- Plain English markdown files in `src/rules/` that shape the agent's priorities and quality standards. Editable by senior consultants without code changes.
 - **References** -- Static knowledge files in `src/references/` (platform best practices, known antipatterns, compatibility matrices) loaded selectively by the agent.
-- **Agent loop** -- DirectLoopRunner sends messages + tool definitions to the LLM, parses tool_use responses, executes tools, and loops until the deliverable is assembled or the budget is spent.
-- **Providers** -- Portkey AI gateway routes to Amazon Bedrock. Provider factory supports swapping to other backends via env vars.
+- **Agent loop** -- Pi's `Agent` class handles tool dispatch, message threading, and loop control. `beforeToolCall`/`afterToolCall` hooks enforce budgets. The loop runs until `assemble_output` is called or the budget is spent.
+- **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
 - **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, and full JSON export.
 
 ## Tool Catalog
@@ -216,11 +216,11 @@ pnpm test:watch
 src/
   index.ts              CLI entry point (Commander)
   agent/
-    runner.ts           DirectLoopRunner -- core observe/reason/act loop
+    runner.ts           Pi Agent runner -- creates Agent, hooks, post-loop output
     goalPrompts.ts      Goal-specific prompt templates
     systemPrompt.ts     Rule loader and system prompt assembler
   tools/
-    registry.ts         Tool definitions and dispatch
+    piToolAdapter.ts    All 20 tools as Pi AgentTool[] with TypeBox schemas
     repo/               list_directory, read_file, read_files_batch
     search/             grep_pattern, find_files
     config/             parse_package_json, parse_next_config, parse_tsconfig, parse_env_file, check_gitignore
@@ -243,13 +243,11 @@ src/
     scorecard.ts        Scorecard computation from findings
     brief.ts            Markdown brief renderer
     json.ts             Full JSON export builder
-  providers/
-    factory.ts          Provider factory (reads PROVIDER_TYPE from env)
   config/
+    piModel.ts          Pi Model builder (env vars -> Model<'openai-completions'>)
     models.ts           Role-based model config (agent, fast)
     model-pricing.json  Per-model token pricing for cost estimates
   types/
-    provider.ts         ModelProvider, ChatMessage, ToolDefinition interfaces
     state.ts            AgentState, Finding, GoalType, StackProfile
     output.ts           Scorecard, RunMetrics
 docs/
