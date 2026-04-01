@@ -1,5 +1,6 @@
 ---
 status: ACTIVE
+updated: 2026-04-01
 ---
 # CEO Plan: Credible Demo of repo-audit-delivery-agent
 
@@ -23,16 +24,16 @@ The 10x version isn't "better audit output." It's "an agent runtime platform tha
 
 ## Scope Decisions
 
-| # | Proposal | Effort | Decision | Reasoning |
-|---|----------|--------|----------|-----------|
-| 1 | Interactive Demo Mode | S | ACCEPTED | Live demo needs real-time reasoning visibility |
-| 2 | Multi-Provider Interface | S | ACCEPTED | Core to Pi/OpenClaw value prop. Portkey primary, stubs for Copilot/Codex/CC |
-| 3 | CI/CD Quality Gate | S | ACCEPTED | Turns demo into product pitch. "Same agent, different goal" |
-| 4 | GitHub Output | S | ACCEPTED | Visible, shareable demo moment |
-| 5 | Comparison Report | M | ACCEPTED | Shows platform generalization |
-| 6 | Run Metrics + Cost | S | ACCEPTED (from observability review) | ROI talking point: "$0.47 vs 2 days" |
-| 7 | Graceful Degradation | S | ACCEPTED (from error review) | Crash during demo = dead demo |
-| 8 | Budget Extension Prompt | S | ACCEPTED (from edge case review) | Interactive: "continue?", CI: auto-assemble |
+| # | Proposal | Effort | Decision | Status (2026-04-01) |
+|---|----------|--------|----------|---------------------|
+| 1 | Interactive Demo Mode | S | ACCEPTED | DONE — `--verbose` flag with color-coded ANSI output |
+| 2 | Multi-Provider Interface | S | ACCEPTED | DONE — PortkeyProvider + scripted StubProvider + factory |
+| 3 | CI/CD Quality Gate | S | ACCEPTED | PARTIAL — goal-ci-check.md + `--json` flag. Missing: exit codes |
+| 4 | GitHub Output | S | ACCEPTED | NOT STARTED |
+| 5 | Comparison Report | M | ACCEPTED | NOT STARTED |
+| 6 | Run Metrics + Cost | S | ACCEPTED | DONE — model-pricing.json, per-model breakdown |
+| 7 | Graceful Degradation | S | ACCEPTED | DONE — partial output on error, debug log dump |
+| 8 | Budget Extension Prompt | S | ACCEPTED | PARTIAL — budget nudges at 15/5 remaining. Missing: interactive prompt |
 
 ## Accepted Scope (added to this plan)
 - Interactive/verbose output mode (--interactive flag)
