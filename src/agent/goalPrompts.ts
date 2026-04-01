@@ -83,7 +83,7 @@ export function buildGoalPrompt(
 
 Begin by understanding the project structure and stack.
 Then investigate according to your consulting rules — check every category.
-Record findings as you go using the record_finding tool. Do not batch them at the end.
+Record findings as you go using the record_finding tool. Call it once per finding — you can pass multiple findings in one call if needed, but do not batch all findings at the end.
 
 BUDGET MANAGEMENT:
 - Your tool call budget is ${toolCallBudget} calls total.
