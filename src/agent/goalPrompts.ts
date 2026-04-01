@@ -92,6 +92,11 @@ BUDGET MANAGEMENT:
 - Spend the final 15% assembling the brief (assemble_output with all required sections).
 - When you call assemble_output, provide detailed written content for every required section.
 
+CATEGORY COVERAGE — you MUST record at least one finding in each of these scorecard categories:
+  stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, routing
+Even if a category is healthy, record an info-level finding documenting what you verified.
+Before calling assemble_output, check that every category above has at least one finding.
+
 TOOL PATH ARGUMENTS:
 - Always pass RELATIVE paths from the repo root (e.g. "src/components", "package.json").
 - Never pass absolute filesystem paths (e.g. "C:\\projects\\..." or "/home/...").

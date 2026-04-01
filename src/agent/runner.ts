@@ -175,6 +175,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const halfBudget = Math.floor(toolCallBudget / 2);
   let budgetWarningHalfSent = false;
   let budgetWarning5Sent = false;
+  // Capture assistant reasoning text from message events for the investigation log.
+  // Pi sends text content blocks alongside tool calls in the same assistant message.
+  let lastAssistantReasoning = '';
 
   // beforeToolCall: budget enforcement
   const beforeToolCall = async (
@@ -235,8 +238,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state.toolCallCount++;
     stepCount++;
 
-    // Log investigation step
-    const reasoning = '';
+    // Log investigation step — use captured reasoning from last assistant message.
+    // Don't clear it here: parallel tool calls in the same message share the same reasoning.
+    // It gets overwritten naturally when the next message_end event fires.
+    const reasoning = lastAssistantReasoning;
     const resultText = ctx.result?.content?.[0]?.type === 'text'
       ? (ctx.result.content[0] as { type: 'text'; text: string }).text
       : '';
@@ -371,7 +376,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     afterToolCall,
   });
 
-  // Subscribe to events for usage tracking
+  // Subscribe to events for usage tracking + reasoning capture
   agent.subscribe((event: AgentEvent) => {
     if (event.type === 'message_end' && event.message && 'role' in event.message && event.message.role === 'assistant') {
       const msg = event.message;
@@ -380,6 +385,28 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         outputTokens: msg.usage.output,
         cachedTokens: msg.usage.cacheRead,
       });
+
+      // Capture text content blocks as reasoning for the investigation log.
+      // Pi sends text alongside tool calls in the same assistant message.
+      if (Array.isArray(msg.content)) {
+        const textParts = (msg.content as { type: string; text?: string }[])
+          .filter((c) => c.type === 'text' && c.text)
+          .map((c) => c.text!);
+        if (textParts.length > 0) {
+          lastAssistantReasoning = textParts.join('\n').trim();
+
+          // Emit as a text_response step for verbose mode
+          if (config.verbose && lastAssistantReasoning) {
+            config.onStep?.({
+              step: stepCount,
+              action: 'reasoning',
+              type: 'text_response',
+              reasoning: lastAssistantReasoning.slice(0, 100),
+              fullReasoning: lastAssistantReasoning,
+            });
+          }
+        }
+      }
     }
   });
 
