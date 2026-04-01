@@ -53,7 +53,22 @@ AGENT_MODEL=us.anthropic.claude-sonnet-4-6
 FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
-Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles the investigation phase (reasoning, tool selection, evidence gathering). `FAST_MODEL` takes over at the budget midpoint for finding assembly and brief writing. Both models are built by `src/config/piModel.ts`. Swap to any provider's model IDs without code changes.
+Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles the investigation phase (reasoning, tool selection, evidence gathering). `FAST_MODEL` handles finding recording and brief assembly. Both models are built by `src/config/piModel.ts`. Swap to any provider's model IDs without code changes.
+
+## Dual-model cost optimization
+
+The agent uses an **intent-based model switch** pattern to reduce cost:
+
+1. **Investigation phase** — `AGENT_MODEL` (Sonnet) handles all reasoning: deciding which tools to call, analyzing results, planning next steps.
+2. **Agent calls `switch_to_fast_model`** — a tool that signals "I'm done investigating." The runner switches to `FAST_MODEL` (Haiku) via `agent.setModel()`.
+3. **Writing phase** — `FAST_MODEL` (Haiku) handles recording findings and assembling the brief. Writing is cheaper and Haiku is sufficient.
+
+The switch is **agent-initiated**, not timer-based or budget-based. The agent knows when investigation is complete better than any heuristic. Fallbacks ensure the switch happens even if the agent forgets:
+- At 50% budget remaining, a steering message reminds the agent to switch.
+- At 5 calls remaining, the runner force-switches to the fast model.
+- Post-loop retry nudges also use the fast model.
+
+This pattern was chosen over classifier-based routing (RouteLLM), cascading (FrugalGPT), and per-tool routing after evaluating common multi-model cost optimization approaches. The two-phase structure matches the natural investigate-then-write shape of consulting work.
 
 Verified in Chunk 0 spike (`docs/pi-api-notes.md`):
 - Both models connect and respond via Portkey gateway

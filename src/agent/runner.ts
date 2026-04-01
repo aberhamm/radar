@@ -175,6 +175,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const halfBudget = Math.floor(toolCallBudget / 2);
   let budgetWarningHalfSent = false;
   let budgetWarning5Sent = false;
+  let modelSwitched = false; // true once agent calls switch_to_fast_model
   // Capture assistant reasoning text from message events for the investigation log.
   // Pi sends text content blocks alongside tool calls in the same assistant message.
   let lastAssistantReasoning = '';
@@ -269,6 +270,20 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       } : {}),
     });
 
+    // Intent-based model switch: agent signals it's done investigating
+    if (toolName === 'switch_to_fast_model' && !modelSwitched) {
+      modelSwitched = true;
+      if (piFastModel.id !== piModel.id) {
+        agent.setModel(piFastModel);
+        config.onStep?.({
+          step: stepCount,
+          action: 'model_switch',
+          type: 'budget_warning',
+          result: `Switched to fast model (${piFastModel.id}) for writing phase. Agent signaled investigation complete.`,
+        });
+      }
+    }
+
     // If assemble_output was called, abort the agent loop
     if (isAssemble && assembledRef.sections !== null) {
       terminationReason = 'completed';
@@ -280,26 +295,27 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     const remaining = currentBudget - state.toolCallCount;
     if (remaining <= 5 && remaining > 0 && !budgetWarning5Sent && assembledRef.sections === null) {
       budgetWarning5Sent = true;
-      agent.steer({
-        role: 'user',
-        content: `CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all 12 onboarding sections. Use your investigation so far — do not investigate further.`,
-        timestamp: Date.now(),
-      });
-    } else if (remaining <= halfBudget && remaining > 0 && !budgetWarningHalfSent && assembledRef.sections === null) {
-      budgetWarningHalfSent = true;
-      // Switch to fast model for the assembly/writing phase — cheaper, investigation is done
-      if (piFastModel.id !== piModel.id) {
+      // Force switch to fast model if agent hasn't done it yet
+      if (!modelSwitched && piFastModel.id !== piModel.id) {
+        modelSwitched = true;
         agent.setModel(piFastModel);
         config.onStep?.({
           step: stepCount,
           action: 'model_switch',
           type: 'budget_warning',
-          result: `Switched to fast model (${piFastModel.id}) for assembly phase.`,
+          result: `Switched to fast model (${piFastModel.id}) — budget critical.`,
         });
       }
       agent.steer({
         role: 'user',
-        content: `You have ${remaining} tool calls remaining out of ${currentBudget}. Start wrapping up your investigation. Record your findings with record_finding, then call assemble_output with written content for every required section of the brief.`,
+        content: `CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all required sections. Use your investigation so far — do not investigate further.`,
+        timestamp: Date.now(),
+      });
+    } else if (remaining <= halfBudget && remaining > 0 && !budgetWarningHalfSent && assembledRef.sections === null) {
+      budgetWarningHalfSent = true;
+      agent.steer({
+        role: 'user',
+        content: `You have ${remaining} tool calls remaining out of ${currentBudget}. If you haven't called switch_to_fast_model yet, do it now. Then record your findings and call assemble_output.`,
         timestamp: Date.now(),
       });
     }
@@ -417,8 +433,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // If agent finished without calling assemble_output, try nudging
     // (terminationReason may have been set to 'completed' by afterToolCall hook)
     if (assembledRef.sections === null && (terminationReason as string) !== 'completed') {
-      // Switch to fast model for retry nudges — just needs to write, not reason
-      if (piFastModel.id !== piModel.id) {
+      // Ensure fast model for retry nudges — just needs to write, not reason
+      if (!modelSwitched && piFastModel.id !== piModel.id) {
+        modelSwitched = true;
         agent.setModel(piFastModel);
       }
       // Retry with nudge (max 2)

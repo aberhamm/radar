@@ -428,6 +428,19 @@ export function buildPiTools(
       },
     },
 
+    // --- Model switching ---
+    {
+      name: 'switch_to_fast_model',
+      label: 'Switch to Fast Model',
+      description: 'Call this when you have finished investigating and are ready to record findings and assemble the brief. Switches to a faster, cheaper model for the writing phase. Only call this once — after you have gathered all the evidence you need.',
+      parameters: Type.Object({}),
+      execute: async () => {
+        // Actual model switch happens in runner.ts afterToolCall hook.
+        // This tool just signals intent — the return confirms the switch.
+        return ok({ status: 'acknowledged', message: 'Switching to fast model for writing phase.' });
+      },
+    },
+
     // --- Output assembly ---
     {
       name: 'assemble_output',
