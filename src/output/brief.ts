@@ -25,6 +25,9 @@ export function renderBrief(
   lines.push('');
 
   // Render agent-written sections
+  // Normalize keys: the LLM may use slightly different key names
+  const normalizedSections = normalizeSectionKeys(sections);
+
   const sectionOrder = [
     'project_overview',
     'stack_and_architecture',
@@ -44,16 +47,18 @@ export function renderBrief(
     'component_inventory',
   ];
 
+  const rendered = new Set<string>();
   for (const key of sectionOrder) {
-    if (sections[key]) {
-      lines.push(sections[key]);
+    if (normalizedSections[key]) {
+      lines.push(normalizedSections[key]);
       lines.push('');
+      rendered.add(key);
     }
   }
 
   // Any sections not in the predefined order
-  for (const [key, content] of Object.entries(sections)) {
-    if (!sectionOrder.includes(key) && content) {
+  for (const [key, content] of Object.entries(normalizedSections)) {
+    if (!rendered.has(key) && content) {
       lines.push(content);
       lines.push('');
     }
@@ -120,6 +125,68 @@ export function renderBrief(
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Normalize LLM-provided section keys to the expected canonical keys.
+ * Handles common variations like key_files_table → key_files,
+ * environment_and_configuration → configuration_environment, etc.
+ */
+function normalizeSectionKeys(sections: Record<string, string>): Record<string, string> {
+  const KEY_ALIASES: Record<string, string> = {
+    // key_files variants
+    key_files_table: 'key_files',
+    key_files_and_directories: 'key_files',
+    important_files: 'key_files',
+    // configuration variants
+    environment_and_configuration: 'configuration_environment',
+    environment_configuration: 'configuration_environment',
+    config_environment: 'configuration_environment',
+    environment: 'configuration_environment',
+    configuration: 'configuration_environment',
+    // local setup variants
+    local_setup_steps: 'local_setup',
+    local_development: 'local_setup',
+    local_dev_setup: 'local_setup',
+    getting_started: 'local_setup',
+    // scorecard variants
+    architecture_scorecard: 'scorecard',
+    // top risks variants
+    top_5_risks: 'top_risks',
+    risks: 'top_risks',
+    risk_summary: 'top_risks',
+    // reading list variants
+    first_week_reading_list: 'first_week_reading',
+    reading_list: 'first_week_reading',
+    // questions variants
+    questions_for_client: 'client_questions',
+    open_questions: 'client_questions',
+    questions: 'client_questions',
+    // next actions variants
+    suggested_next_actions: 'next_actions',
+    recommendations: 'next_actions',
+    next_steps: 'next_actions',
+    // preview variants
+    preview_and_editing: 'preview_editing',
+    editing: 'preview_editing',
+    // CMS variants
+    cms: 'cms_integration',
+    // overview variants
+    overview: 'project_overview',
+    // stack variants
+    stack: 'stack_and_architecture',
+    architecture: 'stack_and_architecture',
+  };
+
+  const result: Record<string, string> = {};
+  for (const [key, content] of Object.entries(sections)) {
+    const normalizedKey = KEY_ALIASES[key] ?? key;
+    // Don't overwrite if canonical key already exists
+    if (!result[normalizedKey]) {
+      result[normalizedKey] = content;
+    }
+  }
+  return result;
 }
 
 function briefTitle(goalType: string): string {

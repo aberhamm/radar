@@ -546,13 +546,27 @@ const TOOL_DEFS: ToolDefinition[] = [
     function: {
       name: 'assemble_output',
       description:
-        'Call this when you have enough findings to produce the deliverable. Provide all sections with your narrative content.',
+        'Call this when you have enough findings to produce the deliverable. Provide ALL sections with your written narrative content. Each section value should be complete markdown text including a ## heading.',
       parameters: {
         type: 'object',
         properties: {
           sections: {
             type: 'object',
-            description: 'Map of section key to your written content for that section',
+            description: 'Map of section key to markdown content. Required keys for onboarding: project_overview, stack_and_architecture, key_files, cms_integration, preview_editing, configuration_environment, local_setup, scorecard, top_risks, first_week_reading, client_questions, next_actions. Each value must be a full markdown section with ## heading and substantive content.',
+            properties: {
+              project_overview: { type: 'string', description: '## Project Overview — what this project is, who it serves, high-level architecture' },
+              stack_and_architecture: { type: 'string', description: '## Stack & Architecture — framework, language, key libraries, architectural patterns' },
+              key_files: { type: 'string', description: '## Key Files — markdown table of important files with | Path | Purpose | Why It Matters |' },
+              cms_integration: { type: 'string', description: '## CMS Integration — how content is fetched, SDK patterns, content modeling' },
+              preview_editing: { type: 'string', description: '## Preview & Editing — how preview/draft mode works, editing integration' },
+              configuration_environment: { type: 'string', description: '## Configuration & Environment — required env vars, config files, setup requirements' },
+              local_setup: { type: 'string', description: '## Local Development Setup — step-by-step instructions to get running locally' },
+              scorecard: { type: 'string', description: '## Architecture Scorecard — summary of scores and key observations per category' },
+              top_risks: { type: 'string', description: '## Top Risks — prioritized list of issues that need attention' },
+              first_week_reading: { type: 'string', description: '## First Week Reading List — ordered list of files/docs to read first' },
+              client_questions: { type: 'string', description: '## Questions for the Client — unanswered questions that need client input' },
+              next_actions: { type: 'string', description: '## Suggested Next Actions — prioritized recommendations' },
+            },
           },
         },
         required: ['sections'],
