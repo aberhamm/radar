@@ -38,7 +38,10 @@ export async function parseTsconfig(
   repoRoot: string,
   input: ParseTsconfigInput,
 ): Promise<ParseTsconfigOutput> {
-  const filePath = input.path ?? 'tsconfig.json';
+  let filePath = input.path ?? 'tsconfig.json';
+  if (filePath && !filePath.endsWith('tsconfig.json')) {
+    filePath = filePath.replace(/\/$/, '') + '/tsconfig.json';
+  }
   const result = await resolveAndRead(repoRoot, filePath);
 
   if (isResolveError(result)) {

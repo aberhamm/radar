@@ -110,7 +110,7 @@ function buildCategorySummary(
   score: ScoreLevel,
 ): string {
   if (findings.length === 0) {
-    return `${name}: No findings. Appears healthy.`;
+    return `${name}: Not yet assessed — no findings recorded for this category.`;
   }
 
   const counts = countBySeverity(findings);

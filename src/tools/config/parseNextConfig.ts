@@ -12,17 +12,27 @@ export async function parseNextConfig(
   let configPath = '';
   let content = '';
 
-  if (input.path) {
+  // Determine search directory — LLM may pass a directory path instead of a file
+  const searchDir = input.path?.replace(/\/$/, '') ?? '';
+  const candidates = CONFIG_NAMES.map((name) =>
+    searchDir ? `${searchDir}/${name}` : name,
+  );
+
+  // If the LLM passed an exact file path, try it first
+  if (input.path && CONFIG_NAMES.some((n) => input.path!.endsWith(n))) {
     const result = await resolveAndRead(repoRoot, input.path);
     if (!isResolveError(result)) {
       configPath = input.path;
       content = result.content;
     }
-  } else {
-    for (const name of CONFIG_NAMES) {
-      const result = await resolveAndRead(repoRoot, name);
+  }
+
+  // Otherwise search for config files in the directory
+  if (!configPath) {
+    for (const candidate of candidates) {
+      const result = await resolveAndRead(repoRoot, candidate);
       if (!isResolveError(result)) {
-        configPath = name;
+        configPath = candidate;
         content = result.content;
         break;
       }

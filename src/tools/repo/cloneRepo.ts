@@ -29,7 +29,7 @@ export async function cloneRepo(input: CloneRepoInput): Promise<CloneRepoOutput>
 
     execSync(args.join(' '), {
       stdio: 'pipe',
-      timeout: 60_000, // 60 second timeout
+      timeout: 300_000, // 5 minute timeout for large repos
     });
 
     // Get default branch name

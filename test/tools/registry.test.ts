@@ -90,6 +90,37 @@ describe('executeTool', () => {
     expect(parsed.error).toContain('Unknown tool');
   });
 
+  it('normalizes absolute path "/" to repo root', async () => {
+    const state = makeState();
+    const result = await executeTool(
+      {
+        id: 'call_abs',
+        type: 'function',
+        function: { name: 'list_directory', arguments: JSON.stringify({ path: '/' }) },
+      },
+      state,
+    );
+    const parsed = JSON.parse(result);
+    // Should list the fixture repo root, not the filesystem root
+    expect(parsed.entries.length).toBeGreaterThan(0);
+    const names = parsed.entries.map((e: { name: string }) => e.name);
+    expect(names).toContain('package.json');
+  });
+
+  it('normalizes absolute path "/src" to relative "src"', async () => {
+    const state = makeState();
+    const result = await executeTool(
+      {
+        id: 'call_abs2',
+        type: 'function',
+        function: { name: 'list_directory', arguments: JSON.stringify({ path: '/src' }) },
+      },
+      state,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.entries.length).toBeGreaterThan(0);
+  });
+
   it('tracks filesRead on read_file', async () => {
     const state = makeState();
     await executeTool(

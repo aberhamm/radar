@@ -39,6 +39,29 @@ export function getToolDefinitions(): ToolDefinition[] {
 }
 
 /**
+ * Normalize path arguments from the LLM.
+ * The LLM sometimes passes absolute paths like "/" or "/src" instead of
+ * relative paths. Strip leading slashes so path.resolve(repoRoot, p)
+ * stays within the repo.
+ */
+function normalizePathArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const PATH_KEYS = ['path', 'repoPath'];
+  for (const key of PATH_KEYS) {
+    if (typeof args[key] === 'string') {
+      // Strip leading slashes; treat "/" and "." as empty (repo root)
+      let p = (args[key] as string).replace(/^[/\\]+/, '');
+      if (p === '.' || p === '') p = '.';
+      args[key] = p;
+    }
+  }
+  // Also normalize arrays of paths (e.g. read_files_batch)
+  if (Array.isArray(args['paths'])) {
+    args['paths'] = (args['paths'] as string[]).map((p) => p.replace(/^[/\\]+/, '') || '.');
+  }
+  return args;
+}
+
+/**
  * Execute a tool by name. Returns the JSON result as a string for the LLM.
  */
 export async function executeTool(
@@ -46,7 +69,7 @@ export async function executeTool(
   state: AgentState,
 ): Promise<string> {
   const name = toolCall.function.name;
-  const args = JSON.parse(toolCall.function.arguments);
+  const args = normalizePathArgs(JSON.parse(toolCall.function.arguments));
   const repoRoot = state.repo.localPath;
 
   try {

@@ -9,21 +9,33 @@ const PROMPTS: Record<string, (localPath: string) => string> = {
   onboarding: (localPath) => `You have access to a repository at ${localPath}.
 Produce a consultant onboarding brief for a developer joining this project for the first time.
 
+You are a senior consultant, not a linter. Your brief should demonstrate deep understanding
+of the codebase — not just list files and versions. Explain architectural decisions,
+flag patterns that will cause pain, and provide opinionated recommendations.
+
 Your consulting rules specify the required sections and quality bar.
-Investigate the repository using your tools, record findings, and assemble the brief
+Investigate the repository using your tools, record findings as you go, and assemble the brief
 when you have sufficient information.
 
 Start by understanding the stack, then investigate CMS integration, preview/editing,
-and configuration. Follow your platform-specific rules once you identify the CMS.`,
+security, configuration, dependencies, and architecture. Follow your platform-specific
+rules once you identify the CMS.
+
+IMPORTANT: Record findings throughout your investigation, not just at the end.
+After every 3-4 investigation steps, call record_finding for what you've observed.
+You must record at least 8 findings across all scorecard categories before assembling output.
+Every scorecard category must have at least one finding — even if it's info-level
+documenting what you verified and why it's healthy.`,
 
   audit: (localPath) => `You have access to a repository at ${localPath}.
 Produce a scored architecture audit for this project.
 
 Every category in the scorecard must have a score based on real findings with evidence.
-If a category is healthy, score it green with a brief note — do not inflate findings.
+If a category is healthy, score it green with a finding that documents what you verified.
 If you find real issues, document them with file paths and code evidence.
 
-Your consulting rules define the scoring criteria and required categories.`,
+Your consulting rules define the scoring criteria and required categories.
+You must record at least 8 findings. Every category needs at least one.`,
 
   migration: (localPath) => `You have access to a repository at ${localPath}.
 Assess this project's migration readiness and produce a migration report.
@@ -70,10 +82,15 @@ export function buildGoalPrompt(
   const preamble = `${goalPrompt(localPath)}
 
 Begin by understanding the project structure and stack.
-Then investigate according to your consulting rules.
-Record findings as you go using the record_finding tool.
-When you have enough information to populate every required section
-of the deliverable, call the assemble_output tool.
+Then investigate according to your consulting rules — check every category.
+Record findings as you go using the record_finding tool. Do not batch them at the end.
+
+BUDGET MANAGEMENT:
+- Your tool call budget is ${toolCallBudget} calls total.
+- Spend the first 60% investigating (read files, analyze patterns, check dependencies).
+- Spend the next 25% recording findings (minimum 8 across all categories).
+- Spend the final 15% assembling the brief (assemble_output with all required sections).
+- When you call assemble_output, provide detailed written content for every required section.
 
 npm version data is available via the query_npm_versions and
 compare_versions tools.
@@ -82,9 +99,7 @@ You can search the web and fetch documentation using the web_search
 and fetch_url tools. Use these when you find outdated dependencies,
 unfamiliar SDK patterns, or version-specific issues that your
 reference material doesn't cover. Prefer approved documentation
-sources. Your web search budget is ${webSearchBudget} searches.
-
-Your tool call budget is ${toolCallBudget} calls. Prioritize accordingly.`;
+sources. Your web search budget is ${webSearchBudget} searches.`;
 
   return preamble;
 }

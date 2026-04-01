@@ -5,7 +5,11 @@ export async function parsePackageJson(
   repoRoot: string,
   input: ParsePackageJsonInput,
 ): Promise<ParsePackageJsonOutput> {
-  const filePath = input.path ?? 'package.json';
+  // Auto-append package.json if the LLM passes a directory path
+  let filePath = input.path ?? 'package.json';
+  if (filePath && !filePath.endsWith('package.json')) {
+    filePath = filePath.replace(/\/$/, '') + '/package.json';
+  }
   const result = await resolveAndRead(repoRoot, filePath);
 
   if (isResolveError(result)) {

@@ -135,11 +135,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
 
     const finishReason = response.finishReason;
 
-    // Case 1: Tool calls
-    if (
-      response.toolCalls.length > 0 &&
-      (finishReason === 'tool_calls' || finishReason === 'tool_use')
-    ) {
+    // Case 1: Tool calls — check for tool calls presence regardless of finish reason,
+    // as some providers return 'stop' even when tool calls are present
+    if (response.toolCalls.length > 0) {
       consecutiveEmptyResponses = 0;
 
       // Append assistant message with tool calls
@@ -206,6 +204,20 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       // If assemble_output was called, break out of the loop
       if (assembleOutputSections !== null) {
         break;
+      }
+
+      // Budget warning: nudge the agent to wrap up when near the limit
+      const remaining = toolCallBudget - state.toolCallCount;
+      if (remaining <= 5 && remaining > 0 && assembleOutputSections === null) {
+        messages.push({
+          role: 'user',
+          content: `🛑 CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all 12 onboarding sections. Use your investigation so far — do not investigate further.`,
+        });
+      } else if (remaining <= 15 && remaining > 0 && assembleOutputSections === null) {
+        messages.push({
+          role: 'user',
+          content: `⚠️ You have ${remaining} tool calls remaining out of ${toolCallBudget}. Stop investigating. Record your findings now with record_finding, then call assemble_output with written content for every required section of the brief.`,
+        });
       }
 
       continue;
