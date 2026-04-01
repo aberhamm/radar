@@ -38,5 +38,9 @@ export function createProvider(config?: Partial<ProviderConfig>): ModelProvider 
     });
   }
 
-  return new StubProvider(providerType);
+  if (providerType === 'stub') {
+    return new StubProvider(); // scripted mode for testing
+  }
+
+  return new StubProvider({ throwMode: true, providerName: providerType });
 }
