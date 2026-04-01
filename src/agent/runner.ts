@@ -66,6 +66,8 @@ export interface RunnerConfig {
   onBudgetExhausted?: (state: { findings: number; toolCalls: number; budget: number }) => Promise<boolean>;
   /** Override Pi model (e.g. faux provider for testing). If omitted, builds from env vars. */
   model?: Model<any>;
+  /** Override Pi fast model (e.g. faux provider for testing). If omitted, builds from env vars. */
+  fastModel?: Model<any>;
 }
 
 export interface StepEvent {
@@ -148,14 +150,17 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // Build Pi tools from registry
   const { tools, assembledRef } = buildPiTools(state);
 
-  // Build Pi model (or use provided override, e.g. faux provider for testing)
+  // Build Pi models (or use provided overrides, e.g. faux provider for testing)
   let apiKey: string | undefined;
   let piModel: Model<any>;
+  let piFastModel: Model<any>;
   if (config.model) {
     piModel = config.model;
+    piFastModel = config.fastModel ?? config.model; // fall back to same model in tests
   } else {
     const built = buildPiModel();
     piModel = built.model;
+    piFastModel = built.fastModel;
     apiKey = built.apiKey;
   }
 
@@ -267,6 +272,16 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       });
     } else if (remaining <= 15 && remaining > 0 && !budgetWarning15Sent && assembledRef.sections === null) {
       budgetWarning15Sent = true;
+      // Switch to fast model for the assembly/writing phase — cheaper, investigation is done
+      if (piFastModel.id !== piModel.id) {
+        agent.setModel(piFastModel);
+        config.onStep?.({
+          step: stepCount,
+          action: 'model_switch',
+          type: 'budget_warning',
+          result: `Switched to fast model (${piFastModel.id}) for assembly phase.`,
+        });
+      }
       agent.steer({
         role: 'user',
         content: `You have ${remaining} tool calls remaining out of ${currentBudget}. Stop investigating. Record your findings now with record_finding, then call assemble_output with written content for every required section of the brief.`,
@@ -310,6 +325,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // If agent finished without calling assemble_output, try nudging
     // (terminationReason may have been set to 'completed' by afterToolCall hook)
     if (assembledRef.sections === null && (terminationReason as string) !== 'completed') {
+      // Switch to fast model for retry nudges — just needs to write, not reason
+      if (piFastModel.id !== piModel.id) {
+        agent.setModel(piFastModel);
+      }
       // Retry with nudge (max 2)
       for (let retry = 0; retry < 2; retry++) {
         agent.followUp({
