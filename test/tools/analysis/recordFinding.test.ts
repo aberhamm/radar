@@ -44,8 +44,37 @@ describe('recordFinding', () => {
 
   it('throws on missing required fields', () => {
     const state = makeState();
+    // No id, category, or severity at any level
     expect(() =>
-      recordFinding(state, { finding: { id: '', category: 'security', severity: 'high' } as Finding }),
+      recordFinding(state, { finding: { title: 'bad', description: 'no keys' } as unknown as Finding }),
     ).toThrow();
+  });
+
+  it('handles array of findings in a single call', () => {
+    const state = makeState();
+    // LLM sometimes passes an array instead of a single finding
+    const batchInput = {
+      finding: [
+        { id: 'BATCH-001', category: 'security', severity: 'high', title: 'First', description: 'Desc', evidence: [], tags: [] },
+        { id: 'BATCH-002', category: 'stack', severity: 'info', title: 'Second', description: 'Desc', evidence: [], tags: [] },
+      ],
+    };
+    const result = recordFinding(state, batchInput as unknown as { finding: Finding });
+    expect(result.findingId).toBe('BATCH-001, BATCH-002');
+    expect(result.totalFindings).toBe(2);
+    expect(result.recordedCount).toBe(2);
+    expect(state.findings).toHaveLength(2);
+  });
+
+  it('handles numeric-keyed object (array serialized as object)', () => {
+    const state = makeState();
+    // When JSON.parse turns an array into an object with numeric keys
+    const numericInput = {
+      '0': { id: 'NUM-001', category: 'architecture', severity: 'medium', title: 'Arch', description: 'D', evidence: [], tags: [] },
+      '1': { id: 'NUM-002', category: 'dependencies', severity: 'low', title: 'Dep', description: 'D', evidence: [], tags: [] },
+    };
+    const result = recordFinding(state, numericInput as unknown as { finding: Finding });
+    expect(result.totalFindings).toBe(2);
+    expect(state.findings).toHaveLength(2);
   });
 });
