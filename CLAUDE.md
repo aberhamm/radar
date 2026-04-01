@@ -60,7 +60,7 @@ Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles the investigatio
 The agent uses an **intent-based model switch** pattern to reduce cost:
 
 1. **Investigation phase** — `AGENT_MODEL` (Sonnet) handles all reasoning: deciding which tools to call, analyzing results, planning next steps.
-2. **Agent calls `switch_to_fast_model`** — a tool that signals "I'm done investigating." The runner switches to `FAST_MODEL` (Haiku) via `agent.setModel()`.
+2. **Agent calls `switch_to_fast_model`** — a tool that signals "I'm done investigating." The runner switches to `FAST_MODEL` (Haiku) by mutating the model object in place (Pi's `_runLoop` captures the model reference once at loop start, so `setModel()` alone doesn't take effect mid-loop — in-place mutation ensures the running loop sees the change).
 3. **Writing phase** — `FAST_MODEL` (Haiku) handles recording findings and assembling the brief. Writing is cheaper and Haiku is sufficient.
 
 The switch is **agent-initiated**, not timer-based or budget-based. The agent knows when investigation is complete better than any heuristic. Fallbacks ensure the switch happens even if the agent forgets:

@@ -25,7 +25,7 @@ Before each demo:
 6. **Verify outputs**: Check `output/` for fresh brief, scorecard, findings, investigation log
 7. **GitHub hook** (if demoing): `gh auth status` then add `--github-output` flag
 
-Demo talking points: 10 findings in ~5 min, ~$1-2/run (dual-model), 45 tool calls default, zero hardcoded pipeline, Sonnet investigates then agent calls switch_to_fast_model and Haiku writes.
+Demo talking points: 11 findings in ~8 min, ~$0.74/run (dual-model, 37% on Haiku), 45 tool calls default, zero hardcoded pipeline, Sonnet investigates then agent calls switch_to_fast_model and Haiku writes.
 
 ## Post-Demo (not blocking)
 
