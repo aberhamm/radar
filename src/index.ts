@@ -4,6 +4,8 @@ import { Command } from 'commander';
 import path from 'node:path';
 import fs from 'node:fs';
 import readline from 'node:readline';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { runAgent, type StepEvent, type RunResult } from './agent/runner.js';
 import { buildSystemPrompt, listRuleFiles, validateRules } from './agent/systemPrompt.js';
 import { buildGoalPrompt } from './agent/goalPrompts.js';
@@ -118,6 +120,70 @@ program
       console.error(`\nError: ${(err as Error).message}`);
       process.exit(2);
     }
+  });
+
+program
+  .command('dashboard')
+  .description('Start the dashboard UI and open in browser')
+  .option('--port <port>', 'Port for the dashboard', '3000')
+  .action(async (options) => {
+    const port = parseInt(options.port, 10);
+    const dashboardDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dashboard');
+
+    // Check if dashboard directory exists
+    if (!fs.existsSync(dashboardDir)) {
+      console.error('Dashboard not yet built. The dashboard/ directory does not exist.');
+      console.error('Run: pnpm dashboard:setup to scaffold it.');
+      process.exit(1);
+    }
+
+    console.log(`Starting dashboard on port ${port}...`);
+
+    // Spawn next dev as a child process
+    const child = spawn('npx', ['next', 'dev', '--port', String(port)], {
+      cwd: dashboardDir,
+      stdio: 'inherit',
+      shell: true,
+    });
+
+    child.on('error', (err) => {
+      console.error('Failed to start dashboard:', err.message);
+      process.exit(1);
+    });
+
+    // Poll until port responds (max 30s)
+    const url = `http://localhost:${port}`;
+    let ready = false;
+    const start = Date.now();
+    while (!ready && Date.now() - start < 30000) {
+      try {
+        await fetch(url, { signal: AbortSignal.timeout(1000) });
+        ready = true;
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    if (!ready) {
+      console.error('Dashboard did not start within 30 seconds.');
+      child.kill();
+      process.exit(1);
+    }
+
+    // Open in browser (cross-platform)
+    console.log(`Opening ${url} in browser...`);
+    const openCmd = process.platform === 'win32' ? 'start'
+      : process.platform === 'darwin' ? 'open'
+      : 'xdg-open';
+    spawn(openCmd, [url], { shell: true, detached: true });
+
+    console.log('Dashboard running. Press Ctrl+C to stop.');
+
+    // Keep process alive
+    process.on('SIGINT', () => {
+      child.kill();
+      process.exit(0);
+    });
   });
 
 program.parse();
