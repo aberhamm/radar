@@ -13,6 +13,8 @@ import type { AgentState, GoalType } from '../types/state.js';
 import type { Scorecard, RunMetrics } from '../types/output.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { buildGoalPrompt } from './goalPrompts.js';
+import { redactSecrets } from './redaction.js';
+import { wrapInBoundary, BOUNDARY_SYSTEM_INSTRUCTION, validateFindingContent } from './contextBoundary.js';
 import { buildPiTools, type AssembledSections } from '../tools/piToolAdapter.js';
 import { buildPiModel } from '../config/piModel.js';
 import { computeScorecard } from '../output/scorecard.js';
@@ -151,7 +153,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const platform = config.platform ?? 'unknown';
 
   // Build prompts
-  const systemPrompt = buildSystemPrompt(config.goal, platform);
+  const systemPrompt = buildSystemPrompt(config.goal, platform) + '\n\n---\n\n' + BOUNDARY_SYSTEM_INSTRUCTION;
   const goalPrompt = buildGoalPrompt(config.goal, config.repoPath, toolCallBudget, webSearchBudget);
 
   // Build Pi tools from registry
@@ -272,7 +274,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     const resultText = ctx.result?.content?.[0]?.type === 'text'
       ? (ctx.result.content[0] as { type: 'text'; text: string }).text
       : '';
-    const cleanResult = resultText.replaceAll(config.repoPath, '');
+    // Apply secret redaction before the result goes anywhere (log, LLM context, step events)
+    const redactedResult = redactSecrets(resultText);
+    const cleanResult = redactedResult.replaceAll(config.repoPath, '');
     state.investigationLog.push({
       step: stepCount,
       action: toolName,
@@ -287,12 +291,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       step: stepCount,
       action: toolName,
       reasoning: reasoning.slice(0, 100),
-      result: resultText.slice(0, 100),
+      result: redactedResult.slice(0, 100),
       type: isAssemble ? 'assemble_output' : isFinding ? 'finding' : 'tool_call',
       batchId: currentBatchId,
       ...(config.verbose ? {
         fullReasoning: reasoning,
-        fullResult: resultText,
+        fullResult: redactedResult,
         args: JSON.stringify(ctx.args),
       } : {}),
     });
@@ -306,8 +310,21 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         config.onStep?.({
           step: stepCount,
           action: 'model_switch',
-          type: 'budget_warning',
+          type: 'model_switch',
           result: `Switched to fast model (${fastId}) for writing phase. Agent signaled investigation complete.`,
+        });
+      }
+    }
+
+    // Check for potential prompt injection in record_finding content
+    if (isFinding) {
+      const args = ctx.args as { title?: string; description?: string };
+      if (args.title && !validateFindingContent(args.title)) {
+        config.onStep?.({
+          step: stepCount,
+          action: 'injection_warning',
+          type: 'budget_warning',
+          result: 'Potential prompt injection detected in finding content. Review manually.',
         });
       }
     }
@@ -317,6 +334,15 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       terminationReason = 'completed';
       agent.abort();
       return undefined;
+    }
+
+    // Return redacted + boundary-wrapped content to LLM context.
+    // AfterToolCallResult.content replaces the full content array in the tool result.
+    // Wrapping prevents injected instructions in repo files from hijacking the agent.
+    // We send the redacted (not path-stripped) version so the LLM sees real paths.
+    if (redactedResult) {
+      const wrapped = wrapInBoundary(toolName, redactedResult);
+      return { content: [{ type: 'text', text: wrapped }] };
     }
 
     // Budget warning steering messages
