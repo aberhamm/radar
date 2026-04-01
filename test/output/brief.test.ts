@@ -13,7 +13,8 @@ describe('renderBrief', () => {
     const md = renderBrief(scorecard, sections, [], [], 15, 50);
 
     expect(md).toContain('# Project Onboarding Brief: test-repo');
-    expect(md).toContain('15 / 50 tool calls');
+    expect(md).toContain('15 tool calls');
+    expect(md).toContain('repo-audit-delivery-agent');
     expect(md).toContain('## Project Overview');
     expect(md).toContain('## Architecture Scorecard');
     expect(md).toContain('🟢');
