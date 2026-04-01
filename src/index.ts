@@ -218,6 +218,17 @@ async function handleAnalyze(opts: {
   console.log(`  Scorecard:  ${result.scorecard.overallScore.toUpperCase()}`);
   console.log(`  Duration:   ${(result.metrics.durationMs / 1000).toFixed(1)}s`);
   console.log(`  Est. cost:  $${result.metrics.totalEstimatedCostUsd.toFixed(4)}`);
+
+  // Per-model breakdown
+  const modelEntries = Object.entries(result.metrics.models);
+  if (modelEntries.length > 0) {
+    console.log('');
+    console.log('  Model breakdown:');
+    for (const [modelId, info] of modelEntries) {
+      const shortId = modelId.replace('us.anthropic.', '');
+      console.log(`    ${shortId}: ${info.calls} calls, ${info.inputTokens.toLocaleString()} in / ${info.outputTokens.toLocaleString()} out, $${info.estimatedCostUsd.toFixed(4)}`);
+    }
+  }
   console.log('');
 
   for (const p of result.outputPaths) {

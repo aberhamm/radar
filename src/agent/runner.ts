@@ -10,6 +10,29 @@ import { buildFullExport, serializeExport } from '../output/json.js';
 import { loadModelConfig } from '../config/models.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Load model pricing
+interface ModelPricing {
+  inputPerToken: number;
+  outputPerToken: number;
+  cachedInputPerToken: number;
+}
+interface PricingConfig {
+  models: Record<string, ModelPricing & { displayName: string }>;
+  defaultPricing: ModelPricing;
+}
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pricingPath = path.resolve(__dirname, '../config/model-pricing.json');
+let pricingConfig: PricingConfig;
+try {
+  pricingConfig = JSON.parse(fs.readFileSync(pricingPath, 'utf-8'));
+} catch {
+  pricingConfig = {
+    models: {},
+    defaultPricing: { inputPerToken: 0.000003, outputPerToken: 0.000015, cachedInputPerToken: 0.0000003 },
+  };
+}
 
 export interface RunnerConfig {
   provider: ModelProvider;
@@ -396,15 +419,15 @@ function buildMetrics(
   state: AgentState,
   startedAt: Date,
   completedAt: Date,
-  agentModel: string,
+  _agentModel: string,
 ): RunMetrics {
   const models: RunMetrics['models'] = {};
   for (const [modelId, usage] of state.modelUsage.entries()) {
-    const costPerInputToken = 0.003 / 1000; // rough estimate
-    const costPerOutputToken = 0.015 / 1000;
-    const estimated =
-      usage.inputTokens * costPerInputToken +
-      usage.outputTokens * costPerOutputToken;
+    const pricing = pricingConfig.models[modelId] ?? pricingConfig.defaultPricing;
+    const inputCost = usage.inputTokens * pricing.inputPerToken;
+    const outputCost = usage.outputTokens * pricing.outputPerToken;
+    const cachedDiscount = usage.cachedTokens * (pricing.inputPerToken - pricing.cachedInputPerToken);
+    const estimated = inputCost + outputCost - cachedDiscount;
 
     models[modelId] = {
       bedrockModelId: modelId,
