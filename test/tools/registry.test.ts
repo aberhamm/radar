@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { executeTool } from '../../src/tools/registry.js';
+import { buildPiTools, normalizePathArgs } from '../../src/tools/piToolAdapter.js';
 import type { AgentState } from '../../src/types/state.js';
 import path from 'node:path';
 
@@ -26,7 +26,19 @@ function makeState(): AgentState {
   };
 }
 
-describe('executeTool', () => {
+/** Helper: execute a tool by name through buildPiTools */
+async function executeTool(name: string, args: Record<string, unknown>, state: AgentState): Promise<string> {
+  const { tools } = buildPiTools(state);
+  const tool = tools.find((t) => t.name === name);
+  if (!tool) return JSON.stringify({ error: `Unknown tool: ${name}` });
+  const result = await tool.execute('test-id', args);
+  // Pi tools return { content: [{type:'text', text}], details }
+  const text = result.content[0];
+  if (text && 'text' in text) return text.text;
+  return JSON.stringify({ error: 'Unexpected result format' });
+}
+
+describe('executeTool (via buildPiTools)', () => {
   it('executes list_directory against fixture', async () => {
     const state = makeState();
     const result = await executeTool('list_directory', { path: '.', depth: 1 }, state);
@@ -52,7 +64,6 @@ describe('executeTool', () => {
     const state = makeState();
     const result = await executeTool('list_directory', { path: '/' }, state);
     const parsed = JSON.parse(result);
-    // Should list the fixture repo root, not the filesystem root
     expect(parsed.entries.length).toBeGreaterThan(0);
     const names = parsed.entries.map((e: { name: string }) => e.name);
     expect(names).toContain('package.json');
@@ -69,7 +80,6 @@ describe('executeTool', () => {
     const state = makeState();
     const result = await executeTool('read_files_batch', { paths: '["package.json"]' }, state);
     const parsed = JSON.parse(result);
-    // Should succeed — paths was coerced from string to array
     expect(parsed.error).toBeUndefined();
     expect(parsed.files).toBeDefined();
   });
@@ -78,7 +88,6 @@ describe('executeTool', () => {
     const state = makeState();
     const result = await executeTool('read_files_batch', { paths: 'not-valid-json' }, state);
     const parsed = JSON.parse(result);
-    // Should fail with a clear error (not a crash)
     expect(parsed.error).toBeDefined();
   });
 
@@ -86,5 +95,27 @@ describe('executeTool', () => {
     const state = makeState();
     await executeTool('read_file', { path: 'package.json' }, state);
     expect(state.filesRead.has('package.json')).toBe(true);
+  });
+});
+
+describe('normalizePathArgs', () => {
+  it('strips leading slashes from path', () => {
+    const result = normalizePathArgs({ path: '/src/components' });
+    expect(result.path).toBe('src/components');
+  });
+
+  it('normalizes "/" to "."', () => {
+    const result = normalizePathArgs({ path: '/' });
+    expect(result.path).toBe('.');
+  });
+
+  it('coerces stringified JSON array for paths', () => {
+    const result = normalizePathArgs({ paths: '["a.ts","b.ts"]' });
+    expect(result.paths).toEqual(['a.ts', 'b.ts']);
+  });
+
+  it('strips leading slashes from array paths', () => {
+    const result = normalizePathArgs({ paths: ['/src/a.ts', '/b.ts'] });
+    expect(result.paths).toEqual(['src/a.ts', 'b.ts']);
   });
 });
