@@ -22,6 +22,10 @@ export async function analyzeRouteStructure(
     await scanPages(pagesDir, pagesDir, repoRoot, routes, apiRoutes, dynamicRoutes, catchAllRoutes);
   }
 
+  if (hasApp) {
+    await scanAppDir(appDir, appDir, repoRoot, routes, apiRoutes, dynamicRoutes, catchAllRoutes);
+  }
+
   const routerType = hasPages && hasApp ? 'hybrid' : hasApp ? 'app' : hasPages ? 'pages' : 'pages';
 
   return { routerType, routes, apiRoutes, dynamicRoutes, catchAllRoutes };
@@ -90,6 +94,91 @@ async function scanPages(
       if (isCatchAll) catchAllRoutes.push(entry);
     }
   }
+}
+
+/**
+ * Scan App Router directory for route segments.
+ * In App Router, routes are defined by page.tsx, route.tsx, layout.tsx files
+ * inside directory segments like [param], [[...catchAll]], etc.
+ */
+async function scanAppDir(
+  dir: string,
+  appRoot: string,
+  repoRoot: string,
+  routes: RouteEntry[],
+  apiRoutes: RouteEntry[],
+  dynamicRoutes: RouteEntry[],
+  catchAllRoutes: RouteEntry[],
+): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return;
+  }
+
+  for (const name of entries) {
+    const fullPath = path.join(dir, name);
+    const stats = await fsStat(fullPath).catch(() => null);
+    if (!stats) continue;
+
+    if (stats.isDirectory()) {
+      await scanAppDir(fullPath, appRoot, repoRoot, routes, apiRoutes, dynamicRoutes, catchAllRoutes);
+    } else if (stats.isFile() && /^(page|route|layout)\.(tsx?|jsx?|mjs)$/.test(name)) {
+      const relativeToAppRoot = path.relative(appRoot, path.dirname(fullPath)).replace(/\\/g, '/');
+      const relativeToRepo = path.relative(repoRoot, fullPath).replace(/\\/g, '/');
+      const content = await readFile(fullPath, 'utf-8').catch(() => '');
+
+      const routePath = appDirToRoute(relativeToAppRoot);
+      const isDynamic = /\[/.test(relativeToAppRoot);
+      const isCatchAll = /\[\[?\.\.\..+\]\]?/.test(relativeToAppRoot);
+      const isApi = name.startsWith('route.');
+      const params = extractAppParams(relativeToAppRoot);
+
+      const entry: RouteEntry = {
+        filePath: relativeToRepo,
+        routePath,
+        isDynamic,
+        ...(params.length ? { params } : {}),
+        hasGetStaticProps: false,
+        hasGetServerSideProps: false,
+        hasGenerateStaticParams: /generateStaticParams/.test(content),
+        isServerComponent: !content.includes("'use client'") && !content.includes('"use client"'),
+      };
+
+      routes.push(entry);
+      if (isApi) apiRoutes.push(entry);
+      if (isDynamic) dynamicRoutes.push(entry);
+      if (isCatchAll) catchAllRoutes.push(entry);
+    }
+  }
+}
+
+function appDirToRoute(relPath: string): string {
+  if (!relPath || relPath === '.') return '/';
+
+  let route = '/' + relPath
+    // Remove route groups like (marketing)
+    .replace(/\([^)]+\)\/?/g, '')
+    // Convert [[...param]] to *param
+    .replace(/\[\[\.\.\.(\w+)\]\]/g, '*$1')
+    // Convert [...param] to *param
+    .replace(/\[\.\.\.(\w+)\]/g, '*$1')
+    // Convert [param] to :param
+    .replace(/\[(\w+)\]/g, ':$1');
+
+  // Clean up double slashes
+  route = route.replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+  return route;
+}
+
+function extractAppParams(relPath: string): string[] {
+  const params: string[] = [];
+  const matches = relPath.matchAll(/\[(?:\[)?(?:\.\.\.)?(\w+)\](?:\])?/g);
+  for (const [, param] of matches) {
+    params.push(param);
+  }
+  return params;
 }
 
 function filePathToRoute(filePath: string): string {
