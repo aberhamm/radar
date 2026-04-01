@@ -37,8 +37,9 @@ export function renderBrief(
     'preview_editing',
     'configuration_environment',
     'local_setup',
-    'scorecard',
-    'top_risks',
+    // scorecard and top_risks are EXCLUDED here — the renderer appends
+    // authoritative computed versions below. Including LLM-written ones
+    // causes duplication and contradictions (LLM may score differently).
     'first_week_reading',
     'client_questions',
     'next_actions',
@@ -47,6 +48,9 @@ export function renderBrief(
     'migration_order',
     'component_inventory',
   ];
+
+  // Skip LLM-written scorecard/risks — computed versions are appended below
+  const skipSections = new Set(['scorecard', 'top_risks']);
 
   const rendered = new Set<string>();
   for (const key of sectionOrder) {
@@ -57,9 +61,9 @@ export function renderBrief(
     }
   }
 
-  // Any sections not in the predefined order
+  // Any sections not in the predefined order (but still skip scorecard/risks)
   for (const [key, content] of Object.entries(normalizedSections)) {
-    if (!rendered.has(key) && content) {
+    if (!rendered.has(key) && !skipSections.has(key) && content) {
       lines.push(content);
       lines.push('');
     }
