@@ -208,7 +208,25 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         if (toolCall.function.name === 'assemble_output') {
           try {
             const args = JSON.parse(toolCall.function.arguments);
-            assembleOutputSections = args.sections ?? {};
+            // The LLM may pass sections directly or nested under 'sections'
+            if (args.sections && typeof args.sections === 'object') {
+              assembleOutputSections = args.sections;
+            } else if (typeof args === 'object') {
+              // Check if sections are at the top level (no wrapper)
+              const sectionKeys = Object.keys(args).filter(k =>
+                k !== 'sections' && typeof args[k] === 'string' && args[k].length > 20
+              );
+              if (sectionKeys.length > 0) {
+                assembleOutputSections = {};
+                for (const k of sectionKeys) {
+                  assembleOutputSections[k] = args[k];
+                }
+              } else {
+                assembleOutputSections = {};
+              }
+            } else {
+              assembleOutputSections = {};
+            }
           } catch {
             assembleOutputSections = {};
           }
@@ -217,7 +235,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
             action: 'assemble_output',
             type: 'assemble_output',
             result: `${Object.keys(assembleOutputSections ?? {}).length} sections provided`,
-            ...(config.verbose ? { fullResult: JSON.stringify(Object.keys(assembleOutputSections ?? {})) } : {}),
+            ...(config.verbose ? {
+              fullResult: JSON.stringify(Object.keys(assembleOutputSections ?? {})),
+              args: toolCall.function.arguments.slice(0, 500),
+            } : {}),
           });
           messages.push({
             role: 'tool',
