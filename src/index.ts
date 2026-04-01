@@ -35,10 +35,11 @@ program
   .option('--json', 'Output summary as JSON (for CI integration)')
   .action(async (opts) => {
     try {
-      await handleAnalyze(opts);
+      const exitCode = await handleAnalyze(opts);
+      if (exitCode !== 0) process.exit(exitCode);
     } catch (err) {
       console.error(`\nError: ${(err as Error).message}`);
-      process.exit(1);
+      process.exit(2);
     }
   });
 
@@ -93,6 +94,9 @@ program
 
 program.parse();
 
+/**
+ * Returns exit code: 0 = green/yellow, 1 = any red category, 2 = agent error
+ */
 async function handleAnalyze(opts: {
   repo?: string;
   goal?: string;
@@ -102,7 +106,7 @@ async function handleAnalyze(opts: {
   dryRun?: boolean;
   verbose?: boolean;
   json?: boolean;
-}) {
+}): Promise<number> {
   const repoInput = opts.repo;
   if (!repoInput) {
     throw new Error('--repo is required. Pass a local path or GitHub URL.');
@@ -161,7 +165,7 @@ async function handleAnalyze(opts: {
     } else {
       console.log('\nAll rules valid.');
     }
-    return;
+    return 0;
   }
 
   // Resolve npm versions
@@ -225,7 +229,9 @@ async function handleAnalyze(opts: {
       ...(result.errorDetail ? { error: result.errorDetail } : {}),
     };
     console.log(JSON.stringify(summary, null, 2));
-    return;
+    if (result.terminationReason === 'error') return 2;
+    if (result.scorecard.overallScore === 'red') return 1;
+    return 0;
   }
 
   // Summary
@@ -263,6 +269,11 @@ async function handleAnalyze(opts: {
     console.log(`  ✓ ${p}`);
   }
   console.log('');
+
+  // Exit code: 0 = green/yellow, 1 = any red, 2 = error
+  if (result.terminationReason === 'error') return 2;
+  if (result.scorecard.overallScore === 'red') return 1;
+  return 0;
 }
 
 // --- Verbose output formatting ---
