@@ -52,6 +52,10 @@ export interface RunResult {
   outputPaths: string[];
   metrics: RunMetrics;
   state: AgentState;
+  /** How the run ended: completed (assemble_output called), budget_exhausted, stuck, or error */
+  terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error';
+  /** Error message if terminationReason is 'error' */
+  errorDetail?: string;
 }
 
 /**
@@ -125,7 +129,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let consecutiveEmptyResponses = 0;
   const MAX_EMPTY_RESPONSES = 2;
 
+  let terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error' = 'budget_exhausted';
+  let errorDetail: string | undefined;
+
   // Agent loop
+  try {
   while (state.toolCallCount < toolCallBudget) {
     stepCount++;
 
@@ -279,6 +287,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     consecutiveEmptyResponses++;
     if (consecutiveEmptyResponses >= MAX_EMPTY_RESPONSES) {
       // Force termination — agent is stuck
+      terminationReason = 'stuck';
       break;
     }
 
@@ -289,7 +298,23 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     });
   }
 
-  // Post-loop: assemble output
+  if (assembleOutputSections !== null) {
+    terminationReason = 'completed';
+  }
+
+  } catch (err) {
+    // Graceful degradation: produce partial output with whatever we have
+    terminationReason = 'error';
+    errorDetail = (err as Error).message;
+    config.onStep?.({
+      step: stepCount,
+      action: 'error',
+      type: 'budget_warning',
+      result: `Agent error: ${errorDetail}. Producing partial output.`,
+    });
+  }
+
+  // Post-loop: assemble output (partial if error/stuck)
   const sections = assembleOutputSections ?? {};
   const scorecard = computeScorecard(config.repoName, config.goal, state.findings);
 
@@ -308,7 +333,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const fullExport = buildFullExport(state, scorecard, sections, metrics);
   const exportJson = serializeExport(fullExport);
 
-  // Write output files
+  // Write output files (always — even on error, for partial results)
   const outputPaths = writeOutputFiles(
     outputDir,
     config.repoName,
@@ -318,6 +343,24 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state,
   );
 
+  // Write debug log on error/stuck for diagnostics
+  if (terminationReason === 'error' || terminationReason === 'stuck') {
+    const debugPath = path.join(outputDir, `${config.repoName.replace(/[^a-zA-Z0-9-]/g, '-')}-debug.log`);
+    const debugContent = [
+      `Termination: ${terminationReason}`,
+      errorDetail ? `Error: ${errorDetail}` : '',
+      `Tool calls: ${state.toolCallCount} / ${toolCallBudget}`,
+      `Findings: ${state.findings.length}`,
+      `Steps: ${stepCount}`,
+      `Sections: ${Object.keys(sections).length}`,
+      '',
+      '--- Message history (last 10) ---',
+      ...messages.slice(-10).map((m, i) => `[${i}] ${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(non-string)'}`),
+    ].join('\n');
+    fs.writeFileSync(debugPath, debugContent, 'utf-8');
+    outputPaths.push(debugPath);
+  }
+
   return {
     scorecard,
     briefMarkdown,
@@ -325,6 +368,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     outputPaths,
     metrics,
     state,
+    terminationReason,
+    errorDetail,
   };
 }
 

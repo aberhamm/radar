@@ -201,7 +201,18 @@ async function handleAnalyze(opts: {
   });
 
   // Summary
-  console.log(`\n--- Investigation complete ---\n`);
+  const isPartial = result.terminationReason !== 'completed';
+  if (isPartial) {
+    console.log(`\n--- Investigation ${result.terminationReason === 'error' ? 'failed' : 'ended'} (${result.terminationReason}) ---\n`);
+    if (result.errorDetail) {
+      console.log(`  Error: ${result.errorDetail}`);
+    }
+    if (result.state.findings.length > 0) {
+      console.log(`  Partial output generated with ${result.state.findings.length} findings.`);
+    }
+  } else {
+    console.log(`\n--- Investigation complete ---\n`);
+  }
   console.log(`  Tool calls: ${result.metrics.toolCalls}`);
   console.log(`  Findings:   ${result.state.findings.length}`);
   console.log(`  Scorecard:  ${result.scorecard.overallScore.toUpperCase()}`);
