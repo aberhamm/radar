@@ -26,6 +26,8 @@ export interface RunnerConfig {
   outputDir?: string;
   /** Callback for each step — enables live CLI output */
   onStep?: (step: StepEvent) => void;
+  /** Enable verbose output with full reasoning and arguments */
+  verbose?: boolean;
 }
 
 export interface StepEvent {
@@ -33,6 +35,14 @@ export interface StepEvent {
   action: string;
   reasoning?: string;
   result?: string;
+  /** Full reasoning text (only in verbose mode) */
+  fullReasoning?: string;
+  /** Full result text (only in verbose mode) */
+  fullResult?: string;
+  /** Tool call arguments (only in verbose mode) */
+  args?: string;
+  /** Type of event: tool_call, finding, budget_warning, text_response */
+  type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output';
 }
 
 export interface RunResult {
@@ -171,6 +181,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           } catch {
             assembleOutputSections = {};
           }
+          config.onStep?.({
+            step: stepCount,
+            action: 'assemble_output',
+            type: 'assemble_output',
+            result: `${Object.keys(assembleOutputSections ?? {}).length} sections provided`,
+            ...(config.verbose ? { fullResult: JSON.stringify(Object.keys(assembleOutputSections ?? {})) } : {}),
+          });
           messages.push({
             role: 'tool',
             content: JSON.stringify({ status: 'acknowledged', message: 'Output assembly triggered.' }),
@@ -191,11 +208,18 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           result: result.slice(0, 200),
         });
 
+        const isFinding = toolCall.function.name === 'record_finding';
         config.onStep?.({
           step: stepCount,
           action: toolCall.function.name,
           reasoning: reasoning.slice(0, 100),
           result: result.slice(0, 100),
+          type: isFinding ? 'finding' : 'tool_call',
+          ...(config.verbose ? {
+            fullReasoning: reasoning,
+            fullResult: result,
+            args: toolCall.function.arguments,
+          } : {}),
         });
 
         messages.push({ role: 'tool', content: result, tool_call_id: toolCall.id });
@@ -226,6 +250,16 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // Case 2: Text response (end_turn/stop) — agent is thinking or done
     if (response.content && (finishReason === 'stop' || finishReason === 'end_turn')) {
       consecutiveEmptyResponses = 0;
+
+      if (config.verbose) {
+        config.onStep?.({
+          step: stepCount,
+          action: 'reasoning',
+          type: 'text_response',
+          fullReasoning: response.content,
+          reasoning: response.content.slice(0, 100),
+        });
+      }
 
       // Append the assistant's reasoning as a message
       messages.push({ role: 'assistant', content: response.content });

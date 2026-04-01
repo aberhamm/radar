@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import path from 'node:path';
 import fs from 'node:fs';
 import { createProvider } from './providers/factory.js';
-import { runAgent } from './agent/runner.js';
+import { runAgent, type StepEvent } from './agent/runner.js';
 import { buildSystemPrompt, listRuleFiles, validateRules } from './agent/systemPrompt.js';
 import { buildGoalPrompt } from './agent/goalPrompts.js';
 import { getToolDefinitions } from './tools/registry.js';
@@ -31,6 +31,7 @@ program
   .option('--output <dir>', 'Output directory', './output')
   .option('--budget <n>', 'Tool call budget', '50')
   .option('--dry-run', 'Show configuration without running')
+  .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .action(async (opts) => {
     try {
       await handleAnalyze(opts);
@@ -98,6 +99,7 @@ async function handleAnalyze(opts: {
   output: string;
   budget: string;
   dryRun?: boolean;
+  verbose?: boolean;
 }) {
   const repoInput = opts.repo;
   if (!repoInput) {
@@ -175,6 +177,8 @@ async function handleAnalyze(opts: {
   // Run agent
   console.log(`\nStarting investigation (goal: ${goal}, budget: ${budget})...\n`);
 
+  const verbose = opts.verbose ?? false;
+
   const result = await runAgent({
     provider,
     repoPath,
@@ -185,9 +189,14 @@ async function handleAnalyze(opts: {
     platform: platform !== 'unknown' ? platform : undefined,
     toolCallBudget: budget,
     outputDir,
+    verbose,
     onStep: (step) => {
-      const truncated = step.result?.slice(0, 60) ?? '';
-      console.log(`  [Step ${step.step}] ${step.action} → ${truncated}`);
+      if (verbose) {
+        formatVerboseStep(step);
+      } else {
+        const truncated = step.result?.slice(0, 60) ?? '';
+        console.log(`  [Step ${step.step}] ${step.action} → ${truncated}`);
+      }
     },
   });
 
@@ -204,4 +213,121 @@ async function handleAnalyze(opts: {
     console.log(`  ✓ ${p}`);
   }
   console.log('');
+}
+
+// --- Verbose output formatting ---
+
+const DIM = '\x1b[2m';
+const RESET = '\x1b[0m';
+const BOLD = '\x1b[1m';
+const CYAN = '\x1b[36m';
+const YELLOW = '\x1b[33m';
+const GREEN = '\x1b[32m';
+const RED = '\x1b[31m';
+const MAGENTA = '\x1b[35m';
+
+function formatVerboseStep(step: StepEvent): void {
+  const prefix = `${DIM}[Step ${step.step}]${RESET}`;
+
+  switch (step.type) {
+    case 'text_response': {
+      console.log(`\n${prefix} ${MAGENTA}${BOLD}Agent thinking:${RESET}`);
+      const text = step.fullReasoning ?? step.reasoning ?? '';
+      // Wrap at 100 chars for readability
+      for (const line of wrapText(text, 100)) {
+        console.log(`  ${DIM}${line}${RESET}`);
+      }
+      break;
+    }
+
+    case 'finding': {
+      try {
+        const parsed = JSON.parse(step.fullResult ?? step.result ?? '{}');
+        if (parsed.error) {
+          console.log(`${prefix} ${RED}Finding error: ${parsed.error}${RESET}`);
+        } else {
+          console.log(`${prefix} ${GREEN}${BOLD}FINDING RECORDED: ${parsed.findingId}${RESET} (${parsed.totalFindings} total)`);
+          if (step.args) {
+            try {
+              const args = JSON.parse(step.args);
+              const finding = args.finding ?? args;
+              if (finding.title) {
+                console.log(`  ${BOLD}${finding.severity?.toUpperCase() ?? 'INFO'}:${RESET} ${finding.title}`);
+              }
+              if (finding.description) {
+                const desc = finding.description.slice(0, 200);
+                console.log(`  ${DIM}${desc}${desc.length < finding.description.length ? '...' : ''}${RESET}`);
+              }
+            } catch { /* ignore parse errors */ }
+          }
+        }
+      } catch {
+        console.log(`${prefix} ${GREEN}Finding: ${step.result}${RESET}`);
+      }
+      break;
+    }
+
+    case 'assemble_output': {
+      console.log(`\n${prefix} ${CYAN}${BOLD}ASSEMBLING OUTPUT${RESET} — ${step.result}`);
+      if (step.fullResult) {
+        console.log(`  ${DIM}Sections: ${step.fullResult}${RESET}`);
+      }
+      break;
+    }
+
+    case 'budget_warning': {
+      console.log(`${prefix} ${YELLOW}${BOLD}${step.result}${RESET}`);
+      break;
+    }
+
+    default: {
+      // Standard tool call
+      const toolName = step.action;
+      const shortResult = step.result?.slice(0, 80) ?? '';
+
+      // Show reasoning if present and different from previous
+      if (step.fullReasoning) {
+        const reasoning = step.fullReasoning.trim();
+        if (reasoning) {
+          console.log(`\n${prefix} ${MAGENTA}${BOLD}Reasoning:${RESET}`);
+          for (const line of wrapText(reasoning, 100)) {
+            console.log(`  ${DIM}${line}${RESET}`);
+          }
+        }
+      }
+
+      console.log(`${prefix} ${CYAN}${toolName}${RESET} → ${DIM}${shortResult}${RESET}`);
+
+      // In verbose mode, show the tool arguments
+      if (step.args) {
+        try {
+          const args = JSON.parse(step.args);
+          const argStr = JSON.stringify(args, null, 0);
+          if (argStr.length > 2) { // not just "{}"
+            console.log(`  ${DIM}args: ${argStr.slice(0, 120)}${argStr.length > 120 ? '...' : ''}${RESET}`);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }
+}
+
+function wrapText(text: string, width: number): string[] {
+  const lines: string[] = [];
+  const paragraphs = text.split('\n');
+  for (const para of paragraphs) {
+    if (para.length <= width) {
+      lines.push(para);
+    } else {
+      let remaining = para;
+      while (remaining.length > width) {
+        const breakAt = remaining.lastIndexOf(' ', width);
+        const idx = breakAt > 0 ? breakAt : width;
+        lines.push(remaining.slice(0, idx));
+        remaining = remaining.slice(idx + 1);
+      }
+      if (remaining) lines.push(remaining);
+    }
+  }
+  return lines;
 }
