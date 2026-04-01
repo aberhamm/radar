@@ -113,7 +113,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   setMaxListeners(100);
   const startedAt = new Date();
 
-  const toolCallBudget = config.toolCallBudget ?? 35;
+  const toolCallBudget = config.toolCallBudget ?? 45;
   const webSearchBudget = config.webSearchBudget ?? 5;
   const urlFetchBudget = config.urlFetchBudget ?? 3;
   const docTokenBudget = config.docTokenBudget ?? 20_000;
@@ -194,6 +194,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
 
     // Tool call budget
     if (state.toolCallCount >= currentBudget) {
+      // Always allow assemble_output through — it's the exit path
+      if (toolName === 'assemble_output') {
+        return undefined;
+      }
+
       // Budget exhausted — ask whether to extend
       if (config.onBudgetExhausted) {
         const shouldExtend = await config.onBudgetExhausted({
@@ -403,7 +408,15 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         }
       }
       if (assembledRef.sections === null) {
-        terminationReason = 'stuck';
+        // LLM nudges failed — auto-assemble from recorded findings without LLM
+        assembledRef.sections = autoAssembleFromFindings(state);
+        terminationReason = state.findings.length > 0 ? 'completed' : 'stuck';
+        config.onStep?.({
+          step: stepCount,
+          action: 'auto_assemble',
+          type: 'assemble_output',
+          result: `Auto-assembled from ${state.findings.length} findings (LLM did not call assemble_output).`,
+        });
       }
     }
   } catch (err) {
@@ -419,6 +432,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         type: 'budget_warning',
         result: `Agent error: ${errorDetail}. Producing partial output.`,
       });
+      // Auto-assemble from whatever findings we have
+      if (assembledRef.sections === null && state.findings.length > 0) {
+        assembledRef.sections = autoAssembleFromFindings(state);
+      }
     }
   }
 
@@ -479,6 +496,58 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     terminationReason,
     errorDetail,
   };
+}
+
+/**
+ * Build brief sections from recorded findings when the LLM never called assemble_output.
+ * Groups findings by category and produces minimal but usable section content.
+ */
+function autoAssembleFromFindings(state: AgentState): Record<string, string> {
+  const sections: Record<string, string> = {};
+
+  // Group findings by category
+  const byCategory = new Map<string, typeof state.findings>();
+  for (const f of state.findings) {
+    const cat = f.category;
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(f);
+  }
+
+  // Build a section for each category with findings
+  for (const [category, findings] of byCategory) {
+    const lines: string[] = [];
+    for (const f of findings) {
+      lines.push(`### ${f.title}`);
+      lines.push('');
+      lines.push(`**Severity:** ${f.severity}`);
+      lines.push('');
+      lines.push(f.description);
+      if (f.evidence.length > 0) {
+        lines.push('');
+        lines.push('**Evidence:**');
+        for (const e of f.evidence) {
+          const loc = e.lineNumber ? `${e.filePath}:${e.lineNumber}` : e.filePath;
+          lines.push(`- \`${loc}\` — ${e.description}`);
+        }
+      }
+      lines.push('');
+    }
+    sections[category] = lines.join('\n');
+  }
+
+  // Add an executive summary
+  const severityCounts: Record<string, number> = {};
+  for (const f of state.findings) {
+    severityCounts[f.severity] = (severityCounts[f.severity] ?? 0) + 1;
+  }
+  const severityLine = Object.entries(severityCounts)
+    .map(([sev, count]) => `${count} ${sev}`)
+    .join(', ');
+  sections['executive-summary'] =
+    `This brief was auto-assembled from ${state.findings.length} findings (${severityLine}). ` +
+    `Categories covered: ${[...byCategory.keys()].join(', ')}.`;
+
+  return sections;
 }
 
 function trackUsage(

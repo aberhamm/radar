@@ -32,7 +32,7 @@ program
   .option('--goal <type>', 'Analysis goal: onboarding, audit, migration, component-map, ci-check')
   .option('--platform <name>', 'Platform override: sitecore, optimizely (auto-detected if omitted)')
   .option('--output <dir>', 'Output directory', './output')
-  .option('--budget <n>', 'Tool call budget', '35')
+  .option('--budget <n>', 'Tool call budget', '45')
   .option('--dry-run', 'Show configuration without running')
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .option('--json', 'Output summary as JSON (for CI integration)')
@@ -108,7 +108,7 @@ program
   .option('--goal <type>', 'Analysis goal: onboarding, audit, migration, component-map, ci-check', 'onboarding')
   .option('--platform <name>', 'Platform override: sitecore, optimizely (auto-detected if omitted)')
   .option('--output <dir>', 'Output directory', './output')
-  .option('--budget <n>', 'Tool call budget per repo', '35')
+  .option('--budget <n>', 'Tool call budget per repo', '45')
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .action(async (opts) => {
     try {

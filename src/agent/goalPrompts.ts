@@ -92,6 +92,11 @@ BUDGET MANAGEMENT:
 - Spend the final 15% assembling the brief (assemble_output with all required sections).
 - When you call assemble_output, provide detailed written content for every required section.
 
+TOOL PATH ARGUMENTS:
+- Always pass RELATIVE paths from the repo root (e.g. "src/components", "package.json").
+- Never pass absolute filesystem paths (e.g. "C:\\projects\\..." or "/home/...").
+- Use "." to refer to the repo root itself.
+
 npm version data is available via the query_npm_versions and
 compare_versions tools.
 

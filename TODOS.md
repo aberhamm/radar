@@ -25,7 +25,7 @@ Before each demo:
 6. **Verify outputs**: Check `output/` for fresh brief, scorecard, findings, investigation log
 7. **GitHub hook** (if demoing): `gh auth status` then add `--github-output` flag
 
-Demo talking points: 10 findings in ~4 min, ~$1-2/run (dual-model), 35 tool calls default, zero hardcoded pipeline, Sonnet investigates then Haiku writes.
+Demo talking points: 10 findings in ~4 min, ~$1-2/run (dual-model), 45 tool calls default, zero hardcoded pipeline, Sonnet investigates then Haiku writes.
 
 ## Post-Demo (not blocking)
 
@@ -39,4 +39,5 @@ Demo talking points: 10 findings in ~4 min, ~$1-2/run (dual-model), 35 tool call
 - [ ] **JSON export** — Full agent state export for programmatic consumption.
 - [ ] **Prompt injection defense** — Sanitize tool outputs before passing to LLM context. Strip instruction-like patterns from code comments and markdown in target repos. Important for untrusted repos in production. Security theme impresses demo audience too. (P3, M effort)
 - [ ] **CI/CD goal type** — `goal-ci-check.md` + compact output format for PR comments. (NOW IN DEMO SCOPE per CEO review)
+- [ ] **Intent-based model switch** — Switch from Sonnet to Haiku on first `record_finding` call instead of at budget midpoint. The agent naturally shifts from exploration to writing at that point. Captures more savings since Haiku handles all finding recording + assembly. Current midpoint approach wastes Sonnet tokens on writing and starves Haiku of budget for assembly.
 - [ ] **Auto-detect app roots** — Automatically discover app roots within a repo (e.g. Sitecore `src/` layout, monorepos with multiple `package.json` files, Next.js apps nested under subdirectories). Today the user points at the repo root; the agent should scan for multiple app entry points and scope tools per root. Enables accurate analysis of monorepos and platform-specific project structures.
