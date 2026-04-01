@@ -32,6 +32,7 @@ program
   .option('--budget <n>', 'Tool call budget', '50')
   .option('--dry-run', 'Show configuration without running')
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
+  .option('--json', 'Output summary as JSON (for CI integration)')
   .action(async (opts) => {
     try {
       await handleAnalyze(opts);
@@ -100,6 +101,7 @@ async function handleAnalyze(opts: {
   budget: string;
   dryRun?: boolean;
   verbose?: boolean;
+  json?: boolean;
 }) {
   const repoInput = opts.repo;
   if (!repoInput) {
@@ -199,6 +201,32 @@ async function handleAnalyze(opts: {
       }
     },
   });
+
+  // JSON output mode — CI-friendly
+  if (opts.json) {
+    const summary = {
+      status: result.terminationReason,
+      score: result.scorecard.overallScore,
+      findings: result.state.findings.length,
+      toolCalls: result.metrics.toolCalls,
+      durationMs: result.metrics.durationMs,
+      estimatedCostUsd: result.metrics.totalEstimatedCostUsd,
+      outputPaths: result.outputPaths,
+      categories: result.scorecard.categories.map((c) => ({
+        name: c.category,
+        score: c.score,
+        findings: c.findings.length,
+      })),
+      topRisks: result.scorecard.topRisks.map((r) => ({
+        id: r.id,
+        severity: r.severity,
+        title: r.title,
+      })),
+      ...(result.errorDetail ? { error: result.errorDetail } : {}),
+    };
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
 
   // Summary
   const isPartial = result.terminationReason !== 'completed';
