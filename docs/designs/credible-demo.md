@@ -28,12 +28,12 @@ The 10x version isn't "better audit output." It's "an agent runtime platform tha
 |---|----------|--------|----------|---------------------|
 | 1 | Interactive Demo Mode | S | ACCEPTED | DONE — `--verbose` flag with color-coded ANSI output |
 | 2 | Multi-Provider Interface | S | ACCEPTED | DONE — PortkeyProvider + scripted StubProvider + factory |
-| 3 | CI/CD Quality Gate | S | ACCEPTED | PARTIAL — goal-ci-check.md + `--json` flag. Missing: exit codes |
-| 4 | GitHub Output | S | ACCEPTED | NOT STARTED |
-| 5 | Comparison Report | M | ACCEPTED | NOT STARTED |
+| 3 | CI/CD Quality Gate | S | ACCEPTED | DONE — goal-ci-check.md + `--json` flag + exit codes (0/1/2) |
+| 4 | GitHub Output | S | ACCEPTED | DONE — `--github-output` flag, `gh issue create` + `gh pr comment`, pre-flight auth |
+| 5 | Comparison Report | M | ACCEPTED | DONE — `compare` command, sequential runs, deterministic scorecard diff |
 | 6 | Run Metrics + Cost | S | ACCEPTED | DONE — model-pricing.json, per-model breakdown |
 | 7 | Graceful Degradation | S | ACCEPTED | DONE — partial output on error, debug log dump |
-| 8 | Budget Extension Prompt | S | ACCEPTED | PARTIAL — budget nudges at 15/5 remaining. Missing: interactive prompt |
+| 8 | Budget Extension Prompt | S | ACCEPTED | DONE — interactive Y/N prompt at exhaustion, auto-assemble in CI |
 
 ## Accepted Scope (added to this plan)
 - Interactive/verbose output mode (--interactive flag)
