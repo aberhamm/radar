@@ -20,6 +20,7 @@ import { buildFullExport, serializeExport } from '../output/json.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setMaxListeners } from 'node:events';
 
 // Load model pricing
 interface ModelPricing {
@@ -108,6 +109,8 @@ export interface RunResult {
  * 4. After agent.prompt() returns, assemble output from captured sections
  */
 export async function runAgent(config: RunnerConfig): Promise<RunResult> {
+  // Pi's Agent adds abort listeners per tool call; raise the limit to avoid warnings
+  setMaxListeners(100);
   const startedAt = new Date();
 
   const toolCallBudget = config.toolCallBudget ?? 35;
@@ -355,7 +358,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       thinkingLevel: 'off',
       tools,
     },
-    toolExecution: 'sequential',
+    toolExecution: 'parallel',
     transformContext,
     onPayload,
     ...(apiKey ? { getApiKey: async () => apiKey } : {}),

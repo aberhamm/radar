@@ -118,4 +118,28 @@ describe('normalizePathArgs', () => {
     const result = normalizePathArgs({ paths: ['/src/a.ts', '/b.ts'] });
     expect(result.paths).toEqual(['src/a.ts', 'b.ts']);
   });
+
+  it('strips repo root prefix from path', () => {
+    const result = normalizePathArgs(
+      { path: 'C:\\_projects\\my-repo\\src\\components' },
+      'C:\\_projects\\my-repo',
+    );
+    expect(result.path).toBe('src/components');
+  });
+
+  it('strips repo root prefix from paths array', () => {
+    const result = normalizePathArgs(
+      { paths: ['C:\\_projects\\my-repo\\src\\a.ts', 'C:\\_projects\\my-repo\\b.ts'] },
+      'C:\\_projects\\my-repo',
+    );
+    expect(result.paths).toEqual(['src/a.ts', 'b.ts']);
+  });
+
+  it('handles forward-slash repo root prefix', () => {
+    const result = normalizePathArgs(
+      { path: '/home/user/repo/src/file.ts' },
+      '/home/user/repo',
+    );
+    expect(result.path).toBe('src/file.ts');
+  });
 });

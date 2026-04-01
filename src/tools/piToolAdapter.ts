@@ -42,14 +42,24 @@ export interface AssembledSections {
 /**
  * Normalize path arguments from the LLM.
  * The LLM sometimes passes absolute paths like "/" or "/src" instead of
- * relative paths. Strip leading slashes so path.resolve(repoRoot, p)
+ * relative paths, or full filesystem paths like "C:\projects\repo\src".
+ * Strip the repo root prefix and leading slashes so path.resolve(repoRoot, p)
  * stays within the repo.
  */
-export function normalizePathArgs(args: Record<string, unknown>): Record<string, unknown> {
+export function normalizePathArgs(args: Record<string, unknown>, repoRoot?: string): Record<string, unknown> {
   const PATH_KEYS = ['path', 'repoPath'];
   for (const key of PATH_KEYS) {
     if (typeof args[key] === 'string') {
-      let p = (args[key] as string).replace(/^[/\\]+/, '');
+      let p = args[key] as string;
+      // Strip repo root prefix (LLM sometimes sends full absolute paths)
+      if (repoRoot) {
+        const normalized = repoRoot.replace(/\\/g, '/');
+        p = p.replace(/\\/g, '/');
+        if (p.startsWith(normalized)) {
+          p = p.slice(normalized.length);
+        }
+      }
+      p = p.replace(/^[/\\]+/, '');
       if (p === '.' || p === '') p = '.';
       args[key] = p;
     }
@@ -66,7 +76,14 @@ export function normalizePathArgs(args: Record<string, unknown>): Record<string,
     }
   }
   if (Array.isArray(args['paths'])) {
-    args['paths'] = (args['paths'] as string[]).map((p) => p.replace(/^[/\\]+/, '') || '.');
+    const rootNorm = repoRoot?.replace(/\\/g, '/');
+    args['paths'] = (args['paths'] as string[]).map((p) => {
+      if (rootNorm) {
+        p = p.replace(/\\/g, '/');
+        if (p.startsWith(rootNorm)) p = p.slice(rootNorm.length);
+      }
+      return p.replace(/^[/\\]+/, '') || '.';
+    });
   }
   return args;
 }
@@ -112,7 +129,7 @@ export function buildPiTools(
 
   /** Normalize args and cast for tool implementations. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const norm = (params: unknown): any => normalizePathArgs({ ...(params as Record<string, unknown>) });
+  const norm = (params: unknown): any => normalizePathArgs({ ...(params as Record<string, unknown>) }, repoRoot());
 
   const tools: AgentTool[] = [
     // --- Repo tools ---
