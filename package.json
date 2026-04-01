@@ -19,7 +19,8 @@
     "test:e2e": "vitest run test/e2e/ --timeout 60000",
     "test:watch": "vitest",
     "spike:portkey": "tsx scripts/portkey-verify.ts",
-    "spike:pi": "tsx scripts/pi-verify.ts"
+    "spike:pi": "tsx scripts/pi-verify.ts",
+    "dashboard:dev": "cd dashboard && next dev --port 3000"
   },
   "keywords": [
     "agent",
