@@ -12,6 +12,15 @@ describe('checkGitignore', () => {
     expect(envResult?.ignored).toBe(true);
   });
 
+  it('matches wildcard patterns in .gitignore', async () => {
+    // The project root .gitignore has *.log and *.tsbuildinfo
+    const rootResult = await checkGitignore(path.resolve('.'), { patterns: ['debug.log', 'tsconfig.tsbuildinfo'] });
+    if (rootResult.exists) {
+      const logResult = rootResult.results.find((r) => r.pattern === 'debug.log');
+      expect(logResult?.ignored).toBe(true);
+    }
+  });
+
   it('returns exists: false when no .gitignore', async () => {
     const result = await checkGitignore(path.resolve('test/fixtures'), { patterns: ['.env'] });
     expect(result.exists).toBe(false);

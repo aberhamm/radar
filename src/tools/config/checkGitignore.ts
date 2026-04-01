@@ -1,6 +1,37 @@
 import type { CheckGitignoreInput, CheckGitignoreOutput } from '../../types/tools.js';
 import { resolveAndRead, isResolveError } from '../utils/resolveAndRead.js';
 
+/**
+ * Check if a pattern is matched by any gitignore line.
+ * Handles: exact match, trailing slash, leading slash, wildcard (*)
+ * Does NOT handle full .gitignore spec (negation, **) — good enough for audit purposes.
+ */
+function isIgnored(pattern: string, gitignoreLines: string[]): boolean {
+  for (const line of gitignoreLines) {
+    // Exact match
+    if (line === pattern || line === pattern + '/') return true;
+
+    // Strip leading slash for comparison (anchoring)
+    const normalizedLine = line.replace(/^\//, '').replace(/\/$/, '');
+    const normalizedPattern = pattern.replace(/^\//, '').replace(/\/$/, '');
+
+    if (normalizedLine === normalizedPattern) return true;
+
+    // Simple wildcard matching: convert gitignore glob to regex
+    if (line.includes('*')) {
+      const regexStr = '^' + normalizedLine
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')  // escape regex chars (except *)
+        .replace(/\*/g, '.*') + '$';
+      try {
+        if (new RegExp(regexStr).test(normalizedPattern)) return true;
+      } catch {
+        // Invalid regex — skip
+      }
+    }
+  }
+  return false;
+}
+
 export async function checkGitignore(
   repoRoot: string,
   input: CheckGitignoreInput,
@@ -22,7 +53,7 @@ export async function checkGitignore(
   return {
     results: input.patterns.map((pattern) => ({
       pattern,
-      ignored: lines.some((line) => line === pattern || line === pattern + '/'),
+      ignored: isIgnored(pattern, lines),
     })),
     exists: true,
   };
