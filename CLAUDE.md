@@ -14,7 +14,7 @@ Follow the phased build order in section 15 of the spec exactly:
 
 1. **Phase 1: Tools** — Implement all deterministic tools first (repo, search, config parsing, dependencies, analysis, web). Each tool is a standalone function with typed inputs and outputs. Unit test each tool against fixture repos before moving on.
 2. **Phase 2: Rules + references** — Write the consulting rule markdown files and reference knowledge base files. Implement the rule loader and system prompt assembler.
-3. **Phase 3: Agent integration** — Wire tools into DirectLoopRunner, implement goal prompts, provider abstraction, output assembler, scorecard computation, and renderers.
+3. **Phase 3: Agent integration** — Wire tools into Pi Agent, implement goal prompts, output assembler, scorecard computation, and renderers.
 4. **Phase 4: CLI + polish** — Build the CLI, investigation log renderer, and run end-to-end against target repos.
 
 Do not skip ahead. Each phase depends on the previous one being solid.
@@ -22,7 +22,7 @@ Do not skip ahead. Each phase depends on the previous one being solid.
 ## Key architectural principles
 
 - **Tools are deterministic.** They return facts, never call an LLM, never reason. They are pure functions with typed inputs and outputs.
-- **Orchestration is agentic.** The agent (via DirectLoopRunner) decides which tools to call and in what order. There is no hardcoded pipeline.
+- **Orchestration is agentic.** The agent (via Pi's `Agent` class) decides which tools to call and in what order. There is no hardcoded pipeline.
 - **Rules are plain English markdown.** They go in `src/rules/` and are loaded at runtime. They are not code.
 - **References are static knowledge files.** They go in `src/references/` and are loaded selectively by the agent.
 - **Outputs follow structured schemas.** The output assembler enforces the schema; the agent writes the narrative content.
@@ -33,8 +33,8 @@ Do not skip ahead. Each phase depends on the previous one being solid.
 - Node.js 20+
 - pnpm (package manager)
 - Vitest 3.x (unit + e2e testing)
-- DirectLoopRunner (manual tool-calling loop — Pi not yet available as npm package, see `docs/pi-api-notes.md`)
-- Portkey AI gateway (`portkey-ai` npm package) → Amazon Bedrock
+- Pi Agent (`@mariozechner/pi-agent-core` + `@mariozechner/pi-ai` v0.64.0) — agent loop, tool calling, event streaming
+- Portkey AI gateway (via Pi's `openai-completions` Model with custom `baseUrl` + `headers`) → Amazon Bedrock
 - Provider-agnostic model config: `AGENT_MODEL` (main loop) and `FAST_MODEL` (lightweight tasks) in `.env`
 
 ## Provider setup
@@ -82,7 +82,7 @@ Framework: Vitest (unit and e2e)
 - Do not inline prompt templates as strings in code. They are loaded from files.
 - Do not call the LLM from inside tools. Tools are deterministic.
 - Do not dump all reference files into context at once. The agent loads them selectively.
-- Do not use Anthropic SDK directly. Use the Portkey SDK (`portkey-ai`). It provides the same OpenAI-compatible interface but routes through our gateway to Bedrock.
+- Do not use Anthropic SDK or Portkey SDK directly. Pi's `openai-completions` provider handles HTTP to Portkey gateway. Model config is in `src/config/piModel.ts`.
 - Do not hardcode AWS credentials anywhere. They live in `.env`.
 - Do not reference specific model names (Sonnet, Haiku) in code. Use role-based names (`agent`, `fast`) from `src/config/models.ts`.
 

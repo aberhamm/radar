@@ -1,27 +1,57 @@
-# Chunk 0 Spike Results
+# Pi + Portkey Integration Notes
 
-Date: 2026-03-31
+Date: 2026-04-01 (updated from 2026-03-31 spike)
 
-## Pi API Spike
+## Pi Agent Integration
 
-**Result: Pi not available.**
+**Result: Pi IS available and integrated.**
 
-Neither `@anthropic-ai/pi` nor `pi-agent` are published npm packages. Pi is not yet publicly available for tool registration or agent loop management.
+The March 31 spike searched for `@anthropic-ai/pi` and `pi-agent` (wrong packages). The correct packages are:
+- `@mariozechner/pi-agent-core` (v0.64.0)
+- `@mariozechner/pi-ai` (v0.64.0)
 
-**Decision: Use DirectLoopRunner.** A manual tool-calling loop via Portkey's OpenAI-compatible chat completions API. We control the loop, which means all 8 CEO expansion features work natively:
+Published at https://github.com/badlogic/pi-mono/
 
-| Feature | DirectLoopRunner support |
-|---------|------------------------|
-| Interactive/verbose mode | Emit event per loop iteration |
-| Multi-provider | provider.chat() in the loop |
-| CI/CD goal type | Different goal prompt + budget |
-| GitHub hook | Post-run, independent of runner |
-| Comparison report | Run loop twice, different repos |
-| Run metrics | Track modelUsage per iteration |
-| Graceful degradation | try/catch around each iteration |
-| Budget extension | Check budget before each iteration |
+### Architecture
 
-Pi can be revisited when it becomes publicly available. The abstract runner interface (`AgentRunner`) will support both `DirectLoopRunner` and a future `PiRunner`.
+Pi's `Agent` class replaces the hand-rolled `DirectLoopRunner`. Key integration points:
+
+| Component | Implementation |
+|-----------|---------------|
+| Model config | `src/config/piModel.ts` — builds `Model<'openai-completions'>` from env vars |
+| Tool adapter | `src/tools/piToolAdapter.ts` — wraps 18 tools + assemble_output as Pi `AgentTool[]` |
+| Stub testing | `src/providers/piStubAdapter.ts` — wraps StubProvider as Pi `streamFn` |
+| Runner | `src/agent/runner.ts` — creates Pi Agent, uses `beforeToolCall`/`afterToolCall` hooks |
+
+### Key Technical Details
+
+**Model config for Portkey**: Pi's `openai-completions` provider sends API key as `Authorization: Bearer` header. Portkey needs this. Solution: pass `getApiKey: async () => apiKey` to Agent constructor.
+
+```typescript
+const piModel: Model<'openai-completions'> = {
+  id: modelId,
+  api: 'openai-completions',
+  provider: 'portkey',
+  baseUrl,
+  headers: {
+    'x-portkey-api-key': apiKey,
+    'x-portkey-provider': provider,
+  },
+  compat: {
+    supportsDeveloperRole: false,
+    supportsReasoningEffort: false,
+    supportsStore: false,
+    maxTokensField: 'max_tokens',
+  },
+  // ...
+};
+```
+
+**assemble_output handling**: Executes as a normal AgentTool (stores sections in closure ref), then `afterToolCall` calls `agent.abort()` to stop the loop.
+
+**Budget enforcement**: `beforeToolCall` checks tool call count and blocks when exhausted (optionally extending via `onBudgetExhausted` callback). `afterToolCall` injects steering messages at 15 and 5 remaining calls.
+
+**Stub testing**: Pi's documented `streamFn` constructor option injects a custom stream function. `createStubStreamFn(stub)` converts StubProvider's scripted responses to Pi's `AssistantMessageEventStream`.
 
 ## Portkey + Bedrock Verification
 
@@ -31,8 +61,7 @@ Pi can be revisited when it becomes publicly available. The abstract runner inte
 
 - **Gateway**: `portkeygateway.perficient.com/v1`
 - **Provider routing**: `x-portkey-provider: @aws-bedrock-use2` header
-- **Auth**: `PORTKEY_API_KEY` (no virtual key needed)
-- **SDK**: `portkey-ai` npm package, uses `baseURL` + `provider` constructor options
+- **Auth**: `PORTKEY_API_KEY` passed via Pi's `getApiKey` callback (Bearer token)
 
 ### Model IDs (verified working)
 
@@ -41,23 +70,9 @@ Pi can be revisited when it becomes publicly available. The abstract runner inte
 | Sonnet 4.6 | `us.anthropic.claude-sonnet-4-6` | Main agent (investigation loop, reasoning, tool selection) |
 | Haiku 4.5 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Lightweight tasks (file triage, narrative generation, finding dedup) |
 
-### Tool calling
-
-Works. The model returns `tool_use` blocks when tools are provided. Verified with a simple function definition.
-
-### Finish reasons (Bedrock via Portkey)
-
-Bedrock returns different finish reason values than OpenAI:
-- `end_turn` (not `stop`) — normal completion
-- `tool_use` (not `tool_calls`) — model wants to call a tool
-
-The `ChatCompletionResponse.finishReason` type has been updated to include both OpenAI and Bedrock variants.
-
 ### Token usage
 
-Standard `prompt_tokens` and `completion_tokens` are returned in the usage object.
-
-**Cache tokens: NOT surfaced.** `cache_read_input_tokens` and `cache_creation_input_tokens` are not present in the Portkey response. `RunMetrics.cachedTokens` will default to 0.
+Standard `prompt_tokens` and `completion_tokens` are returned. **Cache tokens: NOT surfaced** by Portkey. `cachedTokens` defaults to 0.
 
 ### .env configuration
 
@@ -65,14 +80,17 @@ Standard `prompt_tokens` and `completion_tokens` are returned in the usage objec
 PORTKEY_API_KEY=<key>
 PORTKEY_BASE_URL=https://portkeygateway.perficient.com/v1
 PORTKEY_PROVIDER=@aws-bedrock-use2
-PROVIDER_TYPE=portkey
+AGENT_MODEL=us.anthropic.claude-sonnet-4-6
+FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
-## Chunk 0 checklist status
+## Verification checklist
 
-- [x] Pi import paths and tool registration — N/A, Pi unavailable, using DirectLoopRunner
-- [x] Portkey Bedrock model ID verification — Sonnet 4.6 + Haiku 4.5 confirmed
-- [x] Pi agent loop and termination behavior — N/A, using DirectLoopRunner
-- [x] Does Portkey surface Bedrock cache token fields? — **No.** cachedTokens defaults to 0
-- [x] Can Pi agent loop be interrupted mid-execution? — N/A, DirectLoopRunner handles this natively
-- [x] Does Pi support tool call event callbacks? — N/A, DirectLoopRunner handles this natively
+- [x] Pi Agent + Portkey headers work (`scripts/pi-verify.ts`)
+- [x] Tool calling works through Pi's AgentTool format
+- [x] Events stream correctly (agent_start, tool_execution_*, agent_end)
+- [x] Token usage is returned
+- [x] StubProvider works via Pi's streamFn for testing
+- [x] E2e test passes with Pi Agent (30 test files, 102 tests)
+- [x] Budget enforcement via beforeToolCall/afterToolCall hooks
+- [x] assemble_output captured via closure ref + agent.abort()

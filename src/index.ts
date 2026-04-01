@@ -4,11 +4,11 @@ import { Command } from 'commander';
 import path from 'node:path';
 import fs from 'node:fs';
 import readline from 'node:readline';
-import { createProvider } from './providers/factory.js';
 import { runAgent, type StepEvent, type RunResult } from './agent/runner.js';
 import { buildSystemPrompt, listRuleFiles, validateRules } from './agent/systemPrompt.js';
 import { buildGoalPrompt } from './agent/goalPrompts.js';
-import { getToolDefinitions } from './tools/registry.js';
+import { buildPiTools } from './tools/piToolAdapter.js';
+import type { AgentState } from './types/state.js';
 import { cloneRepo } from './tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from './tools/dependency/queryNpmVersions.js';
 import type { GoalType } from './types/state.js';
@@ -53,15 +53,19 @@ program
   .description('List registered tools')
   .option('--list', 'Show all tools')
   .action(() => {
-    const defs = getToolDefinitions();
-    console.log(`\nRegistered tools (${defs.length}):\n`);
-    for (const def of defs) {
-      const params = Object.keys(
-        (def.function.parameters as Record<string, unknown>).properties ?? {},
-      );
-      console.log(`  ${def.function.name}`);
-      console.log(`    ${def.function.description}`);
-      console.log(`    params: ${params.join(', ') || '(none)'}`);
+    // Use a minimal state just for tool introspection
+    const dummyState: AgentState = {
+      goal: 'onboarding', repo: { source: 'local', localPath: '.', name: 'introspection' },
+      resolvedVersions: {}, findings: [], filesRead: new Set(),
+      toolCallCount: 0, toolCallBudget: 0, webSearchCount: 0, webSearchBudget: 0,
+      urlFetchCount: 0, urlFetchBudget: 0, docTokensUsed: 0, docTokenBudget: 0,
+      fetchedDocs: [], investigationLog: [], modelUsage: new Map(),
+    };
+    const { tools } = buildPiTools(dummyState);
+    console.log(`\nRegistered tools (${tools.length}):\n`);
+    for (const tool of tools) {
+      console.log(`  ${tool.name}`);
+      console.log(`    ${tool.description}`);
       console.log('');
     }
   });
@@ -153,10 +157,6 @@ async function handleCompare(opts: {
     `  ${versionCount} packages resolved${npmResult.fromCache ? ` (cached, ${npmResult.cacheAge})` : ''}`,
   );
 
-  // Create provider
-  const provider = createProvider();
-  console.log(`Provider: ${provider.name}\n`);
-
   const results: Array<{ repoInput: string; result?: RunResult; repoName: string; error?: string }> = [];
 
   // Run agent sequentially on each repo
@@ -193,7 +193,6 @@ async function handleCompare(opts: {
       console.log(`Starting investigation (goal: ${goal}, budget: ${budget})...\n`);
 
       const result = await runAgent({
-        provider,
         repoPath,
         repoName,
         repoSource,
@@ -384,7 +383,7 @@ async function handleAnalyze(opts: {
     console.log(`Output:   ${outputDir}`);
     console.log(`\nSystem prompt (${buildSystemPrompt(goal, platform).length} chars)`);
     console.log(`Goal prompt (${buildGoalPrompt(goal, repoPath, budget, 5).length} chars)`);
-    console.log(`Tools: ${getToolDefinitions().length} registered`);
+    console.log(`Tools: 20 registered`);
     console.log(`Rules: ${listRuleFiles().length} files`);
     const missing = validateRules(goal, platform);
     if (missing.length > 0) {
@@ -403,10 +402,6 @@ async function handleAnalyze(opts: {
     `  ${versionCount} packages resolved${npmResult.fromCache ? ` (cached, ${npmResult.cacheAge})` : ''}`,
   );
 
-  // Create provider
-  const provider = createProvider();
-  console.log(`Provider: ${provider.name}`);
-
   // Run agent
   console.log(`\nStarting investigation (goal: ${goal}, budget: ${budget})...\n`);
 
@@ -424,7 +419,6 @@ async function handleAnalyze(opts: {
     : undefined;
 
   const result = await runAgent({
-    provider,
     repoPath,
     repoName,
     repoSource,

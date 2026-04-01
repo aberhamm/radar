@@ -1,14 +1,21 @@
-import type { ModelProvider, ChatMessage, ToolDefinition, ToolCall } from '../types/provider.js';
-import type { AgentState, GoalType, ModelUsageEntry } from '../types/state.js';
+import { Agent } from '@mariozechner/pi-agent-core';
+import type {
+  AfterToolCallContext,
+  AfterToolCallResult,
+  BeforeToolCallContext,
+  BeforeToolCallResult,
+  AgentEvent,
+} from '@mariozechner/pi-agent-core';
+import type { Model } from '@mariozechner/pi-ai';
+import type { AgentState, GoalType } from '../types/state.js';
 import type { Scorecard, RunMetrics } from '../types/output.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { buildGoalPrompt } from './goalPrompts.js';
-import { getToolDefinitions, executeTool } from '../tools/registry.js';
+import { buildPiTools, type AssembledSections } from '../tools/piToolAdapter.js';
+import { buildPiModel } from '../config/piModel.js';
 import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
 import { buildFullExport, serializeExport } from '../output/json.js';
-import { loadModelConfig } from '../config/models.js';
-import { stripRepoPrefix } from '../tools/utils/stripRepoPrefix.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +43,6 @@ try {
 }
 
 export interface RunnerConfig {
-  provider: ModelProvider;
   repoPath: string;
   repoName: string;
   repoSource: 'github' | 'local';
@@ -58,6 +64,8 @@ export interface RunnerConfig {
    * If not provided, auto-assembles (CI-safe default).
    */
   onBudgetExhausted?: (state: { findings: number; toolCalls: number; budget: number }) => Promise<boolean>;
+  /** Override Pi model (e.g. faux provider for testing). If omitted, builds from env vars. */
+  model?: Model<any>;
 }
 
 export interface StepEvent {
@@ -89,18 +97,15 @@ export interface RunResult {
 }
 
 /**
- * DirectLoopRunner — the core agent loop.
+ * Pi Agent Runner — delegates the investigation loop to Pi's Agent class.
  *
- * Observe → Reason → Act cycle:
- * 1. Send messages + tools to LLM
- * 2. If LLM returns tool_calls: execute tools, append results, loop
- * 3. If LLM returns text (end_turn/stop): reasoning or assemble_output signal
- * 4. If assemble_output was called: compute scorecard, render brief, export JSON
- * 5. Terminate when: output assembled, budget exhausted, or max retries exceeded
+ * 1. Build Pi Model (from env vars or streamFn for tests)
+ * 2. Wrap tools via piToolAdapter
+ * 3. Use beforeToolCall/afterToolCall hooks for budget enforcement
+ * 4. After agent.prompt() returns, assemble output from captured sections
  */
 export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const startedAt = new Date();
-  const modelConfig = loadModelConfig();
 
   const toolCallBudget = config.toolCallBudget ?? 50;
   const webSearchBudget = config.webSearchBudget ?? 5;
@@ -136,282 +141,214 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // Detect platform if not provided
   const platform = config.platform ?? 'unknown';
 
-  // Build system prompt from rules
+  // Build prompts
   const systemPrompt = buildSystemPrompt(config.goal, platform);
+  const goalPrompt = buildGoalPrompt(config.goal, config.repoPath, toolCallBudget, webSearchBudget);
 
-  // Build goal prompt
-  const goalPrompt = buildGoalPrompt(
-    config.goal,
-    config.repoPath,
-    toolCallBudget,
-    webSearchBudget,
-  );
+  // Build Pi tools from registry
+  const { tools, assembledRef } = buildPiTools(state);
 
-  // Initialize conversation
-  const tools: ToolDefinition[] = getToolDefinitions();
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: goalPrompt },
-  ];
+  // Build Pi model (or use provided override, e.g. faux provider for testing)
+  let apiKey: string | undefined;
+  let piModel: Model<any>;
+  if (config.model) {
+    piModel = config.model;
+  } else {
+    const built = buildPiModel();
+    piModel = built.model;
+    apiKey = built.apiKey;
+  }
 
   let stepCount = 0;
-  let assembleOutputSections: Record<string, string> | null = null;
-  let consecutiveEmptyResponses = 0;
-  const MAX_EMPTY_RESPONSES = 2;
-
-  let terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error' = 'budget_exhausted';
-  let errorDetail: string | undefined;
-
-  // Agent loop — currentBudget is mutable for budget extension
   let currentBudget = toolCallBudget;
-  state.toolCallBudget = currentBudget;
-  let agentDone = false;
+  let terminationReason: RunResult['terminationReason'] = 'budget_exhausted';
+  let errorDetail: string | undefined;
+  let budgetWarning15Sent = false;
+  let budgetWarning5Sent = false;
 
-  try {
-  // Outer loop handles budget extension; inner loop is the main agent cycle
-  while (!agentDone) {
-  while (state.toolCallCount < currentBudget) {
-    stepCount++;
+  // beforeToolCall: budget enforcement
+  const beforeToolCall = async (
+    ctx: BeforeToolCallContext,
+    _signal?: AbortSignal,
+  ): Promise<BeforeToolCallResult | undefined> => {
+    const toolName = ctx.toolCall.name;
 
-    // Call LLM — use higher token limit when we're near budget (likely assembling output)
-    const remaining = currentBudget - state.toolCallCount;
-    const isNearEnd = remaining <= 10;
-    const response = await config.provider.chat(messages, {
-      tools,
-      model: modelConfig.agent,
-      maxTokens: isNearEnd ? 16384 : 8192,
-    });
+    // Web search budget
+    if (toolName === 'web_search' && state.webSearchCount >= webSearchBudget) {
+      return { block: true, reason: 'Web search budget exhausted.' };
+    }
+    // URL fetch budget
+    if (toolName === 'fetch_url' && state.urlFetchCount >= urlFetchBudget) {
+      return { block: true, reason: 'URL fetch budget exhausted.' };
+    }
 
-    // Track usage
-    trackUsage(state, response.model, {
-      inputTokens: response.usage.promptTokens,
-      outputTokens: response.usage.completionTokens,
-      cachedTokens: response.usage.cachedTokens ?? 0,
-    });
-
-    const finishReason = response.finishReason;
-
-    // Case 1: Tool calls — check for tool calls presence regardless of finish reason,
-    // as some providers return 'stop' even when tool calls are present
-    if (response.toolCalls.length > 0) {
-      consecutiveEmptyResponses = 0;
-
-      // Append assistant message with tool calls
-      messages.push({
-        role: 'assistant',
-        content: response.content ?? '',
-        tool_calls: response.toolCalls,
-      });
-
-      // Execute each tool call
-      for (const toolCall of response.toolCalls) {
-        state.toolCallCount++;
-
-        // Check budget enforcement
-        if (toolCall.function.name === 'web_search' && state.webSearchCount >= webSearchBudget) {
-          const result = JSON.stringify({ error: 'Web search budget exhausted.' });
-          messages.push({ role: 'tool', content: result, tool_call_id: toolCall.id });
-          continue;
-        }
-        if (toolCall.function.name === 'fetch_url' && state.urlFetchCount >= urlFetchBudget) {
-          const result = JSON.stringify({ error: 'URL fetch budget exhausted.' });
-          messages.push({ role: 'tool', content: result, tool_call_id: toolCall.id });
-          continue;
-        }
-
-        // Check for assemble_output
-        if (toolCall.function.name === 'assemble_output') {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            // The LLM may pass sections directly or nested under 'sections'
-            if (args.sections && typeof args.sections === 'object') {
-              assembleOutputSections = args.sections;
-            } else if (typeof args === 'object') {
-              // Check if sections are at the top level (no wrapper)
-              const sectionKeys = Object.keys(args).filter(k =>
-                k !== 'sections' && typeof args[k] === 'string' && args[k].length > 20
-              );
-              if (sectionKeys.length > 0) {
-                assembleOutputSections = {};
-                for (const k of sectionKeys) {
-                  assembleOutputSections[k] = args[k];
-                }
-              } else {
-                assembleOutputSections = {};
-              }
-            } else {
-              assembleOutputSections = {};
-            }
-          } catch {
-            assembleOutputSections = {};
-          }
+    // Tool call budget
+    if (state.toolCallCount >= currentBudget) {
+      // Budget exhausted — ask whether to extend
+      if (config.onBudgetExhausted) {
+        const shouldExtend = await config.onBudgetExhausted({
+          findings: state.findings.length,
+          toolCalls: state.toolCallCount,
+          budget: currentBudget,
+        });
+        if (shouldExtend) {
+          currentBudget += 50;
+          state.toolCallBudget = currentBudget;
           config.onStep?.({
             step: stepCount,
-            action: 'assemble_output',
-            type: 'assemble_output',
-            result: `${Object.keys(assembleOutputSections ?? {}).length} sections provided`,
-            ...(config.verbose ? {
-              fullResult: JSON.stringify(Object.keys(assembleOutputSections ?? {})),
-              args: toolCall.function.arguments.slice(0, 500),
-            } : {}),
+            action: 'budget_extended',
+            type: 'budget_warning',
+            result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
           });
-          messages.push({
-            role: 'tool',
-            content: JSON.stringify({ status: 'acknowledged', message: 'Output assembly triggered.' }),
-            tool_call_id: toolCall.id,
-          });
-          continue;
+          // Allow this tool call to proceed
+          return undefined;
         }
-
-        // Execute the tool
-        const result = await executeTool(toolCall, state);
-
-        // Log investigation step — strip repo root from results to avoid leaking local paths
-        const reasoning = response.content ?? '';
-        const cleanResult = result.replaceAll(config.repoPath, '');
-        state.investigationLog.push({
-          step: stepCount,
-          action: toolCall.function.name,
-          reasoning: reasoning.slice(0, 200),
-          result: cleanResult.slice(0, 200),
-        });
-
-        const isFinding = toolCall.function.name === 'record_finding';
-        config.onStep?.({
-          step: stepCount,
-          action: toolCall.function.name,
-          reasoning: reasoning.slice(0, 100),
-          result: result.slice(0, 100),
-          type: isFinding ? 'finding' : 'tool_call',
-          ...(config.verbose ? {
-            fullReasoning: reasoning,
-            fullResult: result,
-            args: toolCall.function.arguments,
-          } : {}),
-        });
-
-        messages.push({ role: 'tool', content: result, tool_call_id: toolCall.id });
       }
-
-      // If assemble_output was called, break out of the loop
-      if (assembleOutputSections !== null) {
-        break;
-      }
-
-      // Budget warning: nudge the agent to wrap up when near the limit
-      const remaining = currentBudget - state.toolCallCount;
-      if (remaining <= 5 && remaining > 0 && assembleOutputSections === null) {
-        messages.push({
-          role: 'user',
-          content: `🛑 CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all 12 onboarding sections. Use your investigation so far — do not investigate further.`,
-        });
-      } else if (remaining <= 15 && remaining > 0 && assembleOutputSections === null) {
-        messages.push({
-          role: 'user',
-          content: `⚠️ You have ${remaining} tool calls remaining out of ${currentBudget}. Stop investigating. Record your findings now with record_finding, then call assemble_output with written content for every required section of the brief.`,
-        });
-      }
-
-      continue;
+      // Decline or no callback — block
+      return { block: true, reason: `Tool call budget exhausted (${currentBudget} calls used). Call assemble_output now.` };
     }
 
-    // Case 2: Text response (end_turn/stop) — agent is thinking or done
-    if (response.content && (finishReason === 'stop' || finishReason === 'end_turn')) {
-      consecutiveEmptyResponses = 0;
+    return undefined;
+  };
 
-      if (config.verbose) {
-        config.onStep?.({
-          step: stepCount,
-          action: 'reasoning',
-          type: 'text_response',
-          fullReasoning: response.content,
-          reasoning: response.content.slice(0, 100),
-        });
-      }
+  // afterToolCall: counter tracking, budget warnings, assemble_output abort
+  const afterToolCall = async (
+    ctx: AfterToolCallContext,
+    _signal?: AbortSignal,
+  ): Promise<AfterToolCallResult | undefined> => {
+    const toolName = ctx.toolCall.name;
+    state.toolCallCount++;
+    stepCount++;
 
-      // Append the assistant's reasoning as a message
-      messages.push({ role: 'assistant', content: response.content });
-
-      // Nudge the agent to continue if it hasn't assembled output yet
-      if (assembleOutputSections === null) {
-        messages.push({
-          role: 'user',
-          content:
-            'Continue your investigation. When you have enough findings, call the assemble_output tool.',
-        });
-      }
-      continue;
-    }
-
-    // Case 3: Empty or malformed response
-    consecutiveEmptyResponses++;
-    if (consecutiveEmptyResponses >= MAX_EMPTY_RESPONSES) {
-      // Force termination — agent is stuck
-      terminationReason = 'stuck';
-      agentDone = true;
-      break;
-    }
-
-    // Retry with a nudge
-    messages.push({
-      role: 'user',
-      content: 'Please continue investigating or call assemble_output if ready.',
+    // Log investigation step
+    const reasoning = '';
+    const resultText = ctx.result?.content?.[0]?.type === 'text'
+      ? (ctx.result.content[0] as { type: 'text'; text: string }).text
+      : '';
+    const cleanResult = resultText.replaceAll(config.repoPath, '');
+    state.investigationLog.push({
+      step: stepCount,
+      action: toolName,
+      reasoning: reasoning.slice(0, 200),
+      result: cleanResult.slice(0, 200),
     });
-  } // end inner while (tool call loop)
 
-  // Determine next action after inner loop exits
-  if (assembleOutputSections !== null) {
-    terminationReason = 'completed';
-    agentDone = true;
-  } else if (terminationReason === 'stuck') {
-    agentDone = true;
-  } else if (state.toolCallCount >= currentBudget && config.onBudgetExhausted) {
-    // Budget exhausted — ask whether to extend
-    const shouldExtend = await config.onBudgetExhausted({
-      findings: state.findings.length,
-      toolCalls: state.toolCallCount,
-      budget: currentBudget,
-    });
-    if (shouldExtend) {
-      currentBudget += 50;
-      state.toolCallBudget = currentBudget;
-      config.onStep?.({
-        step: stepCount,
-        action: 'budget_extended',
-        type: 'budget_warning',
-        result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
-      });
-      messages.push({
-        role: 'user',
-        content: `Budget extended by 50 to ${currentBudget} total tool calls. Continue your investigation and call assemble_output when ready.`,
-      });
-      // Loop back to inner while — currentBudget increased, so condition is true again
-    } else {
-      agentDone = true; // User declined extension
-    }
-  } else {
-    agentDone = true; // Budget exhausted, no callback
-  }
-  } // end outer while (!agentDone)
-
-  } catch (err) {
-    // Graceful degradation: produce partial output with whatever we have
-    terminationReason = 'error';
-    errorDetail = (err as Error).message;
+    // Emit step event
+    const isFinding = toolName === 'record_finding';
+    const isAssemble = toolName === 'assemble_output';
     config.onStep?.({
       step: stepCount,
-      action: 'error',
-      type: 'budget_warning',
-      result: `Agent error: ${errorDetail}. Producing partial output.`,
+      action: toolName,
+      reasoning: reasoning.slice(0, 100),
+      result: resultText.slice(0, 100),
+      type: isAssemble ? 'assemble_output' : isFinding ? 'finding' : 'tool_call',
+      ...(config.verbose ? {
+        fullReasoning: reasoning,
+        fullResult: resultText,
+        args: JSON.stringify(ctx.args),
+      } : {}),
     });
+
+    // If assemble_output was called, abort the agent loop
+    if (isAssemble && assembledRef.sections !== null) {
+      terminationReason = 'completed';
+      agent.abort();
+      return undefined;
+    }
+
+    // Budget warning steering messages
+    const remaining = currentBudget - state.toolCallCount;
+    if (remaining <= 5 && remaining > 0 && !budgetWarning5Sent && assembledRef.sections === null) {
+      budgetWarning5Sent = true;
+      agent.steer({
+        role: 'user',
+        content: `CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all 12 onboarding sections. Use your investigation so far — do not investigate further.`,
+        timestamp: Date.now(),
+      });
+    } else if (remaining <= 15 && remaining > 0 && !budgetWarning15Sent && assembledRef.sections === null) {
+      budgetWarning15Sent = true;
+      agent.steer({
+        role: 'user',
+        content: `You have ${remaining} tool calls remaining out of ${currentBudget}. Stop investigating. Record your findings now with record_finding, then call assemble_output with written content for every required section of the brief.`,
+        timestamp: Date.now(),
+      });
+    }
+
+    return undefined;
+  };
+
+  // Create Pi Agent
+  const agent = new Agent({
+    initialState: {
+      systemPrompt,
+      model: piModel,
+      thinkingLevel: 'off',
+      tools,
+    },
+    toolExecution: 'sequential',
+    ...(apiKey ? { getApiKey: async () => apiKey } : {}),
+    beforeToolCall,
+    afterToolCall,
+  });
+
+  // Subscribe to events for usage tracking
+  agent.subscribe((event: AgentEvent) => {
+    if (event.type === 'message_end' && event.message && 'role' in event.message && event.message.role === 'assistant') {
+      const msg = event.message;
+      trackUsage(state, msg.model, {
+        inputTokens: msg.usage.input,
+        outputTokens: msg.usage.output,
+        cachedTokens: msg.usage.cacheRead,
+      });
+    }
+  });
+
+  try {
+    // Run the agent
+    await agent.prompt(goalPrompt);
+
+    // If agent finished without calling assemble_output, try nudging
+    // (terminationReason may have been set to 'completed' by afterToolCall hook)
+    if (assembledRef.sections === null && (terminationReason as string) !== 'completed') {
+      // Retry with nudge (max 2)
+      for (let retry = 0; retry < 2; retry++) {
+        agent.followUp({
+          role: 'user',
+          content: 'You must call assemble_output now with written content for all required sections. Use your investigation findings to write the brief.',
+          timestamp: Date.now(),
+        });
+        await agent.continue();
+        if (assembledRef.sections !== null) {
+          terminationReason = 'completed';
+          break;
+        }
+      }
+      if (assembledRef.sections === null) {
+        terminationReason = 'stuck';
+      }
+    }
+  } catch (err) {
+    // Pi aborts throw — check if it was our intentional abort from assemble_output
+    if (terminationReason === 'completed') {
+      // Expected — assemble_output called agent.abort()
+    } else {
+      terminationReason = 'error';
+      errorDetail = (err as Error).message;
+      config.onStep?.({
+        step: stepCount,
+        action: 'error',
+        type: 'budget_warning',
+        result: `Agent error: ${errorDetail}. Producing partial output.`,
+      });
+    }
   }
 
   // Post-loop: assemble output (partial if error/stuck)
-  const sections = assembleOutputSections ?? {};
+  const sections = assembledRef.sections ?? {};
   const scorecard = computeScorecard(config.repoName, config.goal, state.findings);
 
   const completedAt = new Date();
-  const metrics = buildMetrics(state, startedAt, completedAt, modelConfig.agent);
+  const metrics = buildMetrics(state, startedAt, completedAt);
 
   const briefMarkdown = renderBrief(
     scorecard,
@@ -448,9 +385,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       `Findings: ${state.findings.length}`,
       `Steps: ${stepCount}`,
       `Sections: ${Object.keys(sections).length}`,
-      '',
-      '--- Message history (last 10) ---',
-      ...messages.slice(-10).map((m, i) => `[${i}] ${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(non-string)'}`),
     ].join('\n');
     fs.writeFileSync(debugPath, debugContent, 'utf-8');
     outputPaths.push(debugPath);
@@ -491,7 +425,6 @@ function buildMetrics(
   state: AgentState,
   startedAt: Date,
   completedAt: Date,
-  _agentModel: string,
 ): RunMetrics {
   const models: RunMetrics['models'] = {};
   for (const [modelId, usage] of state.modelUsage.entries()) {
