@@ -5,6 +5,7 @@ import type {
   BeforeToolCallContext,
   BeforeToolCallResult,
   AgentEvent,
+  AgentMessage,
 } from '@mariozechner/pi-agent-core';
 import type { Model } from '@mariozechner/pi-ai';
 import type { AgentState, GoalType } from '../types/state.js';
@@ -109,7 +110,7 @@ export interface RunResult {
 export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const startedAt = new Date();
 
-  const toolCallBudget = config.toolCallBudget ?? 50;
+  const toolCallBudget = config.toolCallBudget ?? 35;
   const webSearchBudget = config.webSearchBudget ?? 5;
   const urlFetchBudget = config.urlFetchBudget ?? 3;
   const docTokenBudget = config.docTokenBudget ?? 20_000;
@@ -168,7 +169,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let currentBudget = toolCallBudget;
   let terminationReason: RunResult['terminationReason'] = 'budget_exhausted';
   let errorDetail: string | undefined;
-  let budgetWarning15Sent = false;
+  const halfBudget = Math.floor(toolCallBudget / 2);
+  let budgetWarningHalfSent = false;
   let budgetWarning5Sent = false;
 
   // beforeToolCall: budget enforcement
@@ -270,8 +272,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         content: `CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all 12 onboarding sections. Use your investigation so far — do not investigate further.`,
         timestamp: Date.now(),
       });
-    } else if (remaining <= 15 && remaining > 0 && !budgetWarning15Sent && assembledRef.sections === null) {
-      budgetWarning15Sent = true;
+    } else if (remaining <= halfBudget && remaining > 0 && !budgetWarningHalfSent && assembledRef.sections === null) {
+      budgetWarningHalfSent = true;
       // Switch to fast model for the assembly/writing phase — cheaper, investigation is done
       if (piFastModel.id !== piModel.id) {
         agent.setModel(piFastModel);
@@ -284,12 +286,65 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
       agent.steer({
         role: 'user',
-        content: `You have ${remaining} tool calls remaining out of ${currentBudget}. Stop investigating. Record your findings now with record_finding, then call assemble_output with written content for every required section of the brief.`,
+        content: `You have ${remaining} tool calls remaining out of ${currentBudget}. Start wrapping up your investigation. Record your findings with record_finding, then call assemble_output with written content for every required section of the brief.`,
         timestamp: Date.now(),
       });
     }
 
     return undefined;
+  };
+
+  /**
+   * Context pruning: truncate tool result content in older messages to control
+   * conversation history size. Keep the most recent KEEP_RECENT messages intact
+   * (the agent needs recent results for reasoning). Older tool results get
+   * replaced with a short summary.
+   */
+  const KEEP_RECENT = 10; // messages to keep at full fidelity
+  const OLD_RESULT_MAX = 200; // chars to keep from old tool results
+
+  const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
+    if (messages.length <= KEEP_RECENT) return messages;
+    const cutoff = messages.length - KEEP_RECENT;
+    return messages.map((msg, i) => {
+      if (i >= cutoff) return msg; // recent — keep intact
+      if (!msg || typeof msg !== 'object' || !('role' in msg)) return msg;
+      if ((msg as { role: string }).role !== 'toolResult') return msg;
+      // Truncate old tool result content
+      const tr = msg as unknown as { role: string; content: { type: string; text?: string }[]; [k: string]: unknown };
+      return {
+        ...tr,
+        content: tr.content.map((c) => {
+          if (c.type === 'text' && c.text && c.text.length > OLD_RESULT_MAX) {
+            return { ...c, text: c.text.slice(0, OLD_RESULT_MAX) + '...[pruned]' };
+          }
+          return c;
+        }),
+      } as AgentMessage;
+    });
+  };
+
+  /**
+   * Prompt caching: inject cache_control breakpoints into the system prompt
+   * so the static prefix (system + tool defs) is cached across turns.
+   * Portkey forwards these annotations to Bedrock's Anthropic API.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onPayload = (payload: any) => {
+    if (!payload || typeof payload !== 'object') return undefined;
+    // Add cache_control to system prompt (OpenAI-compatible format)
+    if (Array.isArray(payload.messages) && payload.messages.length > 0) {
+      // For Anthropic via Portkey: add cache breakpoint to system message
+      if (typeof payload.system === 'string') {
+        payload.system = [{ type: 'text', text: payload.system, cache_control: { type: 'ephemeral' } }];
+      } else if (Array.isArray(payload.system) && payload.system.length > 0) {
+        const last = payload.system[payload.system.length - 1];
+        if (last && typeof last === 'object') {
+          last.cache_control = { type: 'ephemeral' };
+        }
+      }
+    }
+    return payload;
   };
 
   // Create Pi Agent
@@ -301,6 +356,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       tools,
     },
     toolExecution: 'sequential',
+    transformContext,
+    onPayload,
     ...(apiKey ? { getApiKey: async () => apiKey } : {}),
     beforeToolCall,
     afterToolCall,

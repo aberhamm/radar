@@ -71,10 +71,22 @@ export function normalizePathArgs(args: Record<string, unknown>): Record<string,
   return args;
 }
 
+/**
+ * Max characters for a single tool result. Prevents conversation history bloat
+ * from large grep/file results. 4000 chars ~= 1000 tokens.
+ */
+const MAX_RESULT_CHARS = 4000;
+
+/** Truncate a string to a max length, appending a notice if truncated. */
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max) + '\n...[truncated, ' + (text.length - max) + ' chars omitted]';
+}
+
 /** Wrap a tool result as Pi's AgentToolResult format. */
 function ok(result: unknown): AgentToolResult<unknown> {
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+    content: [{ type: 'text' as const, text: truncate(JSON.stringify(result), MAX_RESULT_CHARS) }],
     details: {},
   };
 }

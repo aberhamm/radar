@@ -53,7 +53,7 @@ AGENT_MODEL=us.anthropic.claude-sonnet-4-6
 FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
-Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles investigation, reasoning, and tool selection. `FAST_MODEL` handles file triage, narrative generation, and finding dedup. Swap to any provider's model IDs without code changes.
+Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles the investigation phase (reasoning, tool selection, evidence gathering). `FAST_MODEL` takes over at the budget midpoint for finding assembly and brief writing. Both models are built by `src/config/piModel.ts`. Swap to any provider's model IDs without code changes.
 
 Verified in Chunk 0 spike (`docs/pi-api-notes.md`):
 - Both models connect and respond via Portkey gateway
@@ -84,7 +84,7 @@ Framework: Vitest (unit and e2e)
 - Do not dump all reference files into context at once. The agent loads them selectively.
 - Do not use Anthropic SDK or Portkey SDK directly. Pi's `openai-completions` provider handles HTTP to Portkey gateway. Model config is in `src/config/piModel.ts`.
 - Do not hardcode AWS credentials anywhere. They live in `.env`.
-- Do not reference specific model names (Sonnet, Haiku) in code. Use role-based names (`agent`, `fast`) from `src/config/models.ts`.
+- Do not reference specific model names (Sonnet, Haiku) in code. Use role-based env vars (`AGENT_MODEL`, `FAST_MODEL`) via `src/config/piModel.ts`.
 
 ## gstack
 

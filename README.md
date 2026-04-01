@@ -45,7 +45,7 @@ npx tsx src/index.ts analyze [options]
 | `--repo <path>` | Repository local path or GitHub URL (required) | -- |
 | `--goal <type>` | Analysis goal (see [Goals](#goals)) | `onboarding` |
 | `--platform <name>` | Platform override: `sitecore`, `optimizely` | auto-detected |
-| `--budget <n>` | Tool call budget | `50` |
+| `--budget <n>` | Tool call budget | `35` |
 | `--output <dir>` | Output directory | `./output` |
 | `--verbose` | Show real-time agent reasoning and tool calls | off |
 | `--json` | Output summary as JSON (for CI integration) | off |
@@ -102,6 +102,8 @@ Output Assembler -> scorecard + brief + JSON export
 - **Rules** -- Plain English markdown files in `src/rules/` that shape the agent's priorities and quality standards. Editable by senior consultants without code changes.
 - **References** -- Static knowledge files in `src/references/` (platform best practices, known antipatterns, compatibility matrices) loaded selectively by the agent.
 - **Agent loop** -- Pi's `Agent` class handles tool dispatch, message threading, and loop control. `beforeToolCall`/`afterToolCall` hooks enforce budgets. The loop runs until `assemble_output` is called or the budget is spent.
+- **Dual-model** -- Investigation phase uses `AGENT_MODEL` (Sonnet, heavy reasoning). At the halfway budget mark, switches to `FAST_MODEL` (Haiku, cheaper) for finding assembly and brief writing via Pi's `setModel()`.
+- **Cost controls** -- Tool results capped at 4K chars, `transformContext` prunes old tool results to 200 chars, `onPayload` injects prompt cache breakpoints. Default budget is 35 calls.
 - **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
 - **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, and full JSON export.
 
@@ -150,10 +152,10 @@ FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 | `PORTKEY_BASE_URL` | Portkey gateway base URL |
 | `PORTKEY_PROVIDER` | Portkey provider routing header (e.g. `@aws-bedrock-use2`) |
 | `PROVIDER_TYPE` | Provider type (`portkey` for production) |
-| `AGENT_MODEL` | Model for investigation, reasoning, and tool selection |
-| `FAST_MODEL` | Model for file triage, narrative generation, and finding dedup |
+| `AGENT_MODEL` | Heavy model for investigation and reasoning (first half of budget) |
+| `FAST_MODEL` | Lightweight model for finding assembly and brief writing (second half) |
 
-Model IDs are provider-agnostic. Swap to any provider's model IDs without code changes.
+Model IDs are provider-agnostic. Swap to any provider's model IDs without code changes. Both models are built by `src/config/piModel.ts` and the runner switches between them at the budget midpoint.
 
 ## Output Files
 
@@ -244,8 +246,7 @@ src/
     brief.ts            Markdown brief renderer
     json.ts             Full JSON export builder
   config/
-    piModel.ts          Pi Model builder (env vars -> Model<'openai-completions'>)
-    models.ts           Role-based model config (agent, fast)
+    piModel.ts          Pi Model builder (env vars -> agent + fast Model<'openai-completions'>)
     model-pricing.json  Per-model token pricing for cost estimates
   types/
     state.ts            AgentState, Finding, GoalType, StackProfile

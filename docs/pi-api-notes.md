@@ -49,7 +49,11 @@ const piModel: Model<'openai-completions'> = {
 
 **assemble_output handling**: Executes as a normal AgentTool (stores sections in closure ref), then `afterToolCall` calls `agent.abort()` to stop the loop.
 
-**Budget enforcement**: `beforeToolCall` checks tool call count and blocks when exhausted (optionally extending via `onBudgetExhausted` callback). `afterToolCall` injects steering messages at 15 and 5 remaining calls.
+**Dual-model**: Investigation runs on `AGENT_MODEL` (heavy). At the budget midpoint, `afterToolCall` switches to `FAST_MODEL` (cheap) via `agent.setModel()` for finding assembly and brief writing.
+
+**Budget enforcement**: `beforeToolCall` checks tool call count and blocks when exhausted (optionally extending via `onBudgetExhausted` callback). `afterToolCall` injects steering messages at budget/2 and 5 remaining calls.
+
+**Cost controls**: Tool results capped at 4K chars in piToolAdapter. `transformContext` prunes old tool results to 200 chars (keeps last 10 messages intact). `onPayload` injects `cache_control: ephemeral` breakpoints on the system prompt for Anthropic prompt caching via Portkey.
 
 **Stub testing**: Pi's native `registerFauxProvider` + `fauxAssistantMessage`/`fauxToolCall` provide scripted LLM responses for e2e tests. No custom adapter needed.
 
@@ -67,8 +71,8 @@ const piModel: Model<'openai-completions'> = {
 
 | Model | Bedrock ID | Use |
 |-------|-----------|-----|
-| Sonnet 4.6 | `us.anthropic.claude-sonnet-4-6` | Main agent (investigation loop, reasoning, tool selection) |
-| Haiku 4.5 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Lightweight tasks (file triage, narrative generation, finding dedup) |
+| Sonnet 4.6 | `us.anthropic.claude-sonnet-4-6` | Investigation phase (first half of budget: reasoning, tool selection) |
+| Haiku 4.5 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Assembly phase (second half of budget: findings, brief writing) |
 
 ### Token usage
 
@@ -91,6 +95,8 @@ FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 - [x] Events stream correctly (agent_start, tool_execution_*, agent_end)
 - [x] Token usage is returned
 - [x] Faux provider works via Pi's native `registerFauxProvider` for testing
-- [x] E2e test passes with Pi Agent (30 test files, 104 tests)
+- [x] E2e test passes with Pi Agent (31 test files, 110 tests)
 - [x] Budget enforcement via beforeToolCall/afterToolCall hooks
 - [x] assemble_output captured via closure ref + agent.abort()
+- [x] Dual-model: Sonnet investigation -> Haiku assembly via setModel()
+- [x] Cost controls: result capping, context pruning, prompt caching
