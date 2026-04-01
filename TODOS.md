@@ -39,3 +39,4 @@ Demo talking points: 10 findings in ~4 min, ~$1-2/run (dual-model), 35 tool call
 - [ ] **JSON export** — Full agent state export for programmatic consumption.
 - [ ] **Prompt injection defense** — Sanitize tool outputs before passing to LLM context. Strip instruction-like patterns from code comments and markdown in target repos. Important for untrusted repos in production. Security theme impresses demo audience too. (P3, M effort)
 - [ ] **CI/CD goal type** — `goal-ci-check.md` + compact output format for PR comments. (NOW IN DEMO SCOPE per CEO review)
+- [ ] **Auto-detect app roots** — Automatically discover app roots within a repo (e.g. Sitecore `src/` layout, monorepos with multiple `package.json` files, Next.js apps nested under subdirectories). Today the user points at the repo root; the agent should scan for multiple app entry points and scope tools per root. Enables accurate analysis of monorepos and platform-specific project structures.
