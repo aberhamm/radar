@@ -160,11 +160,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   while (state.toolCallCount < toolCallBudget) {
     stepCount++;
 
-    // Call LLM
+    // Call LLM — use higher token limit when we're near budget (likely assembling output)
+    const remaining = toolCallBudget - state.toolCallCount;
+    const isNearEnd = remaining <= 10;
     const response = await config.provider.chat(messages, {
       tools,
       model: modelConfig.agent,
-      maxTokens: 8192,
+      maxTokens: isNearEnd ? 16384 : 8192,
     });
 
     // Track usage
