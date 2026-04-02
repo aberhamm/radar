@@ -43,7 +43,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="bg-white rounded-xl border border-black/[0.06] shadow-sm p-6 w-full max-w-md">
-        <h1 className="text-lg font-semibold text-label tracking-tight mb-1">
+        <h1 className="text-xl font-bold text-label tracking-tight mb-1">
           Start Investigation
         </h1>
         <p className="text-sm text-secondary-label mb-6">
