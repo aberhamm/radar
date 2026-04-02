@@ -203,7 +203,7 @@ export async function recordFinding(
   state: AgentState,
   input: RecordFindingInput,
 ): Promise<RecordFindingOutput> {
-  const findings = extractFindings(input as Record<string, unknown>);
+  const findings = extractFindings(input as unknown as Record<string, unknown>);
   const warnings: string[] = [];
   let rejectedEvidenceCount = 0;
 
