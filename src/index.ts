@@ -140,7 +140,7 @@ program
     console.log(`Starting dashboard on port ${port}...`);
 
     // Spawn next dev as a child process
-    const child = spawn('npx', ['next', 'dev', '--port', String(port)], {
+    const child = spawn('npx', ['next', 'dev', '--webpack', '--port', String(port)], {
       cwd: dashboardDir,
       stdio: 'inherit',
       shell: true,
