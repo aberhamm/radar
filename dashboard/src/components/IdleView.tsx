@@ -42,7 +42,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
 
   return (
     <div className="flex-1 flex items-center justify-center p-6">
-      <div className="bg-white rounded-xl border border-black/[0.06] shadow-sm p-6 w-full max-w-lg">
+      <div className="bg-surface rounded-xl border border-separator shadow-sm p-6 w-full max-w-lg">
         <svg className="w-8 h-8 mb-4 text-tint" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="7" />
           <path d="m20 20-3.5-3.5" />

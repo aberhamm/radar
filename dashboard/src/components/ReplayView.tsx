@@ -64,38 +64,68 @@ export function ReplayView({ sourceEvents, result, repoName, goal, startedAt, on
       </div>
 
       {/* Replay controls */}
-      <div className="bg-white/80 backdrop-blur-sm shadow-[inset_0_1px_0_0_rgb(0_0_0/0.04)] px-4 py-2 flex items-center gap-2.5 shrink-0">
+      <div className="bg-surface-translucent backdrop-blur-sm shadow-[inset_0_1px_0_0_rgb(0_0_0/0.04)] px-4 py-2.5 flex items-center gap-3 shrink-0">
         <button
           onClick={done ? reset : playing ? pause : play}
-          className="bg-elevated rounded-md px-2.5 py-1 text-xs font-mono text-label cursor-pointer hover:bg-[#e8e8ed] transition-colors min-w-[64px] text-center font-medium"
+          className="w-8 h-8 flex items-center justify-center bg-elevated rounded-lg cursor-pointer hover:bg-[#e8e8ed] transition-colors"
+          title={done ? 'Reset' : playing ? 'Pause' : 'Play'}
         >
-          {done ? '↺ Reset' : playing ? '⏸ Pause' : '▶ Play'}
+          {done ? (
+            <svg className="w-4 h-4 text-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            </svg>
+          ) : playing ? (
+            <svg className="w-4 h-4 text-label" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-label" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="6,4 20,12 6,20" />
+            </svg>
+          )}
         </button>
 
-        {/* Progress bar */}
+        {/* Elapsed at position */}
+        <span className="text-[11px] font-mono text-tertiary-label min-w-[32px] text-right tabular-nums">
+          {position}
+        </span>
+
+        {/* Progress bar with scrubber */}
         <div
-          className="flex-1 h-1.5 bg-elevated rounded-full cursor-pointer relative"
+          className="flex-1 h-4 flex items-center cursor-pointer group"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const ratio = (e.clientX - rect.left) / rect.width;
             seek(Math.round(ratio * total));
           }}
         >
-          <div
-            className="h-full rounded-full"
-            style={{
-              width: `${pct}%`,
-              background: done ? '#34c759' : '#0071e3',
-              transition: playing ? 'none' : 'width 0.15s ease',
-            }}
-          />
+          <div className="w-full h-1.5 bg-elevated rounded-full relative">
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${pct}%`,
+                background: done ? '#34c759' : '#0071e3',
+                transition: playing ? 'none' : 'width 0.15s ease',
+              }}
+            />
+            {/* Scrubber handle */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-tint shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{
+                left: `${pct}%`,
+                marginLeft: '-6px',
+                background: done ? '#34c759' : '#0071e3',
+              }}
+            />
+          </div>
         </div>
 
-        <span className="text-[11px] font-mono text-tertiary-label min-w-[60px] text-center">
-          {position} / {total}
+        {/* Total */}
+        <span className="text-[11px] font-mono text-tertiary-label min-w-[32px] tabular-nums">
+          {total}
         </span>
 
-        {/* Speed selector — segmented control */}
+        {/* Speed selector */}
         <div className="bg-elevated rounded-md p-0.5 flex gap-0.5">
           {SPEED_OPTIONS.map(s => (
             <button
@@ -103,7 +133,7 @@ export function ReplayView({ sourceEvents, result, repoName, goal, startedAt, on
               onClick={() => setSpeed(s)}
               className={`px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer transition-all ${
                 speed === s
-                  ? 'bg-white text-label shadow-sm font-bold'
+                  ? 'bg-surface text-label shadow-sm font-bold'
                   : 'text-tertiary-label hover:text-secondary-label'
               }`}
             >
@@ -114,14 +144,17 @@ export function ReplayView({ sourceEvents, result, repoName, goal, startedAt, on
 
         <button
           onClick={skipToEnd}
-          className="text-tertiary-label hover:text-secondary-label rounded-lg px-2 py-1.5 text-[11px] font-mono cursor-pointer transition-colors"
+          className="w-8 h-8 flex items-center justify-center text-tertiary-label hover:text-secondary-label cursor-pointer transition-colors"
+          title="Skip to end"
         >
-          Skip ⏭
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="4,4 14,12 4,20" /><rect x="16" y="4" width="3" height="16" rx="1" />
+          </svg>
         </button>
 
         <button
           onClick={onViewReport}
-          className={`rounded-md px-3 py-1 text-xs font-medium cursor-pointer transition-all ${
+          className={`rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer transition-all ${
             done
               ? 'bg-tint text-white hover:bg-[#0077ed]'
               : 'bg-elevated text-secondary-label hover:text-label'

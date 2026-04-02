@@ -28,7 +28,7 @@ export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: Bu
 
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm z-20" style={{ animation: 'fadeIn 0.2s ease both' }}>
-      <div className="animate-scale-in bg-white rounded-xl border border-black/[0.06] shadow-float p-6 max-w-[380px] w-[90%] text-center">
+      <div className="animate-scale-in bg-surface rounded-xl border border-separator shadow-float p-6 max-w-[380px] w-[90%] text-center">
         <div className="text-2xl mb-2">⏸</div>
         <h2 className="text-base font-semibold text-label mb-1.5">Budget Exhausted</h2>
         <p className="text-sm text-secondary-label mb-1">

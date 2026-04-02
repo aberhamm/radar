@@ -32,7 +32,7 @@ export function Sidebar({ open, history, currentRepoName, currentGoal, isRunning
       )}
 
       <aside
-        className={`bg-canvas border-r border-black/[0.06] flex flex-col shrink-0 overflow-hidden z-30 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`bg-canvas border-r border-separator flex flex-col shrink-0 overflow-hidden z-30 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           open ? 'w-[240px]' : 'w-0'
         } fixed lg:relative h-full`}
       >
@@ -43,7 +43,7 @@ export function Sidebar({ open, history, currentRepoName, currentGoal, isRunning
               <div className="text-[10px] uppercase tracking-widest text-tertiary-label font-semibold mb-2">
                 Current
               </div>
-              <div className="bg-white rounded-lg shadow-sm border border-black/[0.06] p-3">
+              <div className="bg-surface rounded-lg shadow-sm border border-separator p-3">
                 <div className="text-[13px] font-semibold text-label truncate">
                   {currentRepoName}
                 </div>
@@ -89,7 +89,7 @@ export function Sidebar({ open, history, currentRepoName, currentGoal, isRunning
                   <button
                     key={h.id}
                     onClick={() => onSelectHistory(h.id)}
-                    className="text-left rounded-lg p-2.5 hover:bg-white hover:shadow-sm transition-all cursor-pointer group"
+                    className="text-left rounded-lg p-2.5 hover:bg-surface hover:shadow-sm transition-all cursor-pointer group"
                   >
                     <div className="text-[13px] font-semibold text-label truncate group-hover:text-tint transition-colors">
                       {h.repoName}

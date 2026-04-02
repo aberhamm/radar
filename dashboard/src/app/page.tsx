@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { StepEvent, Scorecard, RunMetrics, RunResult } from '@/lib/agentSession';
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { TopBar } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
+import { CommandPalette } from '@/components/CommandPalette';
 import { IdleView } from '@/components/IdleView';
 import { RunningView } from '@/components/RunningView';
 import { CompleteView } from '@/components/CompleteView';
@@ -57,6 +59,7 @@ export default function DashboardPage() {
   const [ready, setReady] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // On mount, check session state (handles page refresh mid-run)
   useEffect(() => {
@@ -232,6 +235,27 @@ export default function DashboardPage() {
 
   const isRunningOrPaused = status === 'running' || status === 'budget_paused';
 
+  const commands = useMemo(() => {
+    const cmds = [
+      { id: 'new-run', label: 'New Investigation', shortcut: '\u2318N', action: handleNewRun },
+      { id: 'toggle-sidebar', label: 'Toggle Sidebar', action: () => setSidebarOpen(p => !p) },
+    ];
+    if (isRunningOrPaused) {
+      cmds.push({ id: 'stop', label: 'Stop Run', shortcut: '\u2318.', action: handleStop });
+    }
+    for (const h of history) {
+      cmds.push({ id: `history-${h.id}`, label: `Open: ${h.repoName} (${h.goal})`, action: () => handleSelectHistory(h.id) });
+    }
+    return cmds;
+  }, [isRunningOrPaused, history, handleNewRun, handleStop, handleSelectHistory]);
+
+  useKeyboardShortcuts({
+    onNewRun: handleNewRun,
+    onStop: isRunningOrPaused ? handleStop : undefined,
+    onTogglePalette: () => setPaletteOpen(p => !p),
+    onEscape: () => { setPaletteOpen(false); setSidebarOpen(false); },
+  });
+
   if (!ready) {
     return <div className="flex flex-col h-screen overflow-hidden bg-canvas" />;
   }
@@ -336,12 +360,18 @@ export default function DashboardPage() {
 
       {historyLoading && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-canvas/60 backdrop-blur-sm">
-          <div className="flex items-center gap-3 bg-white rounded-lg border border-black/[0.06] shadow-sm px-5 py-3">
+          <div className="flex items-center gap-3 bg-surface rounded-lg border border-separator shadow-sm px-5 py-3">
             <div className="w-4 h-4 border-2 border-tint border-t-transparent rounded-full" style={{ animation: 'spin 0.6s linear infinite' }} />
             <span className="text-sm text-secondary-label font-medium">Loading run...</span>
           </div>
         </div>
       )}
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={commands}
+      />
     </div>
   );
 }

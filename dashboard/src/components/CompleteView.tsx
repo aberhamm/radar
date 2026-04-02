@@ -25,7 +25,7 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
     <div className="mb-6">
       {/* Overall score */}
       <div
-        className="flex items-center gap-3 mb-4 p-3 bg-white rounded-lg border border-black/[0.06] shadow-sm"
+        className="flex items-center gap-3 mb-4 p-3 bg-surface rounded-lg border border-separator shadow-sm"
       >
         <div
           className="w-3 h-3 rounded-full shrink-0"
@@ -46,7 +46,7 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
         {scorecard.categories.map((cat: CategoryScore) => (
           <div
             key={cat.category}
-            className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3"
+            className="bg-surface rounded-lg border border-separator shadow-sm p-3"
           >
             <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-medium">
               {cat.category}
@@ -72,7 +72,7 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
           {scorecard.topRisks.slice(0, 3).map(risk => (
             <div
               key={risk.id}
-              className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3 mb-2 text-xs"
+              className="bg-surface rounded-lg border border-separator shadow-sm p-3 mb-2 text-xs"
             >
               <span className="text-danger font-bold mr-2">
                 [{risk.severity.toUpperCase()}]
@@ -99,7 +99,7 @@ function CostTab({ metrics }: { metrics: RunMetrics }) {
           { label: 'Tool Calls', value: String(metrics.toolCalls) },
           { label: 'Models Used', value: String(modelEntries.length) },
         ].map(item => (
-          <div key={item.label} className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3">
+          <div key={item.label} className="bg-surface rounded-lg border border-separator shadow-sm p-3">
             <div className="text-[10px] text-tertiary-label uppercase tracking-widest font-medium mb-1.5">
               {item.label}
             </div>
@@ -114,7 +114,7 @@ function CostTab({ metrics }: { metrics: RunMetrics }) {
         <div className="text-tertiary-label font-semibold mb-3 text-[10px] uppercase tracking-wide">
           Model Breakdown
         </div>
-        <div className="bg-white rounded-lg border border-black/[0.06] shadow-sm overflow-hidden">
+        <div className="bg-surface rounded-lg border border-separator shadow-sm overflow-hidden">
           <table className="w-full border-collapse font-mono text-xs">
             <thead>
               <tr className="bg-canvas text-tertiary-label text-[11px]">
@@ -125,7 +125,7 @@ function CostTab({ metrics }: { metrics: RunMetrics }) {
             </thead>
             <tbody>
               {modelEntries.map(([modelId, info]) => (
-                <tr key={modelId} className="border-t border-black/[0.04]">
+                <tr key={modelId} className="border-t border-separator">
                   <td className="px-4 py-2.5 text-label max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap">
                     {modelId.replace('us.anthropic.', '')}
                   </td>
@@ -173,7 +173,7 @@ function RulesTab({ goal }: { goal: string }) {
           <div className="text-[11px] text-tertiary-label font-mono uppercase tracking-wide mb-3 font-medium">
             {filename}
           </div>
-          <div className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-4 text-xs font-mono text-secondary-label whitespace-pre-wrap leading-relaxed">
+          <div className="bg-surface rounded-lg border border-separator shadow-sm p-4 text-xs font-mono text-secondary-label whitespace-pre-wrap leading-relaxed">
             {content}
           </div>
         </div>
@@ -195,7 +195,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Segmented control tab bar */}
-      <div className="bg-white shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
+      <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
         <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5">
           {tabs.map(tab => (
             <button
@@ -203,7 +203,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
               onClick={() => setActiveTab(tab.id)}
               className={`px-5 py-1.5 min-w-[72px] rounded-md text-[13px] font-medium transition-all cursor-pointer ${
                 activeTab === tab.id
-                  ? 'bg-white text-label shadow-sm'
+                  ? 'bg-surface text-label shadow-sm'
                   : 'text-secondary-label hover:text-label'
               }`}
             >

@@ -102,7 +102,7 @@ function FindingCard({ event }: { event: StepEvent }) {
 
   return (
     <div
-      className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3 mt-1.5"
+      className="bg-surface rounded-lg border border-separator shadow-sm p-3 mt-1.5"
     >
       <div className="flex items-center gap-2 mb-1.5">
         <span
@@ -170,7 +170,7 @@ function ToolCallChip({ event, isExpanded, onToggle }: { event: StepEvent; isExp
       {isExpanded && (
         <div className="mt-1 bg-elevated rounded-lg overflow-hidden text-[11px] font-mono">
           {parsedArgs && (
-            <div className="border-b border-black/[0.04]">
+            <div className="border-b border-separator">
               <div className="px-3 py-1 text-[10px] text-tertiary-label font-semibold uppercase tracking-wide bg-canvas">
                 Arguments
               </div>
@@ -247,7 +247,7 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
 
   return (
     <div
-      className="bg-white rounded-xl border border-black/[0.06] shadow-sm mx-4 mb-2 p-4 hover:shadow-elevated hover:-translate-y-[1px] transition-all duration-200"
+      className="bg-surface rounded-xl border border-separator shadow-sm mx-4 mb-2 p-4 hover:shadow-elevated hover:-translate-y-[1px] transition-all duration-200"
       style={isLatest ? { animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both' } : undefined}
     >
       {/* Turn header */}
@@ -408,7 +408,7 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
               scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
             }
           }}
-          className="sticky bottom-3 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm shadow-card rounded-full px-4 py-1.5 text-[11px] text-secondary-label cursor-pointer block mx-auto hover:shadow-elevated transition-shadow"
+          className="sticky bottom-3 left-1/2 -translate-x-1/2 bg-surface-translucent backdrop-blur-sm shadow-card rounded-full px-4 py-1.5 text-[11px] text-secondary-label cursor-pointer block mx-auto hover:shadow-elevated transition-shadow"
         >
           Resume auto-scroll
         </button>
