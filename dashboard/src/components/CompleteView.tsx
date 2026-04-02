@@ -26,7 +26,6 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
       {/* Overall score */}
       <div
         className="flex items-center gap-3 mb-4 p-3 bg-white rounded-lg border border-black/[0.06] shadow-sm"
-        style={{ borderLeft: `3px solid ${scoreColor(scorecard.overallScore)}` }}
       >
         <div
           className="w-3 h-3 rounded-full shrink-0"
@@ -48,7 +47,6 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
           <div
             key={cat.category}
             className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3"
-            style={{ borderLeft: `3px solid ${scoreColor(cat.score)}` }}
           >
             <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-medium">
               {cat.category}
@@ -75,7 +73,6 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
             <div
               key={risk.id}
               className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3 mb-2 text-xs"
-              style={{ borderLeft: '3px solid #ff3b30' }}
             >
               <span className="text-danger font-bold mr-2">
                 [{risk.severity.toUpperCase()}]

@@ -103,7 +103,6 @@ function FindingCard({ event }: { event: StepEvent }) {
   return (
     <div
       className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3 mt-1.5"
-      style={{ borderLeft: `3px solid ${severityColor(finding.severity)}` }}
     >
       <div className="flex items-center gap-2 mb-1.5">
         <span
