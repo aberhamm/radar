@@ -3,6 +3,7 @@
 import type { SessionStatus } from '@/lib/agentSession';
 import type { Scorecard, RunMetrics } from '@/lib/agentSession';
 import type { ThemeMode } from '@/lib/useTheme';
+import { TerminalBrand } from './TerminalBrand';
 
 interface TopBarProps {
   status: SessionStatus;
@@ -47,18 +48,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, o
       )}
 
       {/* Brand */}
-      <div className="flex items-center whitespace-nowrap font-brand">
-        <span className="text-base text-tertiary-label font-semibold mr-0.5">{'>'}</span>
-        <span className="text-base font-bold text-tint tracking-tight mr-px">
-          radar
-        </span>
-        <span
-          className="text-base font-bold text-tint"
-          style={{ animation: 'cursor-blink 1s step-end infinite' }}
-        >
-          |
-        </span>
-      </div>
+      <TerminalBrand isRunning={isRunning} />
 
       {/* Center: repo + goal badges */}
       {(isRunning || isComplete) && repoName && (
