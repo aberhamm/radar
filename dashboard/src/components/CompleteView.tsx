@@ -1,9 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Scorecard, RunMetrics, CategoryScore, StepEvent } from '@/lib/agentSession';
+import {
+  copyToClipboard,
+  buildReportMarkdown,
+  exportReportMarkdown,
+  exportEventsCSV,
+  exportCostCSV,
+  costToMarkdown,
+} from '@/lib/export';
 import { EventStream } from './EventStream';
 
 interface CompleteViewProps {
@@ -182,8 +190,36 @@ function RulesTab({ goal }: { goal: string }) {
   );
 }
 
+function ExportButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-elevated text-secondary-label
+                 hover:text-label hover:bg-separator transition-colors cursor-pointer
+                 border border-separator/60"
+    >
+      {label}
+    </button>
+  );
+}
+
+function CopiedToast({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  return (
+    <span className="text-[12px] text-success font-medium animate-slide-up ml-2">
+      Copied
+    </span>
+  );
+}
+
 export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }: CompleteViewProps) {
   const [activeTab, setActiveTab] = useState<Tab>('report');
+  const [copied, setCopied] = useState(false);
+
+  const flash = useCallback(() => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, []);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'report', label: 'Report' },
@@ -210,6 +246,50 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
               {tab.label}
             </button>
           ))}
+        </div>
+
+        {/* Export actions — right side of tab bar */}
+        <div className="ml-auto flex items-center gap-2">
+          <CopiedToast visible={copied} />
+
+          {activeTab === 'report' && (
+            <>
+              <ExportButton
+                label="Copy Markdown"
+                onClick={async () => {
+                  const ok = await copyToClipboard(buildReportMarkdown(briefMarkdown, scorecard));
+                  if (ok) flash();
+                }}
+              />
+              <ExportButton
+                label="Export .md"
+                onClick={() => exportReportMarkdown(briefMarkdown, scorecard)}
+              />
+            </>
+          )}
+
+          {activeTab === 'events' && (
+            <ExportButton
+              label="Export CSV"
+              onClick={() => exportEventsCSV(events, scorecard.repoName)}
+            />
+          )}
+
+          {activeTab === 'cost' && (
+            <>
+              <ExportButton
+                label="Copy Markdown"
+                onClick={async () => {
+                  const ok = await copyToClipboard(costToMarkdown(metrics));
+                  if (ok) flash();
+                }}
+              />
+              <ExportButton
+                label="Export CSV"
+                onClick={() => exportCostCSV(metrics, scorecard.repoName)}
+              />
+            </>
+          )}
         </div>
       </div>
 

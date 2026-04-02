@@ -32,4 +32,5 @@ coverage/
 /output/
 dashboard/output/*
 .claude/worktrees/
-.gstack/
+.gstack/*
+.gstack-*/*

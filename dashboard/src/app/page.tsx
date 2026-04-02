@@ -5,6 +5,7 @@ import type { StepEvent, Scorecard, RunMetrics, RunResult } from '@/lib/agentSes
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
 import { TopBar } from '@/components/TopBar';
+import { ContextBar } from '@/components/ContextBar';
 import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { IdleView } from '@/components/IdleView';
@@ -270,20 +271,27 @@ export default function DashboardPage() {
   return (
     <div className="relative flex flex-col h-screen overflow-hidden bg-canvas">
       <TopBar
-        status={status === 'replaying' ? 'idle' : status}
-        repoName={currentRun?.repoName}
-        goal={currentRun?.goal}
-        toolCalls={currentRun?.toolCalls}
-        budget={currentRun?.budget}
-        scorecard={result?.scorecard}
-        onNewRun={handleNewRun}
-        onStop={handleStop}
         onToggleSidebar={() => setSidebarOpen(prev => !prev)}
         sidebarOpen={sidebarOpen}
         hasHistory={history.length > 0}
         themeMode={themeMode}
         onCycleTheme={cycleTheme}
       />
+
+      {/* Context bar: shows run info when not idle */}
+      {status !== 'idle' && currentRun?.repoName && (
+        <ContextBar
+          status={status === 'replaying' ? 'replaying' : status}
+          repoName={currentRun.repoName}
+          goal={currentRun.goal}
+          scorecard={result?.scorecard}
+          toolCalls={currentRun.toolCalls}
+          budget={currentRun.budget}
+          onStop={handleStop}
+          onNewRun={handleNewRun}
+          onViewReport={handleViewReport}
+        />
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
