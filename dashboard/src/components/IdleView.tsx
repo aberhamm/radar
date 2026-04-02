@@ -41,46 +41,18 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
   };
 
   return (
-    <div style={{
-      flex: 1,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 40,
-    }}>
-      <div style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        padding: 40,
-        width: '100%',
-        maxWidth: 520,
-      }}>
-        <h1 style={{
-          fontSize: 20,
-          fontWeight: 700,
-          marginBottom: 8,
-          color: 'var(--text-primary)',
-        }}>
+    <div className="flex-1 flex items-center justify-center p-6">
+      <div className="bg-white rounded-xl border border-black/[0.06] shadow-sm p-6 w-full max-w-md">
+        <h1 className="text-lg font-semibold text-label tracking-tight mb-1">
           Start Investigation
         </h1>
-        <p style={{
-          fontSize: 13,
-          color: 'var(--text-secondary)',
-          marginBottom: 28,
-        }}>
+        <p className="text-sm text-secondary-label mb-6">
           Analyze a headless CMS codebase with the AI agent.
         </p>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label style={{
-              display: 'block',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              marginBottom: 6,
-              fontWeight: 500,
-            }}>
+            <label className="block text-xs font-medium text-secondary-label mb-1.5">
               Repository Path
             </label>
             <input
@@ -88,46 +60,20 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
               value={repoPath}
               onChange={e => setRepoPath(e.target.value)}
               placeholder="/path/to/your/repo or C:\..."
-              style={{
-                width: '100%',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                padding: '8px 12px',
-                fontSize: 13,
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-mono)',
-                outline: 'none',
-              }}
+              className="w-full h-9 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label outline-none border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-1 focus:ring-[rgb(0_113_227/0.1)] transition-all"
               disabled={loading}
             />
           </div>
 
           <div>
-            <label style={{
-              display: 'block',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              marginBottom: 6,
-              fontWeight: 500,
-            }}>
+            <label className="block text-xs font-medium text-secondary-label mb-1.5">
               Goal
             </label>
             <select
               value={goal}
               onChange={e => setGoal(e.target.value)}
               disabled={loading}
-              style={{
-                width: '100%',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                padding: '8px 12px',
-                fontSize: 13,
-                color: 'var(--text-primary)',
-                outline: 'none',
-                cursor: 'pointer',
-              }}
+              className="w-full h-9 bg-elevated rounded-lg px-3 text-sm text-label outline-none border border-transparent focus:border-[rgb(0_113_227/0.3)] cursor-pointer"
             >
               <option value="onboarding">Onboarding — full codebase overview</option>
               <option value="security-review">Security Review — focus on vulnerabilities</option>
@@ -137,23 +83,17 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
           </div>
 
           {error && (
-            <p style={{ fontSize: 12, color: 'var(--error)' }}>{error}</p>
+            <p className="text-xs text-danger">{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            style={{
-              background: loading ? 'var(--bg-elevated)' : 'var(--accent)',
-              color: loading ? 'var(--text-muted)' : '#000',
-              border: 'none',
-              borderRadius: 4,
-              padding: '10px 20px',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginTop: 8,
-            }}
+            className={`rounded-lg h-9 px-4 text-sm font-medium transition-all mt-1 ${
+              loading
+                ? 'bg-elevated text-tertiary-label cursor-not-allowed'
+                : 'bg-tint text-white cursor-pointer hover:bg-[#0077ed] active:scale-[0.98]'
+            }`}
           >
             {loading ? 'Starting...' : 'Start Investigation'}
           </button>

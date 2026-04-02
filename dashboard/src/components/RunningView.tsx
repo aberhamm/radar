@@ -33,17 +33,9 @@ export function RunningView({
   onRunError,
 }: RunningViewProps) {
   return (
-    <div style={{
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      position: 'relative',
-    }}>
-      {/* Main split */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Event stream — 75% */}
-        <div style={{ flex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="flex-1 flex flex-col overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-[3] flex flex-col overflow-hidden">
           <EventStream
             events={events}
             onNewEvent={onNewEvent}
@@ -52,9 +44,7 @@ export function RunningView({
             onRunError={onRunError}
           />
         </div>
-
-        {/* Stats panel — 25% */}
-        <div style={{ flex: 1, minWidth: 180, maxWidth: 240 }}>
+        <div className="flex-1 min-w-[200px] max-w-[260px]">
           <StatsPanel
             events={events}
             toolCalls={toolCalls}
@@ -65,24 +55,15 @@ export function RunningView({
       </div>
 
       {/* Status bar */}
-      <div style={{
-        background: 'var(--bg-surface)',
-        borderTop: '1px solid var(--border)',
-        padding: '6px 16px',
-        fontSize: 11,
-        color: 'var(--text-muted)',
-        display: 'flex',
-        gap: 16,
-        fontFamily: 'var(--font-mono)',
-      }}>
-        <span style={{ color: status === 'budget_paused' ? 'var(--warning)' : 'var(--success)' }}>
-          ● {status === 'budget_paused' ? 'PAUSED' : 'RUNNING'}
+      <div className="bg-white/80 backdrop-blur-sm shadow-[inset_0_1px_0_0_rgb(0_0_0/0.04)] px-4 py-1.5 flex gap-4 font-mono text-[11px] text-tertiary-label shrink-0">
+        <span className={status === 'budget_paused' ? 'text-warning' : 'text-success'}>
+          <span className="inline-block" style={{ animation: 'pulse-dot 2s ease-in-out infinite' }}>●</span>
+          {' '}{status === 'budget_paused' ? 'PAUSED' : 'RUNNING'}
         </span>
         <span>{toolCalls} / {budget} calls</span>
         <span>{events.length} steps</span>
       </div>
 
-      {/* Budget paused overlay */}
       {status === 'budget_paused' && budgetPausedData && (
         <BudgetPausedView
           findings={budgetPausedData.findings}

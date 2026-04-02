@@ -61,6 +61,7 @@ export interface StepEvent {
   reasoning?: string;
   fullReasoning?: string;
   batchId?: string;
+  newBudget?: number;
   timestamp?: string;
 }
 
@@ -176,15 +177,28 @@ export function persistRun(record: RunRecord): void {
 export function loadPersistedRuns(): RunRecord[] {
   try {
     ensureOutputDir();
-    const files = fs.readdirSync(OUTPUT_DIR)
+  } catch (err) {
+    console.warn('[loadPersistedRuns] Cannot create output dir:', (err as Error).message);
+    return [];
+  }
+
+  let files: string[];
+  try {
+    files = fs.readdirSync(OUTPUT_DIR)
       .filter(f => f.endsWith('.json'))
       .sort()
       .reverse();
+  } catch (err) {
+    console.warn('[loadPersistedRuns] Cannot read output dir:', (err as Error).message);
+    return [];
+  }
 
-    return files.map(f => {
-      const filePath = path.join(OUTPUT_DIR, f);
+  const records: RunRecord[] = [];
+  for (const f of files) {
+    const filePath = path.join(OUTPUT_DIR, f);
+    try {
       const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      return {
+      records.push({
         id: raw.id,
         goal: raw.goal,
         repoName: raw.repoName,
@@ -193,11 +207,12 @@ export function loadPersistedRuns(): RunRecord[] {
         result: raw.result,
         events: [],       // lazy — use loadRunEvents() when needed
         _filePath: filePath,
-      } as RunRecord;
-    });
-  } catch {
-    return [];
+      } as RunRecord);
+    } catch (err) {
+      console.warn(`[loadPersistedRuns] Skipping corrupt file ${f}:`, (err as Error).message);
+    }
   }
+  return records;
 }
 
 /** Load events for a specific run from its persisted JSON file. */
@@ -210,7 +225,8 @@ export function loadRunEvents(record: RunRecord): StepEvent[] {
   try {
     const raw = JSON.parse(fs.readFileSync(record._filePath, 'utf-8'));
     return raw.events ?? [];
-  } catch {
+  } catch (err) {
+    console.warn(`[loadRunEvents] Failed to load events for run ${record.id}:`, (err as Error).message);
     return [];
   }
 }

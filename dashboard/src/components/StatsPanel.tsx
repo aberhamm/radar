@@ -8,20 +8,22 @@ interface StatsPanelProps {
   toolCalls: number;
   budget: number;
   startedAt: Date | null;
+  /** If provided, show this instead of a live timer */
+  fixedElapsed?: string;
 }
 
 function severityColor(severity: string): string {
   switch (severity) {
-    case 'critical': return '#f85149';
-    case 'high': return '#f85149';
-    case 'medium': return '#e3b341';
-    case 'low': return '#3fb950';
-    case 'info': return '#8b949e';
-    default: return '#8b949e';
+    case 'critical': return '#ff3b30';
+    case 'high': return '#ff3b30';
+    case 'medium': return '#ff9500';
+    case 'low': return '#34c759';
+    case 'info': return '#86868b';
+    default: return '#86868b';
   }
 }
 
-export function StatsPanel({ events, toolCalls, budget, startedAt }: StatsPanelProps) {
+export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed }: StatsPanelProps) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -32,24 +34,20 @@ export function StatsPanel({ events, toolCalls, budget, startedAt }: StatsPanelP
     return () => clearInterval(interval);
   }, [startedAt]);
 
-  // Derive stats from events
   const findingEvents = events.filter(e => e.type === 'finding');
   const severityCounts: Record<string, number> = {};
   for (const ev of findingEvents) {
-    // Try to parse severity from result
     let sev = 'info';
     try {
       const result = JSON.parse(ev.result ?? '{}');
       if (result.severity) sev = result.severity;
     } catch {
-      // Try to find [Severity] pattern in result
       const match = (ev.result ?? '').match(/\[(critical|high|medium|low|info)\]/i);
       if (match) sev = match[1].toLowerCase();
     }
     severityCounts[sev] = (severityCounts[sev] ?? 0) + 1;
   }
 
-  // Detect model switch
   const switchEvent = events.find(e => e.type === 'model_switch');
   const modelSwitched = !!switchEvent;
 
@@ -59,73 +57,58 @@ export function StatsPanel({ events, toolCalls, budget, startedAt }: StatsPanelP
     : `${Math.floor(elapsedS / 60)}m ${elapsedS % 60}s`;
 
   const severityOrder: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
+  const pct = Math.min(100, (toolCalls / budget) * 100);
 
   return (
-    <aside style={{
-      background: 'var(--bg-surface)',
-      borderLeft: '1px solid var(--border)',
-      padding: 16,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 20,
-      overflowY: 'auto',
-      width: '100%',
-    }}>
+    <aside className="bg-white border-l border-black/[0.06] p-4 flex flex-col gap-5 overflow-y-auto w-full">
       <Section title="Findings">
-        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+        <div className="text-2xl font-bold text-label font-mono tracking-tight">
           {findingEvents.length}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+        <div className="flex flex-col gap-1.5 mt-3">
           {severityOrder.filter(s => severityCounts[s]).map(s => (
-            <div key={s} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-              <span style={{ color: severityColor(s) }}>{s}</span>
-              <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                {severityCounts[s]}
-              </span>
+            <div key={s} className="flex justify-between items-center text-xs">
+              <span className="font-medium capitalize" style={{ color: severityColor(s) }}>{s}</span>
+              <span className="text-secondary-label font-mono">{severityCounts[s]}</span>
             </div>
           ))}
           {findingEvents.length === 0 && (
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>none yet</span>
+            <span className="text-xs text-tertiary-label">none yet</span>
           )}
         </div>
       </Section>
 
       <Section title="Tool Calls">
-        <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-          {toolCalls} <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>/ {budget}</span>
+        <div className="text-xl font-bold font-mono text-label">
+          {toolCalls} <span className="text-sm text-tertiary-label font-normal">/ {budget}</span>
         </div>
-        <div style={{
-          height: 4,
-          background: 'var(--bg-elevated)',
-          borderRadius: 2,
-          marginTop: 8,
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            width: `${Math.min(100, (toolCalls / budget) * 100)}%`,
-            height: '100%',
-            background: toolCalls / budget > 0.8 ? 'var(--error)' : toolCalls / budget > 0.6 ? 'var(--warning)' : 'var(--accent)',
-            transition: 'width 0.3s ease',
-          }} />
+        <div className="h-1.5 bg-elevated rounded-full mt-3 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-300"
+            style={{
+              width: `${pct}%`,
+              background: pct > 80 ? '#ff3b30' : pct > 60 ? '#ff9500' : '#0071e3',
+            }}
+          />
         </div>
       </Section>
 
       <Section title="Model">
-        <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+        <div className="text-xs font-mono">
           {modelSwitched ? (
             <>
-              <div style={{ color: 'var(--text-muted)', textDecoration: 'line-through' }}>Sonnet</div>
-              <div style={{ color: '#58a6ff' }}>Haiku (fast)</div>
+              <div className="text-quaternary-label line-through">Sonnet</div>
+              <div className="text-tint font-medium">Haiku (fast)</div>
             </>
           ) : (
-            <div style={{ color: 'var(--text-primary)' }}>Sonnet</div>
+            <div className="text-label font-medium">Sonnet</div>
           )}
         </div>
       </Section>
 
       <Section title="Elapsed">
-        <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-          {elapsedStr}
+        <div className="text-xl font-bold font-mono text-label">
+          {fixedElapsed ?? elapsedStr}
         </div>
       </Section>
     </aside>
@@ -135,14 +118,7 @@ export function StatsPanel({ events, toolCalls, budget, startedAt }: StatsPanelP
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{
-        fontSize: 10,
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
-        color: 'var(--text-muted)',
-        fontWeight: 600,
-        marginBottom: 8,
-      }}>
+      <div className="text-[10px] uppercase tracking-widest text-tertiary-label font-semibold mb-2">
         {title}
       </div>
       {children}

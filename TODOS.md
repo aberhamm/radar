@@ -45,6 +45,6 @@ Demo talking points: 11 findings in ~8 min, ~$0.74/run (dual-model, 37% on Haiku
 
 ## Eng Review (2026-04-02)
 
-- [ ] **Unit tests for extracted CLI commands** — `src/commands/analyze.ts` and `src/commands/compare.ts` were extracted from the 721-line `src/index.ts`. They have e2e coverage via `stubAgent.test.ts` but no dedicated unit tests for argument validation, dry-run output, JSON mode, or GitHub output hooks. Start: `test/commands/analyze.test.ts`, mock `runAgent`, assert exit codes and output per flag.
-- [ ] **Silent error catches in dashboard** — 15+ catch blocks swallow errors silently. Most are intentional (stream-closed), but `loadPersistedRuns()` catches ALL fs errors and returns `[]` with no logging. A corrupt JSON file silently breaks history. Fix: add `console.warn` to catches in `loadPersistedRuns` file-parse loop so one bad file doesn't nuke the rest.
-- [ ] **Type safety in recordFinding.ts** — 10 `as unknown as Finding` casts remain. Guard is hardened (validates string types + allowlists) but casts still bypass compiler checks on evidence, tags, documentationRefs. Fix: add `buildFinding()` that constructs Finding from validated fields with defaults for malformed optional fields.
+- [x] **Unit tests for extracted CLI commands** — 23 tests across `test/commands/analyze.test.ts` and `test/commands/compare.test.ts`. Covers argument validation, exit codes (green/yellow/red/error), dry-run, JSON mode, GitHub output hooks, and config passthrough.
+- [x] **Silent error catches in dashboard** — `loadPersistedRuns()` now handles errors per-file with `console.warn` so one corrupt JSON doesn't nuke history. Added logging to `loadRunEvents()`, session restore, and DELETE calls.
+- [x] **Type safety in recordFinding.ts** — Replaced all `as unknown as Finding` casts with `buildFinding()` that constructs type-safe Finding objects. Includes `toEvidence()` and `toDocRef()` validators for nested fields with safe defaults.

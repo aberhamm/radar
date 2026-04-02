@@ -90,6 +90,8 @@ export interface StepEvent {
   type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output' | 'model_switch';
   /** Identifies which tool calls ran in the same parallel batch (same assistant turn) */
   batchId?: string;
+  /** New budget after extension (only on budget_extended events) */
+  newBudget?: number;
   /** ISO timestamp when this event was emitted */
   timestamp?: string;
 }
@@ -253,6 +255,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
             step: stepCount,
             action: 'budget_extended',
             type: 'budget_warning',
+            newBudget: currentBudget,
             result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
           });
           // Allow this tool call to proceed

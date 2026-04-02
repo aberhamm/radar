@@ -53,6 +53,8 @@ export default function DashboardPage() {
   const [budgetPausedData, setBudgetPausedData] = useState<{ findings: number; toolCalls: number; budget: number } | null>(null);
   const [lastRepoPath, setLastRepoPath] = useState('');
   const [replayData, setReplayData] = useState<HistoryRunData | null>(null);
+  const [ready, setReady] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // On mount, check session state (handles page refresh mid-run)
   useEffect(() => {
@@ -61,8 +63,8 @@ export default function DashboardPage() {
       .then(data => {
         if (data.history) setHistory(data.history);
         if (data.status === 'running' || data.status === 'budget_paused') {
-          // Restore in-progress run
-          if (data.currentRun) {
+          // Restore in-progress run (only if agent process is actually alive)
+          if (data.currentRun && data.currentRun.isAlive) {
             setCurrentRun({
               repoPath: '',
               repoName: data.currentRun.repoName,
@@ -74,12 +76,14 @@ export default function DashboardPage() {
             });
             setStatus(data.status);
           }
+          // Agent process not alive — stay idle
         } else if (data.status === 'complete' && data.result) {
           setResult(data.result);
           setStatus('complete');
         }
       })
-      .catch(() => { /* ignore — start fresh */ });
+      .catch(err => { console.warn('[session] Failed to restore session:', err.message); })
+      .finally(() => { setReady(true); });
   }, []);
 
   const handleStart = useCallback((repoPath: string, goal: string) => {
@@ -107,6 +111,8 @@ export default function DashboardPage() {
         ...prev,
         events: [...prev.events, event],
         toolCalls: event.step > 0 ? event.step : prev.toolCalls,
+        // Update budget from server when extended (authoritative value)
+        budget: event.newBudget ?? prev.budget,
       };
     });
   }, []);
@@ -163,7 +169,7 @@ export default function DashboardPage() {
 
   const handleStop = useCallback(async () => {
     // Abort the running agent and reset to idle
-    await fetch('/api/session', { method: 'DELETE' }).catch(() => {});
+    await fetch('/api/session', { method: 'DELETE' }).catch(err => { console.warn('[session] DELETE failed:', err.message); });
     setStatus('idle');
     setCurrentRun(null);
     setResult(null);
@@ -173,7 +179,7 @@ export default function DashboardPage() {
 
   const handleNewRun = useCallback(async () => {
     // Reset server session
-    await fetch('/api/session', { method: 'DELETE' }).catch(() => {});
+    await fetch('/api/session', { method: 'DELETE' }).catch(err => { console.warn('[session] DELETE failed:', err.message); });
     setStatus('idle');
     setCurrentRun(null);
     setResult(null);
@@ -181,35 +187,41 @@ export default function DashboardPage() {
     setBudgetPausedData(null);
   }, []);
 
-  const handleSelectHistory = useCallback((id: string) => {
-    fetch(`/api/history/${encodeURIComponent(id)}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) return;
-        if (data.result) {
-          const runData: HistoryRunData = {
-            repoName: data.repoName,
-            goal: data.goal,
-            startedAt: data.startedAt,
-            events: data.events ?? [],
-            result: data.result,
-          };
-          setReplayData(runData);
-          setResult(data.result as CompletedResult);
-          setCurrentRun({
-            repoPath: '',
-            repoName: data.repoName,
-            goal: data.goal,
-            startedAt: new Date(data.startedAt),
-            events: data.events ?? [],
-            toolCalls: data.events?.length ?? 0,
-            budget: data.result.metrics?.toolCalls ?? 45,
-          });
-          setStatus('replaying');
-          setBudgetPausedData(null);
-        }
-      })
-      .catch(() => { /* ignore */ });
+  const handleSelectHistory = useCallback(async (id: string) => {
+    setHistoryLoading(true);
+    try {
+      const r = await fetch(`/api/history/${encodeURIComponent(id)}`);
+      const data = await r.json();
+      if (data.error || !data.result) {
+        console.warn('[history] No result for run:', id, data.error);
+        setHistoryLoading(false);
+        return;
+      }
+      const runData: HistoryRunData = {
+        repoName: data.repoName,
+        goal: data.goal,
+        startedAt: data.startedAt,
+        events: data.events ?? [],
+        result: data.result,
+      };
+      setReplayData(runData);
+      setResult(data.result as CompletedResult);
+      setCurrentRun({
+        repoPath: '',
+        repoName: data.repoName,
+        goal: data.goal,
+        startedAt: new Date(data.startedAt),
+        events: data.events ?? [],
+        toolCalls: data.events?.length ?? 0,
+        budget: data.result.metrics?.toolCalls ?? 45,
+      });
+      setBudgetPausedData(null);
+      setStatus('replaying');
+    } catch (err) {
+      console.error('[history] Failed to load run:', id, err);
+    } finally {
+      setHistoryLoading(false);
+    }
   }, []);
 
   const handleViewReport = useCallback(() => {
@@ -218,8 +230,12 @@ export default function DashboardPage() {
 
   const isRunningOrPaused = status === 'running' || status === 'budget_paused';
 
+  if (!ready) {
+    return <div className="flex flex-col h-screen overflow-hidden bg-canvas" />;
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="relative flex flex-col h-screen overflow-hidden bg-canvas">
       <TopBar
         status={status === 'replaying' ? 'idle' : status}
         repoName={currentRun?.repoName}
@@ -278,31 +294,24 @@ export default function DashboardPage() {
       )}
 
       {status === 'error' && !result && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexDirection: 'column',
-          gap: 16,
-        }}>
-          <div style={{ fontSize: 32 }}>✗</div>
-          <p style={{ color: 'var(--error)', fontSize: 14 }}>Run failed. Check server logs for details.</p>
+        <div className="flex-1 flex items-center justify-center flex-col gap-4">
+          <div className="text-3xl">✗</div>
+          <p className="text-danger text-sm">Run failed. Check server logs for details.</p>
           <button
             onClick={handleNewRun}
-            style={{
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: 4,
-              padding: '8px 16px',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
+            className="bg-tint text-white rounded-lg h-9 px-4 text-sm font-medium cursor-pointer hover:bg-[#0077ed] transition-colors"
           >
             Try Again
           </button>
+        </div>
+      )}
+
+      {historyLoading && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-canvas/60 backdrop-blur-sm">
+          <div className="flex items-center gap-3 bg-white rounded-lg border border-black/[0.06] shadow-sm px-5 py-3">
+            <div className="w-4 h-4 border-2 border-tint border-t-transparent rounded-full" style={{ animation: 'spin 0.6s linear infinite' }} />
+            <span className="text-sm text-secondary-label font-medium">Loading run...</span>
+          </div>
         </div>
       )}
     </div>

@@ -19,6 +19,7 @@ export async function GET() {
       repoName: session.currentRun.repoName,
       startedAt: session.currentRun.startedAt,
       eventCount: session.currentRun.events.length,
+      isAlive: !!session.currentRun.abortController && !session.currentRun.abortController.signal.aborted,
     } : null,
     result: session.result ? {
       scorecard: session.result.scorecard,
@@ -39,7 +40,7 @@ export async function DELETE() {
 
   // Close the SSE stream if open
   if (session.currentRun?.streamController) {
-    sendStreamEvent(session.currentRun.streamController, { type: 'run_error', error: 'Run cancelled by user' });
+    sendStreamEvent(session.currentRun.streamController, { type: 'run_cancelled' });
     try { session.currentRun.streamController.close(); } catch { /* already closed */ }
   }
 

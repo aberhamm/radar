@@ -20,7 +20,7 @@ interface Turn {
   fullReasoning?: string;
   toolCalls: StepEvent[];
   findings: StepEvent[];
-  special: StepEvent[]; // model_switch, budget_warning, assemble_output
+  special: StepEvent[];
   timestamp?: string;
 }
 
@@ -30,7 +30,6 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
 
   for (const ev of events) {
     if (ev.type === 'text_response') {
-      // Start a new turn
       if (current) turns.push(current);
       current = {
         id: `turn-${ev.step}-${ev.timestamp ?? ''}`,
@@ -44,7 +43,6 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
       continue;
     }
 
-    // If no current turn yet, create an implicit one
     if (!current) {
       current = {
         id: `turn-implicit-${ev.step}`,
@@ -90,11 +88,11 @@ function parseFinding(ev: StepEvent): { id: string; category: string; severity: 
 
 function severityColor(sev: string): string {
   switch (sev) {
-    case 'critical': return '#f85149';
-    case 'high': return '#f85149';
-    case 'medium': return '#e3b341';
-    case 'low': return '#3fb950';
-    default: return '#8b949e';
+    case 'critical': return '#ff3b30';
+    case 'high': return '#ff3b30';
+    case 'medium': return '#ff9500';
+    case 'low': return '#34c759';
+    default: return '#86868b';
   }
 }
 
@@ -103,48 +101,31 @@ function FindingCard({ event }: { event: StepEvent }) {
   if (!finding) return null;
 
   return (
-    <div style={{
-      background: 'rgba(210,153,34,0.06)',
-      border: '1px solid rgba(210,153,34,0.25)',
-      borderLeft: `3px solid ${severityColor(finding.severity)}`,
-      borderRadius: '0 6px 6px 0',
-      padding: '10px 14px',
-      marginTop: 8,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <span style={{
-          fontSize: 10,
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          color: severityColor(finding.severity),
-          background: `${severityColor(finding.severity)}18`,
-          padding: '2px 6px',
-          borderRadius: 3,
-        }}>
+    <div
+      className="bg-white rounded-lg border border-black/[0.06] shadow-sm p-3 mt-1.5"
+      style={{ borderLeft: `3px solid ${severityColor(finding.severity)}` }}
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span
+          className="text-[10px] font-bold uppercase tracking-wide rounded-md px-2 py-0.5"
+          style={{
+            color: severityColor(finding.severity),
+            background: `${severityColor(finding.severity)}10`,
+          }}
+        >
           {finding.severity}
         </span>
-        <span style={{
-          fontSize: 10,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}>
+        <span className="text-[10px] text-tertiary-label uppercase tracking-wide">
           {finding.category}
         </span>
-        <span style={{
-          fontSize: 10,
-          fontFamily: 'var(--font-mono)',
-          color: 'var(--text-muted)',
-          marginLeft: 'auto',
-        }}>
+        <span className="text-[10px] font-mono text-quaternary-label ml-auto">
           {finding.id}
         </span>
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+      <div className="text-[13px] font-semibold text-label mb-1">
         {finding.title}
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+      <div className="text-xs text-secondary-label leading-relaxed">
         {finding.description}
       </div>
     </div>
@@ -164,75 +145,47 @@ function ToolCallChip({ event, isExpanded, onToggle }: { event: StepEvent; isExp
   } catch { /* keep null */ }
 
   return (
-    <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+    <div className="flex-[1_1_auto] min-w-0">
       <button
         onClick={hasDetail ? onToggle : undefined}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border)',
-          borderRadius: 6,
-          padding: '6px 10px',
-          fontSize: 12,
-          fontFamily: 'var(--font-mono)',
-          color: 'var(--text-primary)',
-          cursor: hasDetail ? 'pointer' : 'default',
-          width: '100%',
-          textAlign: 'left',
-          transition: 'border-color 0.15s',
-          borderColor: isExpanded ? 'var(--accent)' : 'var(--border)',
-        }}
+        className={`flex items-center gap-1.5 w-full text-left rounded-md px-2.5 py-1.5 text-xs font-mono transition-all ${
+          isExpanded
+            ? 'bg-[rgb(0_113_227/0.05)] border border-[rgb(0_113_227/0.2)]'
+            : 'bg-elevated border border-transparent hover:border-separator'
+        } ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        <span style={{ color: 'var(--text-muted)', fontSize: 10, flexShrink: 0 }}>#{event.step}</span>
-        <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{event.action}</span>
+        <span className="text-quaternary-label text-[10px] shrink-0">#{event.step}</span>
+        <span className="font-medium text-label whitespace-nowrap">{event.action}</span>
         {event.result && (
-          <span style={{
-            color: 'var(--text-muted)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            flex: 1,
-            fontSize: 11,
-          }}>
+          <span className="text-tertiary-label overflow-hidden text-ellipsis whitespace-nowrap flex-1 text-[11px]">
             {event.result}
           </span>
         )}
         {hasDetail && (
-          <span style={{ color: 'var(--text-muted)', fontSize: 10, flexShrink: 0, marginLeft: 'auto' }}>
+          <span className="text-quaternary-label text-[10px] shrink-0 ml-auto">
             {isExpanded ? '▾' : '▸'}
           </span>
         )}
       </button>
 
-      {/* Expanded detail */}
       {isExpanded && (
-        <div style={{
-          marginTop: 4,
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border)',
-          borderRadius: 6,
-          overflow: 'hidden',
-          fontSize: 11,
-          fontFamily: 'var(--font-mono)',
-        }}>
+        <div className="mt-1 bg-elevated rounded-lg overflow-hidden text-[11px] font-mono">
           {parsedArgs && (
-            <div style={{ borderBottom: '1px solid var(--border)' }}>
-              <div style={{ padding: '4px 10px', fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-elevated)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div className="border-b border-black/[0.04]">
+              <div className="px-3 py-1 text-[10px] text-tertiary-label font-semibold uppercase tracking-wide bg-canvas">
                 Arguments
               </div>
-              <pre style={{ padding: '8px 10px', margin: 0, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5, maxHeight: 200, overflowY: 'auto' }}>
+              <pre className="px-3 py-2 m-0 text-secondary-label whitespace-pre-wrap break-words leading-relaxed max-h-[200px] overflow-y-auto">
                 {parsedArgs}
               </pre>
             </div>
           )}
           {event.fullResult && (
             <div>
-              <div style={{ padding: '4px 10px', fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-elevated)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <div className="px-3 py-1 text-[10px] text-tertiary-label font-semibold uppercase tracking-wide bg-canvas">
                 Result
               </div>
-              <pre style={{ padding: '8px 10px', margin: 0, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5, maxHeight: 200, overflowY: 'auto' }}>
+              <pre className="px-3 py-2 m-0 text-secondary-label whitespace-pre-wrap break-words leading-relaxed max-h-[200px] overflow-y-auto">
                 {(() => { try { return JSON.stringify(JSON.parse(event.fullResult!), null, 2); } catch { return event.fullResult; } })()}
               </pre>
             </div>
@@ -246,31 +199,22 @@ function ToolCallChip({ event, isExpanded, onToggle }: { event: StepEvent; isExp
 // ─── Special event badges ─────────────────────────────────────────
 
 function SpecialEvent({ event }: { event: StepEvent }) {
-  const styles: Record<string, { bg: string; border: string; color: string; icon: string }> = {
-    model_switch: { bg: 'rgba(88,166,255,0.08)', border: 'rgba(88,166,255,0.3)', color: '#58a6ff', icon: '⇄' },
-    budget_warning: { bg: 'rgba(227,179,65,0.08)', border: 'rgba(227,179,65,0.3)', color: '#e3b341', icon: '!' },
-    assemble_output: { bg: 'rgba(63,185,80,0.08)', border: 'rgba(63,185,80,0.3)', color: '#3fb950', icon: '✓' },
+  const config: Record<string, { color: string; bg: string; icon: string }> = {
+    model_switch: { color: '#0071e3', bg: 'rgba(0,113,227,0.06)', icon: '⇄' },
+    budget_warning: { color: '#ff9500', bg: 'rgba(255,149,0,0.06)', icon: '!' },
+    assemble_output: { color: '#34c759', bg: 'rgba(52,199,89,0.06)', icon: '✓' },
   };
-  const s = styles[event.type ?? ''] ?? styles.budget_warning;
+  const s = config[event.type ?? ''] ?? config.budget_warning;
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-      padding: '8px 12px',
-      background: s.bg,
-      border: `1px solid ${s.border}`,
-      borderRadius: 6,
-      marginTop: 8,
-      fontSize: 12,
-    }}>
-      <span style={{ color: s.color, fontWeight: 700, fontSize: 14 }}>{s.icon}</span>
-      <span style={{ color: s.color, fontWeight: 600 }}>{event.action}</span>
+    <div
+      className="flex items-center gap-2 px-3 py-2 rounded-lg mt-2 text-xs"
+      style={{ background: s.bg }}
+    >
+      <span className="font-bold text-sm" style={{ color: s.color }}>{s.icon}</span>
+      <span className="font-semibold" style={{ color: s.color }}>{event.action}</span>
       {event.result && (
-        <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-          {event.result}
-        </span>
+        <span className="font-mono text-[11px] text-tertiary-label">{event.result}</span>
       )}
     </div>
   );
@@ -291,102 +235,61 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
     });
   }, []);
 
-  const isLongReasoning = (turn.fullReasoning?.length ?? 0) > 150;
+  const fullText = turn.fullReasoning ?? turn.reasoning;
+  const isLongReasoning = fullText.length > 150;
   const displayReasoning = reasoningExpanded
-    ? (turn.fullReasoning ?? turn.reasoning)
-    : (turn.reasoning?.slice(0, 120) + (isLongReasoning ? '...' : ''));
+    ? fullText
+    : (fullText.slice(0, 150) + (isLongReasoning ? '...' : ''));
 
-  const parallelCount = turn.toolCalls.length;
-  const hasParallel = parallelCount > 1;
+  const batchIds = new Set(turn.toolCalls.map(tc => tc.batchId).filter(Boolean));
+  const hasBatches = batchIds.size > 0;
+  const isAllParallel = hasBatches && batchIds.size === 1 && turn.toolCalls.length > 1;
+  const totalCalls = turn.toolCalls.length;
 
   return (
     <div
-      style={{
-        padding: '16px 20px',
-        borderBottom: '1px solid var(--border)',
-        animation: isLatest ? 'fadeIn 0.3s ease' : undefined,
-      }}
+      className="bg-white rounded-xl border border-black/[0.06] shadow-sm mx-4 mb-2 p-4"
+      style={{ animation: isLatest ? 'fadeIn 0.3s ease' : undefined }}
     >
-      {/* Turn header: number + reasoning */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: turn.toolCalls.length > 0 || turn.findings.length > 0 ? 10 : 0 }}>
-        <span style={{
-          fontSize: 10,
-          color: 'var(--text-muted)',
-          fontFamily: 'var(--font-mono)',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border)',
-          borderRadius: 4,
-          padding: '2px 6px',
-          flexShrink: 0,
-          marginTop: 2,
-        }}>
-          T{turnIndex + 1}
+      {/* Turn header */}
+      <div className={`flex gap-2.5 items-start ${(turn.toolCalls.length > 0 || turn.findings.length > 0) ? 'mb-2.5' : ''}`}>
+        <span className="text-[10px] text-tertiary-label font-mono bg-elevated rounded-md px-2 py-0.5 shrink-0 mt-0.5 font-medium">
+          {turnIndex + 1}
         </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="flex-1 min-w-0">
           <div
             onClick={isLongReasoning ? () => setReasoningExpanded(!reasoningExpanded) : undefined}
-            style={{
-              fontSize: 13,
-              color: 'var(--text-primary)',
-              lineHeight: 1.5,
-              cursor: isLongReasoning ? 'pointer' : 'default',
-            }}
+            className={`text-[13px] text-label leading-relaxed ${isLongReasoning ? 'cursor-pointer' : ''}`}
           >
             {displayReasoning}
             {isLongReasoning && !reasoningExpanded && (
-              <span style={{ color: 'var(--accent)', fontSize: 11, marginLeft: 4 }}>more</span>
+              <span className="text-tint text-[11px] ml-1 font-medium">more</span>
             )}
           </div>
 
-          {/* Parallel indicator */}
-          {hasParallel && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              marginTop: 6,
-              fontSize: 11,
-              color: 'var(--text-muted)',
-            }}>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                background: 'rgba(88,166,255,0.08)',
-                border: '1px solid rgba(88,166,255,0.2)',
-                borderRadius: 4,
-                padding: '1px 6px',
-                color: 'var(--accent)',
-                fontSize: 10,
-                fontWeight: 600,
-              }}>
-                {parallelCount} parallel
+          {totalCalls > 1 && (
+            <div className="mt-1.5">
+              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 ${
+                isAllParallel
+                  ? 'bg-[rgb(0_113_227/0.06)] text-tint'
+                  : 'bg-elevated text-tertiary-label'
+              }`}>
+                {totalCalls} {isAllParallel ? 'parallel' : 'sequential'}
               </span>
             </div>
           )}
         </div>
 
         {turn.timestamp && (
-          <span style={{
-            fontSize: 10,
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-          }}>
+          <span className="text-[10px] text-quaternary-label font-mono shrink-0 whitespace-nowrap">
             {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
         )}
       </div>
 
-      {/* Tool calls grid */}
+      {/* Tool calls */}
       {turn.toolCalls.length > 0 && (
-        <div style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 6,
-          marginLeft: 36,
-        }}>
+        <div className="flex flex-wrap gap-1.5 ml-7">
           {turn.toolCalls.map(tc => (
             <ToolCallChip
               key={`${tc.step}-${tc.action}`}
@@ -400,7 +303,7 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
 
       {/* Findings */}
       {turn.findings.length > 0 && (
-        <div style={{ marginLeft: 36 }}>
+        <div className="ml-7">
           {turn.findings.map(f => (
             <FindingCard key={`finding-${f.step}`} event={f} />
           ))}
@@ -409,7 +312,7 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
 
       {/* Special events */}
       {turn.special.length > 0 && (
-        <div style={{ marginLeft: 36 }}>
+        <div className="ml-7">
           {turn.special.map(s => (
             <SpecialEvent key={`special-${s.step}-${s.type}`} event={s} />
           ))}
@@ -428,7 +331,6 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
 
   const turns = useMemo(() => groupEventsIntoTurns(events), [events]);
 
-  // Auto-scroll
   useEffect(() => {
     if (!autoScroll || !scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -441,7 +343,6 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
     setAutoScroll(atBottom);
   }, []);
 
-  // SSE connection
   useEffect(() => {
     if (readonly) return;
 
@@ -456,6 +357,8 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
         } else if (data.type === 'run_complete') {
           onRunComplete(data.result);
           es.close();
+        } else if (data.type === 'run_cancelled') {
+          es.close();
         } else if (data.type === 'run_error') {
           onRunError(data.error);
           es.close();
@@ -465,9 +368,7 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
       } catch { /* ignore parse errors */ }
     };
 
-    es.onerror = () => {
-      // EventSource auto-reconnects
-    };
+    es.onerror = () => {};
 
     return () => {
       es.close();
@@ -479,27 +380,10 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      style={{
-        flex: 1,
-        overflowY: 'auto',
-        background: 'var(--bg-primary)',
-        position: 'relative',
-      }}
+      className="flex-1 overflow-y-auto bg-canvas relative pt-3"
     >
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-
       {events.length === 0 && (
-        <div style={{
-          padding: '40px 20px',
-          color: 'var(--text-muted)',
-          fontSize: 13,
-          textAlign: 'center',
-        }}>
+        <div className="p-10 text-tertiary-label text-sm text-center">
           Waiting for agent to start...
         </div>
       )}
@@ -521,21 +405,7 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
               scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
             }
           }}
-          style={{
-            position: 'sticky',
-            bottom: 12,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
-            borderRadius: 12,
-            padding: '4px 12px',
-            fontSize: 11,
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            display: 'block',
-            margin: '0 auto',
-          }}
+          className="sticky bottom-3 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm shadow-card rounded-full px-4 py-1.5 text-[11px] text-secondary-label cursor-pointer block mx-auto hover:shadow-elevated transition-shadow"
         >
           Resume auto-scroll
         </button>

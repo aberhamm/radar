@@ -27,66 +27,33 @@ export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: Bu
   };
 
   return (
-    <div style={{
-      position: 'absolute',
-      inset: 0,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'rgba(13,17,23,0.85)',
-      zIndex: 20,
-      backdropFilter: 'blur(2px)',
-    }}>
-      <div style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        padding: 32,
-        maxWidth: 400,
-        width: '90%',
-        textAlign: 'center',
-      }}>
-        <div style={{ fontSize: 28, marginBottom: 12 }}>⏸</div>
-        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Budget Exhausted</h2>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
+    <div className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm z-20">
+      <div className="bg-white rounded-xl border border-black/[0.06] shadow-float p-6 max-w-[380px] w-[90%] text-center">
+        <div className="text-2xl mb-2">⏸</div>
+        <h2 className="text-base font-semibold text-label mb-1.5">Budget Exhausted</h2>
+        <p className="text-sm text-secondary-label mb-1">
           Used {toolCalls} of {budget} tool calls.
         </p>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24 }}>
+        <p className="text-sm text-secondary-label mb-6">
           {findings} findings recorded so far.
         </p>
 
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+        <div className="flex gap-3 justify-center">
           <button
             onClick={() => handleDecision(true)}
             disabled={loading}
-            style={{
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: 4,
-              padding: '8px 16px',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.6 : 1,
-            }}
+            className={`bg-tint text-white rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[#0077ed] active:scale-[0.98]'
+            }`}
           >
             Extend +50 calls
           </button>
           <button
             onClick={() => handleDecision(false)}
             disabled={loading}
-            style={{
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              padding: '8px 16px',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.6 : 1,
-            }}
+            className={`bg-elevated text-label rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[#e8e8ed] active:scale-[0.98]'
+            }`}
           >
             Finish &amp; Generate Report
           </button>

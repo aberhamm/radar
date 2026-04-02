@@ -1,4 +1,4 @@
-import type { Finding } from '../../types/findings.js';
+import type { Finding, FindingCategory, Severity, Evidence, DocRef } from '../../types/findings.js';
 import type { AgentState } from '../../types/state.js';
 
 export interface RecordFindingInput {
@@ -36,6 +36,61 @@ function isFindingLike(obj: unknown): obj is Record<string, unknown> {
 }
 
 /**
+ * Safely construct an Evidence item from an untyped object.
+ */
+function toEvidence(obj: unknown): Evidence | null {
+  if (typeof obj !== 'object' || obj === null) return null;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.filePath !== 'string' || typeof o.description !== 'string') return null;
+  return {
+    filePath: o.filePath,
+    description: o.description,
+    ...(typeof o.lineNumber === 'number' ? { lineNumber: o.lineNumber } : {}),
+    ...(typeof o.snippet === 'string' ? { snippet: o.snippet } : {}),
+  };
+}
+
+/**
+ * Safely construct a DocRef item from an untyped object.
+ */
+function toDocRef(obj: unknown): DocRef | null {
+  if (typeof obj !== 'object' || obj === null) return null;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.url !== 'string' || typeof o.title !== 'string' || typeof o.relevance !== 'string') return null;
+  return { url: o.url, title: o.title, relevance: o.relevance };
+}
+
+/**
+ * Build a type-safe Finding from a validated object (must have passed isFindingLike).
+ * Provides defaults for optional/missing fields instead of casting.
+ */
+function buildFinding(obj: Record<string, unknown>): Finding {
+  const evidence = Array.isArray(obj.evidence)
+    ? obj.evidence.map(toEvidence).filter((e): e is Evidence => e !== null)
+    : [];
+
+  const tags = Array.isArray(obj.tags)
+    ? obj.tags.filter((t): t is string => typeof t === 'string')
+    : [];
+
+  const documentationRefs = Array.isArray(obj.documentationRefs)
+    ? obj.documentationRefs.map(toDocRef).filter((d): d is DocRef => d !== null)
+    : undefined;
+
+  return {
+    id: obj.id as string,
+    category: obj.category as FindingCategory,
+    severity: obj.severity as Severity,
+    title: obj.title as string,
+    description: typeof obj.description === 'string' ? obj.description : '',
+    evidence,
+    tags,
+    ...(typeof obj.investigationNote === 'string' ? { investigationNote: obj.investigationNote } : {}),
+    ...(documentationRefs && documentationRefs.length > 0 ? { documentationRefs } : {}),
+  };
+}
+
+/**
  * Extract finding(s) from LLM-provided input.
  * Handles multiple argument shapes:
  * - { finding: { id, category, ... } }       — correct per schema
@@ -52,7 +107,7 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
   if (Array.isArray(candidate)) {
     const findings = candidate.filter(isFindingLike);
     if (findings.length > 0) {
-      return findings as unknown as Finding[];
+      return findings.map(buildFinding);
     }
   }
 
@@ -60,7 +115,7 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
   if (Array.isArray(input)) {
     const findings = (input as unknown[]).filter(isFindingLike);
     if (findings.length > 0) {
-      return findings as unknown as Finding[];
+      return findings.map(buildFinding);
     }
   }
 
@@ -71,7 +126,7 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
       .map((k) => input[k])
       .filter(isFindingLike);
     if (findings.length > 0) {
-      return findings as unknown as Finding[];
+      return findings.map(buildFinding);
     }
   }
 
@@ -85,7 +140,7 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
         .map((k) => candObj[k])
         .filter(isFindingLike);
       if (findings.length > 0) {
-        return findings as unknown as Finding[];
+        return findings.map(buildFinding);
       }
     }
 
@@ -93,19 +148,19 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
     if ('finding' in candObj && !('id' in candObj)) {
       const inner = candObj.finding;
       if (isFindingLike(inner)) {
-        return [inner as unknown as Finding];
+        return [buildFinding(inner as Record<string, unknown>)];
       }
     }
 
     // Standard: { finding: { id, category, ... } }
     if (isFindingLike(candObj)) {
-      return [candObj as unknown as Finding];
+      return [buildFinding(candObj)];
     }
   }
 
   // Flat: { id, category, severity, ... }
   if (isFindingLike(input)) {
-    return [input as unknown as Finding];
+    return [buildFinding(input)];
   }
 
   const candidateKeys = candidate && typeof candidate === 'object' ? Object.keys(candidate as object) : [];
@@ -127,7 +182,7 @@ export function recordFinding(
   state: AgentState,
   input: RecordFindingInput,
 ): RecordFindingOutput {
-  const findings = extractFindings(input as unknown as Record<string, unknown>);
+  const findings = extractFindings(input as Record<string, unknown>);
 
   for (const finding of findings) {
     state.findings.push(finding);

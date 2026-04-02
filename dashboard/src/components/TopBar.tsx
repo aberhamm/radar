@@ -26,20 +26,8 @@ interface TopBarProps {
   onSelectHistory: (id: string) => void;
 }
 
-function ScoreDot({ score }: { score: 'red' | 'yellow' | 'green' }) {
-  const colors = { red: '#f85149', yellow: '#e3b341', green: '#3fb950' };
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        width: 8,
-        height: 8,
-        borderRadius: '50%',
-        background: colors[score],
-        marginRight: 4,
-      }}
-    />
-  );
+function scoreColor(score: 'red' | 'yellow' | 'green'): string {
+  return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
 }
 
 export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, history, onNewRun, onStop, onSelectHistory }: TopBarProps) {
@@ -47,85 +35,52 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
   const isComplete = status === 'complete' || status === 'error';
 
   return (
-    <header style={{
-      background: 'var(--bg-surface)',
-      borderBottom: '1px solid var(--border)',
-      padding: '0 20px',
-      height: 48,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 16,
-      position: 'sticky',
-      top: 0,
-      zIndex: 10,
-      flexShrink: 0,
-    }}>
+    <header className="bg-white/80 backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 h-14 flex items-center gap-3 sticky top-0 z-10 shrink-0">
       {/* Brand */}
-      <span style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 13,
-        color: 'var(--accent)',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}>
-        repo-audit-agent
+      <span className="font-mono text-sm font-bold text-label tracking-tight whitespace-nowrap">
+        repo-audit
       </span>
 
       {/* Center: repo + goal badges */}
       {(isRunning || isComplete) && repoName && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1 }}>
-          <span style={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
-            borderRadius: 4,
-            padding: '2px 8px',
-            fontSize: 12,
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-primary)',
-          }}>
+        <div className="flex gap-2 items-center flex-1">
+          <span className="bg-elevated rounded-md px-2.5 py-0.5 text-xs font-mono font-medium text-label">
             {repoName}
           </span>
           {goal && (
-            <span style={{
-              background: 'rgba(88,166,255,0.1)',
-              border: '1px solid rgba(88,166,255,0.3)',
-              borderRadius: 4,
-              padding: '2px 8px',
-              fontSize: 11,
-              color: 'var(--accent)',
-            }}>
+            <span className="bg-[rgb(0_113_227/0.08)] rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
               {goal}
             </span>
           )}
           {scorecard && (
-            <span style={{ fontSize: 12, display: 'flex', alignItems: 'center' }}>
-              <ScoreDot score={scorecard.overallScore} />
-              <span style={{ color: 'var(--text-secondary)' }}>{scorecard.overallScore.toUpperCase()}</span>
+            <span className="flex items-center gap-1.5 text-xs">
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ background: scoreColor(scorecard.overallScore) }}
+              />
+              <span className="text-secondary-label font-medium">
+                {scorecard.overallScore.toUpperCase()}
+              </span>
             </span>
           )}
         </div>
       )}
 
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-        {/* Budget progress bar */}
+      <div className="ml-auto flex gap-3 items-center">
+        {/* Budget progress */}
         {isRunning && budget && toolCalls !== undefined && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-tertiary-label font-mono whitespace-nowrap">
               {toolCalls} / {budget}
             </span>
-            <div style={{
-              width: 80,
-              height: 4,
-              background: 'var(--bg-elevated)',
-              borderRadius: 2,
-              overflow: 'hidden',
-            }}>
-              <div style={{
-                width: `${Math.min(100, (toolCalls / budget) * 100)}%`,
-                height: '100%',
-                background: toolCalls / budget > 0.8 ? 'var(--error)' : toolCalls / budget > 0.6 ? 'var(--warning)' : 'var(--accent)',
-                transition: 'width 0.3s ease',
-              }} />
+            <div className="w-20 h-1 bg-elevated rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{
+                  width: `${Math.min(100, (toolCalls / budget) * 100)}%`,
+                  background: toolCalls / budget > 0.8 ? '#ff3b30' : toolCalls / budget > 0.6 ? '#ff9500' : '#0071e3',
+                }}
+              />
             </div>
           </div>
         )}
@@ -135,22 +90,18 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
           <select
             onChange={e => { if (e.target.value) { onSelectHistory(e.target.value); e.target.value = ''; } }}
             defaultValue=""
-            style={{
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              padding: '3px 8px',
-              fontSize: 11,
-              cursor: 'pointer',
-            }}
+            className="bg-elevated text-secondary-label border-none rounded-md px-2.5 py-1 text-[11px] cursor-pointer outline-none"
           >
             <option value="" disabled>History</option>
-            {history.map(h => (
-              <option key={h.id} value={h.id}>
-                {h.repoName} ({h.goal})
-              </option>
-            ))}
+            {history.map(h => {
+              const d = new Date(h.startedAt);
+              const time = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+              return (
+                <option key={h.id} value={h.id}>
+                  {h.repoName} — {time} ({h.goal})
+                </option>
+              );
+            })}
           </select>
         )}
 
@@ -158,16 +109,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
         {isRunning && (
           <button
             onClick={onStop}
-            style={{
-              background: 'var(--error)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              padding: '4px 12px',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
+            className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors"
           >
             Stop
           </button>
@@ -177,16 +119,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
         {isComplete && (
           <button
             onClick={onNewRun}
-            style={{
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: 4,
-              padding: '4px 12px',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
+            className="bg-tint text-white rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[#0077ed] transition-colors"
           >
             New Run
           </button>

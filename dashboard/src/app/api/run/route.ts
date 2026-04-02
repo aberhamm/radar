@@ -14,11 +14,8 @@ async function loadRunner() {
   const { register } = await import(/* webpackIgnore: true */ 'node:module');
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
 
-  // Load .env from the repo root (dotenv is only auto-loaded in src/index.ts CLI entry)
-  const dotenv = await import(/* webpackIgnore: true */ 'dotenv');
-  dotenv.config({ path: path.resolve(process.cwd(), '..', '.env') });
-
   // Register tsx ESM loader so dynamic import() can handle .ts files.
+  // (.env is loaded eagerly at startup via src/instrumentation.ts)
   // Safe to call multiple times — Node ignores duplicate registrations.
   try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered or unavailable */ }
 
@@ -52,14 +49,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'repoPath is required' }, { status: 400 });
   }
 
-  const repoName = path.basename(repoPath);
+  // Resolve relative paths against the repo root (one level up from dashboard/)
+  const resolvedRepoPath = path.isAbsolute(repoPath)
+    ? repoPath
+    : path.resolve(process.cwd(), '..', repoPath);
+
+  // Pre-flight: verify repo exists and has files
+  const fs = await import(/* webpackIgnore: true */ 'node:fs');
+  if (!fs.existsSync(resolvedRepoPath)) {
+    session.status = 'idle';
+    return NextResponse.json({ error: `Repository not found: ${resolvedRepoPath}` }, { status: 400 });
+  }
+  const entries = fs.readdirSync(resolvedRepoPath).filter((f: string) => f !== '.git');
+  if (entries.length === 0) {
+    session.status = 'idle';
+    return NextResponse.json({ error: `Repository is empty: ${resolvedRepoPath}` }, { status: 400 });
+  }
+
+  const repoName = path.basename(resolvedRepoPath);
   const runId = crypto.randomUUID();
   const abortController = new AbortController();
   session.result = null;
   session.currentRun = {
     id: runId,
     goal,
-    repoPath,
+    repoPath: resolvedRepoPath,
     repoName,
     startedAt: new Date(),
     events: [],
@@ -73,7 +87,7 @@ export async function POST(req: NextRequest) {
     try {
       const runAgent = await loadRunner();
       const result = await runAgent({
-        repoPath,
+        repoPath: resolvedRepoPath,
         repoName,
         repoSource: 'local',
         goal: goal as 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review',
