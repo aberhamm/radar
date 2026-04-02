@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionStatus } from '@/lib/agentSession';
-import type { Scorecard, RunMetrics } from '@agent/types/output';
+import type { Scorecard, RunMetrics } from '@/lib/agentSession';
 
 interface HistoryItem {
   id: string;

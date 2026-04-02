@@ -1,7 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/agentSession';
-import { runAgent } from '@agent/agent/runner';
 import path from 'node:path';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+/**
+ * Load the agent runner at runtime via tsx, completely bypassing webpack.
+ * The agent source tree is heavy (Pi Agent, tools, Node.js APIs) and webpack
+ * takes 5+ minutes to compile it. tsx handles TypeScript natively.
+ */
+async function loadRunner() {
+  const { register } = await import(/* webpackIgnore: true */ 'node:module');
+  const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
+
+  // Register tsx ESM loader so dynamic import() can handle .ts files.
+  // Safe to call multiple times — Node ignores duplicate registrations.
+  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered or unavailable */ }
+
+  const agentPath = path.resolve(process.cwd(), '..', 'src', 'agent', 'runner.ts');
+  const mod = await import(/* webpackIgnore: true */ agentPath);
+  return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
+}
 
 export async function POST(req: NextRequest) {
   const session = getSession();
@@ -42,11 +62,12 @@ export async function POST(req: NextRequest) {
   // Run agent asynchronously — don't await here
   (async () => {
     try {
+      const runAgent = await loadRunner();
       const result = await runAgent({
         repoPath,
         repoName,
         repoSource: 'local',
-        goal: goal as import('@agent/types/state').GoalType,
+        goal: goal as 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review',
         verbose: true,
         onStep: (event) => {
           const run = session.currentRun;

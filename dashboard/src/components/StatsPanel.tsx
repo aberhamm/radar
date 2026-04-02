@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { StepEvent } from '@agent/agent/runner';
-import type { Severity } from '@agent/types/findings';
+import type { StepEvent, Severity } from '@/lib/agentSession';
 
 interface StatsPanelProps {
   events: StepEvent[];

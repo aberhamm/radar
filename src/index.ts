@@ -151,26 +151,13 @@ program
       process.exit(1);
     });
 
-    // Poll until port responds (max 30s)
+    // Open browser immediately — webpack compiles on first request,
+    // so the browser will show the loading state while it compiles.
     const url = `http://localhost:${port}`;
-    let ready = false;
-    const start = Date.now();
-    while (!ready && Date.now() - start < 30000) {
-      try {
-        await fetch(url, { signal: AbortSignal.timeout(1000) });
-        ready = true;
-      } catch {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
 
-    if (!ready) {
-      console.error('Dashboard did not start within 30 seconds.');
-      child.kill();
-      process.exit(1);
-    }
+    // Wait briefly for the server process to bind the port
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // Open in browser (cross-platform)
     console.log(`Opening ${url} in browser...`);
     const openCmd = process.platform === 'win32' ? 'start'
       : process.platform === 'darwin' ? 'open'

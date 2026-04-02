@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
-    "dev": "tsx src/index.ts",
+    "dev": "pnpm --filter ./dashboard dev",
     "analyze": "tsx src/index.ts analyze",
     "investigate": "tsx src/index.ts analyze",
     "dashboard": "tsx src/index.ts dashboard",
