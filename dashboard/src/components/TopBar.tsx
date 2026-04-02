@@ -3,15 +3,6 @@
 import type { SessionStatus } from '@/lib/agentSession';
 import type { Scorecard, RunMetrics } from '@/lib/agentSession';
 
-interface HistoryItem {
-  id: string;
-  goal: string;
-  repoName: string;
-  startedAt: string;
-  completedAt?: string;
-  hasResult: boolean;
-}
-
 interface TopBarProps {
   status: SessionStatus;
   repoName?: string;
@@ -20,22 +11,38 @@ interface TopBarProps {
   budget?: number;
   scorecard?: Scorecard;
   metrics?: RunMetrics;
-  history: HistoryItem[];
   onNewRun: () => void;
   onStop: () => void;
-  onSelectHistory: (id: string) => void;
+  onToggleSidebar: () => void;
+  sidebarOpen: boolean;
+  hasHistory: boolean;
 }
 
 function scoreColor(score: 'red' | 'yellow' | 'green'): string {
   return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
 }
 
-export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, history, onNewRun, onStop, onSelectHistory }: TopBarProps) {
+export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, onNewRun, onStop, onToggleSidebar, sidebarOpen, hasHistory }: TopBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
 
   return (
-    <header className="bg-white/80 backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 h-14 flex items-center gap-3 sticky top-0 z-10 shrink-0">
+    <header className="bg-white/80 backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-4 h-14 flex items-center gap-3 sticky top-0 z-10 shrink-0">
+      {/* Sidebar toggle */}
+      {hasHistory && (
+        <button
+          onClick={onToggleSidebar}
+          className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors cursor-pointer"
+          title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+        >
+          <svg className="w-4 h-4 text-secondary-label" viewBox="0 0 16 16" fill="currentColor">
+            <rect y="2" width="16" height="1.5" rx="0.75" />
+            <rect y="7.25" width="16" height="1.5" rx="0.75" />
+            <rect y="12.5" width="16" height="1.5" rx="0.75" />
+          </svg>
+        </button>
+      )}
+
       {/* Brand */}
       <span className="text-sm font-bold text-tint tracking-tight whitespace-nowrap">
         Scout
@@ -83,26 +90,6 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
               />
             </div>
           </div>
-        )}
-
-        {/* History dropdown */}
-        {history.length > 0 && (
-          <select
-            onChange={e => { if (e.target.value) { onSelectHistory(e.target.value); e.target.value = ''; } }}
-            defaultValue=""
-            className="bg-elevated text-secondary-label border-none rounded-md px-2.5 py-1.5 text-[11px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
-          >
-            <option value="" disabled>History</option>
-            {history.map(h => {
-              const d = new Date(h.startedAt);
-              const time = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-              return (
-                <option key={h.id} value={h.id}>
-                  {h.repoName} — {time} ({h.goal})
-                </option>
-              );
-            })}
-          </select>
         )}
 
         {/* Stop button */}

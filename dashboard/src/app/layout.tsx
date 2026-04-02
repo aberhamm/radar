@@ -1,12 +1,6 @@
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
+import { JetBrains_Mono } from 'next/font/google';
 import './globals.css';
-
-const display = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-display',
-  weight: ['400', '500', '600', '700', '800'],
-});
 
 const code = JetBrains_Mono({
   subsets: ['latin'],
@@ -25,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${display.variable} ${code.variable}`}>
+    <html lang="en" className={code.variable}>
       <body className="h-screen flex flex-col overflow-hidden">
         {children}
       </body>

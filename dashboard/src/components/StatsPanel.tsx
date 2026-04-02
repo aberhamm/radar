@@ -62,8 +62,10 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
   return (
     <aside className="bg-white border-l border-black/[0.06] p-4 flex flex-col gap-5 overflow-y-auto w-full">
       <Section title="Findings">
-        <div className="text-2xl font-bold text-label font-mono tracking-tight">
-          {findingEvents.length}
+        <div className="bg-elevated rounded-lg px-3 py-2 inline-block">
+          <span className="text-3xl font-bold text-label font-mono tracking-tight">
+            {findingEvents.length}
+          </span>
         </div>
         <div className="flex flex-col gap-1.5 mt-3">
           {severityOrder.filter(s => severityCounts[s]).map(s => (
@@ -82,7 +84,7 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
         <div className="text-xl font-bold font-mono text-label">
           {toolCalls} <span className="text-sm text-tertiary-label font-normal">/ {budget}</span>
         </div>
-        <div className="h-1.5 bg-elevated rounded-full mt-3 overflow-hidden">
+        <div className="h-2 bg-elevated rounded-full mt-3 overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-300"
             style={{
@@ -117,7 +119,7 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div>
+    <div className="pb-5 border-b border-black/[0.06] last:border-b-0 last:pb-0">
       <div className="text-[10px] uppercase tracking-widest text-tertiary-label font-semibold mb-2">
         {title}
       </div>

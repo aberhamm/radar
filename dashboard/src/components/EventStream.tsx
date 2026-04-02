@@ -247,8 +247,8 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
 
   return (
     <div
-      className="bg-white rounded-xl border border-black/[0.06] shadow-sm mx-4 mb-2 p-4"
-      style={{ animation: isLatest ? 'fadeIn 0.3s ease' : undefined }}
+      className="bg-white rounded-xl border border-black/[0.06] shadow-sm mx-4 mb-2 p-4 hover:shadow-elevated hover:-translate-y-[1px] transition-all duration-200"
+      style={isLatest ? { animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both' } : undefined}
     >
       {/* Turn header */}
       <div className={`flex gap-2.5 items-start ${(turn.toolCalls.length > 0 || turn.findings.length > 0) ? 'mb-2.5' : ''}`}>
@@ -382,8 +382,12 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
       className="flex-1 overflow-y-auto bg-canvas relative pt-3"
     >
       {events.length === 0 && (
-        <div className="p-10 text-tertiary-label text-sm text-center">
-          Waiting for agent to start...
+        <div className="animate-slide-up flex flex-col items-center justify-center gap-3 pt-20 text-center">
+          <div className="w-5 h-5 border-2 border-tint border-t-transparent rounded-full" style={{ animation: 'spin 0.6s linear infinite' }} />
+          <div>
+            <div className="text-sm font-medium text-secondary-label">Agent is starting up</div>
+            <div className="text-xs text-tertiary-label mt-0.5">Events will stream in real-time</div>
+          </div>
         </div>
       )}
 

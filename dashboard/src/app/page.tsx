@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { StepEvent, Scorecard, RunMetrics, RunResult } from '@/lib/agentSession';
 import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
 import { IdleView } from '@/components/IdleView';
 import { RunningView } from '@/components/RunningView';
 import { CompleteView } from '@/components/CompleteView';
@@ -55,6 +56,7 @@ export default function DashboardPage() {
   const [replayData, setReplayData] = useState<HistoryRunData | null>(null);
   const [ready, setReady] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // On mount, check session state (handles page refresh mid-run)
   useEffect(() => {
@@ -243,68 +245,94 @@ export default function DashboardPage() {
         toolCalls={currentRun?.toolCalls}
         budget={currentRun?.budget}
         scorecard={result?.scorecard}
-        history={history}
         onNewRun={handleNewRun}
         onStop={handleStop}
-        onSelectHistory={handleSelectHistory}
+        onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+        sidebarOpen={sidebarOpen}
+        hasHistory={history.length > 0}
       />
 
-      {status === 'idle' && (
-        <IdleView
-          initialRepoPath={lastRepoPath}
-          onStart={handleStart}
+      <div className="flex-1 flex overflow-hidden">
+        <Sidebar
+          open={sidebarOpen}
+          history={history}
+          currentRepoName={currentRun?.repoName}
+          currentGoal={currentRun?.goal}
+          isRunning={isRunningOrPaused}
+          onSelectHistory={handleSelectHistory}
+          onClose={() => setSidebarOpen(false)}
         />
-      )}
 
-      {isRunningOrPaused && currentRun && (
-        <RunningView
-          events={currentRun.events}
-          status={status as 'running' | 'budget_paused'}
-          toolCalls={currentRun.toolCalls}
-          budget={currentRun.budget}
-          startedAt={currentRun.startedAt}
-          budgetPausedData={budgetPausedData}
-          onNewEvent={handleNewEvent}
-          onBudgetPaused={handleBudgetPaused}
-          onBudgetDecision={handleBudgetDecision}
-          onRunComplete={handleRunComplete}
-          onRunError={handleRunError}
-        />
-      )}
+        <main className="flex-1 flex flex-col overflow-hidden relative">
+          {status === 'idle' && (
+            <div key="idle" className="animate-slide-up flex-1 flex flex-col">
+              <IdleView
+                initialRepoPath={lastRepoPath}
+                onStart={handleStart}
+              />
+            </div>
+          )}
 
-      {status === 'replaying' && replayData && (
-        <ReplayView
-          sourceEvents={replayData.events}
-          result={replayData.result}
-          repoName={replayData.repoName}
-          goal={replayData.goal}
-          startedAt={new Date(replayData.startedAt)}
-          onViewReport={handleViewReport}
-        />
-      )}
+          {isRunningOrPaused && currentRun && (
+            <div key="running" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              <RunningView
+                events={currentRun.events}
+                status={status as 'running' | 'budget_paused'}
+                toolCalls={currentRun.toolCalls}
+                budget={currentRun.budget}
+                startedAt={currentRun.startedAt}
+                budgetPausedData={budgetPausedData}
+                onNewEvent={handleNewEvent}
+                onBudgetPaused={handleBudgetPaused}
+                onBudgetDecision={handleBudgetDecision}
+                onRunComplete={handleRunComplete}
+                onRunError={handleRunError}
+              />
+            </div>
+          )}
 
-      {(status === 'complete' || status === 'error') && result && currentRun && (
-        <CompleteView
-          briefMarkdown={result.briefMarkdown}
-          scorecard={result.scorecard}
-          metrics={result.metrics}
-          events={currentRun.events}
-          goal={currentRun.goal}
-        />
-      )}
+          {status === 'replaying' && replayData && (
+            <div key="replaying" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              <ReplayView
+                sourceEvents={replayData.events}
+                result={replayData.result}
+                repoName={replayData.repoName}
+                goal={replayData.goal}
+                startedAt={new Date(replayData.startedAt)}
+                onViewReport={handleViewReport}
+              />
+            </div>
+          )}
 
-      {status === 'error' && !result && (
-        <div className="flex-1 flex items-center justify-center flex-col gap-4">
-          <div className="text-3xl">✗</div>
-          <p className="text-danger text-sm">Run failed. Check server logs for details.</p>
-          <button
-            onClick={handleNewRun}
-            className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
-          >
-            Try Again
-          </button>
-        </div>
-      )}
+          {(status === 'complete' || status === 'error') && result && currentRun && (
+            <div key="complete" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              <CompleteView
+                briefMarkdown={result.briefMarkdown}
+                scorecard={result.scorecard}
+                metrics={result.metrics}
+                events={currentRun.events}
+                goal={currentRun.goal}
+              />
+            </div>
+          )}
+
+          {status === 'error' && !result && (
+            <div key="error" className="animate-scale-in flex-1 flex items-center justify-center flex-col gap-4">
+              <svg className="w-10 h-10 text-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="m15 9-6 6M9 9l6 6" />
+              </svg>
+              <p className="text-danger text-sm">Run failed. Check server logs for details.</p>
+              <button
+                onClick={handleNewRun}
+                className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+        </main>
+      </div>
 
       {historyLoading && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-canvas/60 backdrop-blur-sm">

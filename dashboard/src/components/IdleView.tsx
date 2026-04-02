@@ -42,8 +42,12 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
 
   return (
     <div className="flex-1 flex items-center justify-center p-6">
-      <div className="bg-white rounded-xl border border-black/[0.06] shadow-sm p-6 w-full max-w-md">
-        <div className="text-3xl mb-4">🔍</div>
+      <div className="bg-white rounded-xl border border-black/[0.06] shadow-sm p-6 w-full max-w-lg">
+        <svg className="w-8 h-8 mb-4 text-tint" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+          <path d="M11 8v6M8 11h6" />
+        </svg>
         <h1 className="text-xl font-bold text-label tracking-tight mb-1">
           Start Investigation
         </h1>
@@ -61,7 +65,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
               value={repoPath}
               onChange={e => setRepoPath(e.target.value)}
               placeholder="/path/to/your/repo or C:\..."
-              className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none transition-all"
+              className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none focus:focus-glow transition-all"
               disabled={loading}
             />
           </div>

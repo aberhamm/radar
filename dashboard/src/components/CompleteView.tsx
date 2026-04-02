@@ -201,7 +201,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-1 rounded-md text-sm font-medium transition-all cursor-pointer ${
+              className={`px-5 py-1.5 min-w-[72px] rounded-md text-[13px] font-medium transition-all cursor-pointer ${
                 activeTab === tab.id
                   ? 'bg-white text-label shadow-sm'
                   : 'text-secondary-label hover:text-label'
@@ -215,30 +215,32 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
 
       {/* Tab content */}
       <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'events' ? '' : 'px-6'}`}>
-        {activeTab === 'report' && (
-          <div className="max-w-[860px] pt-5 pb-8">
-            <ScorecardGrid scorecard={scorecard} />
-            <div className="md-content text-sm leading-relaxed">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefMarkdown}</ReactMarkdown>
+        <div key={activeTab} className="animate-slide-up flex-1 flex flex-col">
+          {activeTab === 'report' && (
+            <div className="max-w-[860px] pt-5 pb-8">
+              <ScorecardGrid scorecard={scorecard} />
+              <div className="md-content text-sm leading-relaxed">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefMarkdown}</ReactMarkdown>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'events' && (
-          <div className="flex-1 flex flex-col">
-            <EventStream
-              events={events}
-              onNewEvent={() => {}}
-              onBudgetPaused={() => {}}
-              onRunComplete={() => {}}
-              onRunError={() => {}}
-              readonly
-            />
-          </div>
-        )}
+          {activeTab === 'events' && (
+            <div className="flex-1 flex flex-col">
+              <EventStream
+                events={events}
+                onNewEvent={() => {}}
+                onBudgetPaused={() => {}}
+                onRunComplete={() => {}}
+                onRunError={() => {}}
+                readonly
+              />
+            </div>
+          )}
 
-        {activeTab === 'rules' && <RulesTab goal={goal} />}
-        {activeTab === 'cost' && <CostTab metrics={metrics} />}
+          {activeTab === 'rules' && <RulesTab goal={goal} />}
+          {activeTab === 'cost' && <CostTab metrics={metrics} />}
+        </div>
       </div>
     </div>
   );

@@ -55,10 +55,16 @@ export function RunningView({
       </div>
 
       {/* Status bar */}
-      <div className="bg-white/80 backdrop-blur-sm shadow-[inset_0_1px_0_0_rgb(0_0_0/0.04)] px-4 py-1.5 flex gap-4 font-mono text-[11px] text-tertiary-label shrink-0">
-        <span className={status === 'budget_paused' ? 'text-warning' : 'text-success'}>
-          <span className="inline-block" style={{ animation: 'pulse-dot 2s ease-in-out infinite' }}>●</span>
-          {' '}{status === 'budget_paused' ? 'PAUSED' : 'RUNNING'}
+      <div className="bg-white/80 backdrop-blur-sm shadow-[inset_0_1px_0_0_rgb(0_0_0/0.04)] px-4 py-2 flex items-center gap-4 font-mono text-xs text-tertiary-label shrink-0">
+        <span className={`flex items-center gap-1.5 font-medium ${status === 'budget_paused' ? 'text-warning' : 'text-success'}`}>
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{
+              background: status === 'budget_paused' ? '#ff9500' : '#34c759',
+              animation: status !== 'budget_paused' ? 'pulse-dot 2s ease-in-out infinite' : undefined,
+            }}
+          />
+          {status === 'budget_paused' ? 'PAUSED' : 'RUNNING'}
         </span>
         <span>{toolCalls} / {budget} calls</span>
         <span>{events.length} steps</span>
