@@ -43,8 +43,64 @@ Demo talking points: 11 findings in ~8 min, ~$0.74/run (dual-model, 37% on Haiku
 - [x] **Intent-based model switch** — Implemented as `switch_to_fast_model` tool. Agent calls it when investigation is complete, switching to Haiku for the writing phase. Replaces the old midpoint-based switch which was timing-dependent and unreliable.
 - [ ] **Auto-detect app roots** — Automatically discover app roots within a repo (e.g. Sitecore `src/` layout, monorepos with multiple `package.json` files, Next.js apps nested under subdirectories). Today the user points at the repo root; the agent should scan for multiple app entry points and scope tools per root. Enables accurate analysis of monorepos and platform-specific project structures.
 
+## Claude Code Patterns to Adopt
+
+Sourced from `C:/_projects/claude-code-main` analysis on 2026-04-02. Patterns that would improve reliability, cost, and context management.
+
+### High Value
+
+- [ ] **Tool result disk overflow + smart preview** — Save full tool results to disk, send only a truncated preview + file path to the LLM. Replace the flat 4000-char truncation in `piToolAdapter.ts` with per-tool `maxResultSizeChars` limits. Biggest impact on `read_files_batch` and `grep_pattern`. (M effort)
+- [ ] **Tiered context compression** — Replace single-tier `transformContext()` (10 recent full, rest at 200 chars) with 3 tiers: recent = full, mid-age = summary, old = dropped. Cache tool-use summaries by ID to avoid recomputing. Keeps longer investigations coherent. (M effort)
+- [ ] **Tool concurrency partitioning** — Add `isReadOnly` / `isConcurrencySafe` flags to tools. Let Pi run pure reads (`read_file`, `grep_pattern`, `find_files`) in parallel but serialize stateful tools (`record_finding`). Prevents race conditions as we add more mutable tools. (S effort)
+
+### Medium Value
+
+- [ ] **Retry with fallback model** — Add retry logic for transient API errors (429, 529, connection) with exponential backoff. On `max_output_tokens` errors, retry with fallback model up to 3x. Currently we catch and auto-assemble on any failure. (M effort)
+- [ ] **Deferred tool loading** — Mark niche tools (`web_search`, `fetch_url`, `compare_versions`) as deferred. Load them into context only when the agent requests them via a `tool_search` meta-tool. Reduces initial prompt tokens = cheaper first API call. (S effort)
+- [ ] **Input validation phase** — Separate `validateInput()` from `execute()` in tool definitions. Reject bad LLM arguments before any I/O. Fail faster, test validation independently. (S effort)
+
+### Tool-Specific Upgrades (from Claude Code's implementations)
+
+#### fetch_url / web_search
+
+- [ ] **LRU cache with TTL on fetch_url** — Claude Code caches fetched pages in a 50MB LRU with 15-min TTL. We re-fetch every time. Prevents duplicate fetches when the agent revisits a doc URL. (S effort)
+- [ ] **HTML→Markdown via Turndown** — Replace our crude tag-stripping in `fetchUrl.ts` with Turndown (lazy-loaded to save ~1.4MB heap). Produces much better content for LLM consumption — preserves headings, lists, code blocks, links. (S effort)
+- [ ] **Response size cap** — Add 10MB max HTTP response size guard. We currently have no limit; a huge page could blow up memory. (XS effort)
+- [ ] **Redirect safety** — Cross-host redirects should return the redirect URL instead of following blindly. Prevents open-redirect attacks when fetching untrusted repo docs. Cap at 10 hops. (S effort)
+- [ ] **Domain blocklist preflight** — Optional preflight check before fetching unknown domains. Lower priority since we already have `approvedSources.ts`, but worth adding for production. (S effort)
+- [ ] **Expand approved sources list** — Claude Code preapproves 106+ documentation domains. Our `approvedSources.ts` only covers Sitecore, Optimizely, Next.js, React, npm. Add: TypeScript, Tailwind, GraphQL, Vercel, MDN, Stack Overflow, GitHub docs. (XS effort)
+
+#### grep_pattern
+
+- [ ] **Ripgrep integration** — Replace our custom recursive regex walker with ripgrep subprocess. Faster on large repos, handles binary detection, respects `.gitignore` natively. Claude Code wraps ripgrep via a filesystem abstraction. (M effort)
+- [ ] **Pagination (offset + head_limit)** — Add `offset` and `maxResults` params that work like cursor pagination. Return `truncated: boolean` so the agent knows to paginate. Currently we hard-stop at 50 results with no way to get more. (S effort)
+- [ ] **Output modes** — Add `files_with_matches` mode (just file paths) and `count` mode (match counts per file) alongside current `content` mode. Cheaper for broad searches where the agent just needs to know *where*, not *what*. (S effort)
+- [ ] **Sort by mtime** — Return results sorted by most-recently-modified first. Agent gets the most relevant files first before truncation kicks in. (XS effort)
+- [ ] **Multiline pattern support** — Add a `multiline: boolean` flag for patterns that span lines (e.g., multi-line imports, JSX blocks). Maps to ripgrep `-U --multiline-dotall`. (XS effort)
+
+#### read_file / read_files_batch
+
+- [ ] **Read deduplication** — Track file mtimes; if the same file+range is read twice without modification, return a `file_unchanged` stub instead of full content. Saves cache_creation tokens on redundant reads. Claude Code does this with a WeakMap. (S effort)
+- [ ] **Line-range reads (offset + limit)** — Add `startLine` and `maxLines` params for targeted reads. Currently we always read from top and truncate at 500 lines. Agent should be able to read lines 200-300 of a large file. (S effort)
+- [ ] **Binary file detection** — Check for binary extensions/content before reading. Currently we'd return garbled content for images/compiled files. Return a helpful error instead. (XS effort)
+
+#### Cross-cutting tool patterns
+
+- [ ] **ENOENT → suggest similar files** — When a file isn't found, glob for similar names and include suggestions in the error. Helps the LLM self-correct without burning another tool call. Claude Code does this across all file tools. (S effort)
+- [ ] **Per-tool result size limits** — Replace flat 4000-char truncation with per-tool `maxResultSizeChars`. Grep gets 20K (search-heavy), fetch_url gets 100K (docs are long), read_file gets 65K. Paired with disk overflow from the "High Value" section. (S effort)
+- [ ] **Relative paths in all output** — Audit all tools to ensure they return relative paths (not absolute). Saves tokens in every tool result. Our `normalizePathArgs` handles input but some outputs still leak absolute paths. (XS effort)
+
+### Low Value (Park for Later)
+
+- [ ] **Session cost persistence** — Persist per-session costs and restore on resume. Useful when we add session resume capability. Not urgent now.
+- [ ] **Generator-based agent loop wrapper** — Wrap Pi's callback events in an async generator for cleaner streaming, checkpointing, and composable middleware. Big refactor, defer until Pi's event model becomes a bottleneck.
+
 ## Eng Review (2026-04-02)
 
 - [x] **Unit tests for extracted CLI commands** — 23 tests across `test/commands/analyze.test.ts` and `test/commands/compare.test.ts`. Covers argument validation, exit codes (green/yellow/red/error), dry-run, JSON mode, GitHub output hooks, and config passthrough.
 - [x] **Silent error catches in dashboard** — `loadPersistedRuns()` now handles errors per-file with `console.warn` so one corrupt JSON doesn't nuke history. Added logging to `loadRunEvents()`, session restore, and DELETE calls.
 - [x] **Type safety in recordFinding.ts** — Replaced all `as unknown as Finding` casts with `buildFinding()` that constructs type-safe Finding objects. Includes `toEvidence()` and `toDocRef()` validators for nested fields with safe defaults.
+
+## CEO Demo Readiness Audit (2026-04-02)
+
+- [x] **recordFinding type cast regression** — `6b47ed4` made `recordFinding` async for evidence verification but used `input as Record<string, unknown>` which fails strict TS. Caused 10 test failures and blocked dashboard production build. Fixed: `as unknown as Record<string, unknown>` in `8351443`.
