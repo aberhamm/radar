@@ -40,7 +40,7 @@ export function TerminalBrand({ isRunning }: TerminalBrandProps) {
 
       if (phase.current === 'typing') {
         charIndex.current++;
-        setSuffix(' ' + word.slice(0, charIndex.current));
+        setSuffix(word.slice(0, charIndex.current));
         if (charIndex.current >= word.length) {
           phase.current = 'paused';
           timer.current = setTimeout(tick, PAUSE_AFTER_TYPE);
@@ -57,7 +57,7 @@ export function TerminalBrand({ isRunning }: TerminalBrandProps) {
           phase.current = 'gap';
           timer.current = setTimeout(tick, PAUSE_AFTER_DELETE);
         } else {
-          setSuffix(' ' + word.slice(0, charIndex.current));
+          setSuffix(word.slice(0, charIndex.current));
           timer.current = setTimeout(tick, DELETE_SPEED);
         }
       } else if (phase.current === 'gap') {
@@ -77,20 +77,15 @@ export function TerminalBrand({ isRunning }: TerminalBrandProps) {
   }, [isRunning]);
 
   return (
-    <div className="flex items-center whitespace-nowrap font-brand select-none">
-      <span className="text-base text-tertiary-label font-semibold mr-1">{'>'}</span>
+    <div className="flex items-baseline whitespace-nowrap font-brand select-none">
       <span className="text-base font-bold text-tint tracking-tight">
         radar
       </span>
       {suffix && (
-        <span className="text-base font-medium text-secondary-label tracking-tight">
+        <span className="text-[13px] font-medium text-tertiary-label tracking-tight ml-1.5">
           {suffix}
         </span>
       )}
-      <span
-        className="inline-block w-[2px] h-[18px] bg-tint rounded-[1px] ml-px align-middle"
-        style={{ animation: 'cursor-blink 1s step-end infinite' }}
-      />
     </div>
   );
 }
