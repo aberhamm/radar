@@ -77,15 +77,15 @@ export function TerminalBrand({ isRunning }: TerminalBrandProps) {
   }, [isRunning]);
 
   return (
-    <div className="flex items-baseline whitespace-nowrap font-brand select-none">
-      <span className="text-base font-bold text-tint tracking-tight">
+    <>
+      <span className="text-[17px] font-bold text-tint tracking-tight font-brand select-none whitespace-nowrap">
         radar
       </span>
       {suffix && (
-        <span className="text-[13px] font-medium text-tertiary-label tracking-tight ml-1.5">
+        <span className="text-xs text-tertiary-label font-mono whitespace-nowrap select-none">
           {suffix}
         </span>
       )}
-    </div>
+    </>
   );
 }
