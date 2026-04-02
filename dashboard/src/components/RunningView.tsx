@@ -4,6 +4,7 @@ import type { StepEvent } from '@/lib/agentSession';
 import { EventStream } from './EventStream';
 import { StatsPanel } from './StatsPanel';
 import { BudgetPausedView } from './BudgetPausedView';
+import { TerminalBrand } from './TerminalBrand';
 
 interface RunningViewProps {
   events: StepEvent[];
@@ -68,6 +69,7 @@ export function RunningView({
         </span>
         <span>{toolCalls} / {budget} calls</span>
         <span>{events.length} steps</span>
+        <TerminalBrand isRunning={status === 'running'} />
       </div>
 
       {status === 'budget_paused' && budgetPausedData && (
