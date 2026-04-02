@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import type { GrepPatternInput, GrepPatternOutput, GrepMatch } from '../../types/tools.js';
 
@@ -13,6 +13,16 @@ export async function grepPattern(
   const maxResults = input.maxResults ?? DEFAULT_MAX_RESULTS;
   const regex = input.isRegex ? new RegExp(input.pattern, 'g') : null;
   const matches: GrepMatch[] = [];
+
+  // Check that search path exists
+  try {
+    await access(searchPath);
+  } catch {
+    return {
+      matches: [],
+      error: `Search path "${input.path ?? '.'}" does not exist. Use "." to search from the repo root.`,
+    };
+  }
 
   await searchDir(searchPath, repoRoot, input.pattern, regex, input.fileGlob, maxResults, matches);
   return { matches };

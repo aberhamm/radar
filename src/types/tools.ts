@@ -21,6 +21,7 @@ export interface FileEntry {
 
 export interface ListDirectoryOutput {
   entries: FileEntry[];
+  error?: string;
 }
 
 export interface ReadFileInput {
@@ -64,6 +65,7 @@ export interface GrepMatch {
 
 export interface GrepPatternOutput {
   matches: GrepMatch[];
+  error?: string;
 }
 
 export interface FindFilesInput {
@@ -74,6 +76,7 @@ export interface FindFilesInput {
 
 export interface FindFilesOutput {
   matches: string[];
+  error?: string;
 }
 
 // --- Config parsing tools ---

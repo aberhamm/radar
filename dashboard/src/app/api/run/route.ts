@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.error('[run] Agent error:', (err as Error).message, (err as Error).stack);
       session.status = 'error';
-      (session as Record<string, unknown>).lastError = (err as Error).message;
+      session.lastError = (err as Error).message;
       const run = session.currentRun;
       if (run?.streamController) {
         try {

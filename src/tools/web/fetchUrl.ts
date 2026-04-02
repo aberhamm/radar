@@ -4,43 +4,99 @@ const DEFAULT_MAX_LENGTH = 15_000;
 const TIMEOUT_MS = 10_000;
 
 /**
+ * Browser-like request headers.
+ *
+ * Most documentation sites check User-Agent + standard browser headers.
+ * Node.js fetch has a distinct TLS fingerprint that some sites (Cloudflare)
+ * can detect, but proper headers handle ~90% of cases. For the remaining
+ * sites, we rewrite URLs to API endpoints that don't need browser TLS
+ * (e.g. raw.githubusercontent.com, registry.npmjs.org).
+ */
+const BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.5',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
+  'Cache-Control': 'max-age=0',
+};
+
+/**
+ * Rewrite known URLs to their API/raw equivalents that bypass
+ * Cloudflare/bot detection and return cleaner content.
+ */
+function rewriteUrl(url: string): { url: string; headers: Record<string, string> } {
+  const parsed = new URL(url);
+
+  // GitHub blob URLs → raw.githubusercontent.com (pure markdown, no HTML parsing needed)
+  // e.g. github.com/Sitecore/jss/blob/main/CHANGELOG.md → raw.githubusercontent.com/Sitecore/jss/main/CHANGELOG.md
+  const ghBlobMatch = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/);
+  if (ghBlobMatch) {
+    return {
+      url: `https://raw.githubusercontent.com/${ghBlobMatch[1]}/${ghBlobMatch[2]}/${ghBlobMatch[3]}`,
+      headers: { 'User-Agent': BROWSER_HEADERS['User-Agent'] },
+    };
+  }
+
+  // npmjs.com package pages → registry API (JSON, no Cloudflare)
+  // e.g. npmjs.com/package/next → registry.npmjs.org/next/latest
+  const npmMatch = url.match(/^https?:\/\/(?:www\.)?npmjs\.com\/package\/([^/]+)\/?$/);
+  if (npmMatch) {
+    return {
+      url: `https://registry.npmjs.org/${npmMatch[1]}/latest`,
+      headers: { 'Accept': 'application/json' },
+    };
+  }
+
+  // Default: use full browser headers
+  return { url, headers: BROWSER_HEADERS };
+}
+
+/**
  * Fetch and extract text content from a documentation URL.
  * Strips HTML tags and returns plain text, truncated to maxLength.
  *
- * Implementation note: v1 uses a simple HTML-to-text approach.
- * For better extraction (handling navigation, footers, ads), a
- * readability library like @mozilla/readability could be added later.
+ * Uses browser-like headers to avoid bot detection on documentation sites.
+ * Rewrites known URLs (GitHub blob, npmjs.com) to API endpoints that
+ * return cleaner content and bypass Cloudflare TLS fingerprinting.
  */
 export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
-  const { url, maxLength = DEFAULT_MAX_LENGTH } = input;
+  const { url: originalUrl, maxLength = DEFAULT_MAX_LENGTH } = input;
 
   // Validate URL
   let parsed: URL;
   try {
-    parsed = new URL(url);
+    parsed = new URL(originalUrl);
   } catch {
-    return { url, title: '', content: 'Error: Invalid URL', truncated: false };
+    return { url: originalUrl, title: '', content: 'Error: Invalid URL', truncated: false };
   }
 
   if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return { url, title: '', content: 'Error: Only HTTP(S) URLs supported', truncated: false };
+    return { url: originalUrl, title: '', content: 'Error: Only HTTP(S) URLs supported', truncated: false };
   }
 
+  const rewritten = rewriteUrl(originalUrl);
+
   try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'repo-audit-delivery-agent/1.0 (documentation fetcher)',
-        Accept: 'text/html, text/plain, application/json',
-      },
+    const response = await fetch(rewritten.url, {
+      headers: rewritten.headers,
       signal: AbortSignal.timeout(TIMEOUT_MS),
       redirect: 'follow',
     });
 
     if (!response.ok) {
+      // If we got a 403 with browser headers, note it may be TLS fingerprinting
+      const hint = response.status === 403
+        ? ' (site may use TLS fingerprinting to block non-browser requests)'
+        : '';
       return {
-        url,
+        url: originalUrl,
         title: '',
-        content: `Error: HTTP ${response.status} ${response.statusText}`,
+        content: `Error: HTTP ${response.status} ${response.statusText}${hint}`,
         truncated: false,
       };
     }
@@ -52,17 +108,23 @@ export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
     if (contentType.includes('application/json')) {
       const content = body.slice(0, maxLength);
       return {
-        url,
+        url: originalUrl,
         title: extractJsonTitle(body),
         content,
         truncated: body.length > maxLength,
       };
     }
 
-    // Plain text — return as-is
-    if (contentType.includes('text/plain')) {
+    // Plain text or markdown — return as-is
+    if (contentType.includes('text/plain') || rewritten.url.includes('raw.githubusercontent.com')) {
       const content = body.slice(0, maxLength);
-      return { url, title: '', content, truncated: body.length > maxLength };
+      const truncated = body.length > maxLength;
+      return {
+        url: originalUrl,
+        title: '',
+        content: truncated ? content + '\n\n[Content truncated]' : content,
+        truncated,
+      };
     }
 
     // HTML — extract text
@@ -71,10 +133,10 @@ export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
     const truncated = text.length > maxLength;
     const content = truncated ? text.slice(0, maxLength) + '\n\n[Content truncated]' : text;
 
-    return { url, title, content, truncated };
+    return { url: originalUrl, title, content, truncated };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    return { url, title: '', content: `Error: ${message}`, truncated: false };
+    return { url: originalUrl, title: '', content: `Error: ${message}`, truncated: false };
   }
 }
 

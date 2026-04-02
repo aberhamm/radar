@@ -1,4 +1,4 @@
-import { readdir, stat as fsStat } from 'node:fs/promises';
+import { readdir, stat as fsStat, access } from 'node:fs/promises';
 import path from 'node:path';
 import type { FindFilesInput, FindFilesOutput } from '../../types/tools.js';
 
@@ -9,6 +9,17 @@ export async function findFiles(
   input: FindFilesInput,
 ): Promise<FindFilesOutput> {
   const searchPath = input.path ? path.resolve(repoRoot, input.path) : repoRoot;
+
+  // Check that search path exists
+  try {
+    await access(searchPath);
+  } catch {
+    return {
+      matches: [],
+      error: `Search path "${input.path ?? '.'}" does not exist. Use "." to search from the repo root.`,
+    };
+  }
+
   const matches: string[] = [];
   await walk(searchPath, repoRoot, input.pattern, input.type, matches);
   return { matches };

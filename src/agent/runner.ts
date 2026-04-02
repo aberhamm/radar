@@ -90,6 +90,8 @@ export interface StepEvent {
   type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output' | 'model_switch';
   /** Identifies which tool calls ran in the same parallel batch (same assistant turn) */
   batchId?: string;
+  /** ISO timestamp when this event was emitted */
+  timestamp?: string;
 }
 
 export interface RunResult {
@@ -117,6 +119,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // Pi's Agent adds abort listeners per tool call; raise the limit to avoid warnings
   setMaxListeners(100);
   const startedAt = new Date();
+
+  // Wrap onStep to inject timestamps automatically
+  const _rawOnStep = config.onStep;
+  if (_rawOnStep) {
+    config.onStep = (event) => _rawOnStep({ ...event, timestamp: new Date().toISOString() });
+  }
 
   const toolCallBudget = config.toolCallBudget ?? 45;
   const webSearchBudget = config.webSearchBudget ?? 5;

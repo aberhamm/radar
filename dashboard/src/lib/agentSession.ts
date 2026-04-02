@@ -61,6 +61,7 @@ export interface StepEvent {
   reasoning?: string;
   fullReasoning?: string;
   batchId?: string;
+  timestamp?: string;
 }
 
 export interface RunResult {
@@ -99,6 +100,7 @@ export interface AgentSession {
   } | null;
   history: RunRecord[];
   result: RunResult | null;
+  lastError?: string;
 }
 
 declare global {

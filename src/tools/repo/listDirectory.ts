@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, stat, access } from 'node:fs/promises';
 import path from 'node:path';
 import type { ListDirectoryInput, ListDirectoryOutput, FileEntry } from '../../types/tools.js';
 
@@ -11,6 +11,23 @@ export async function listDirectory(
   const targetPath = path.resolve(repoRoot, input.path);
   const depth = input.depth ?? 1;
   const includeHidden = input.includeHidden ?? false;
+
+  // Check that the target directory exists before walking
+  try {
+    await access(targetPath);
+    const stats = await stat(targetPath);
+    if (!stats.isDirectory()) {
+      return {
+        entries: [],
+        error: `Path "${input.path}" exists but is not a directory (it's a file). Use read_file instead.`,
+      };
+    }
+  } catch {
+    return {
+      entries: [],
+      error: `Directory "${input.path}" does not exist. Check the path — use "." to list the repo root, or try list_directory with "." first to see what's available.`,
+    };
+  }
 
   const entries: FileEntry[] = [];
   await walk(targetPath, repoRoot, depth, includeHidden, entries);

@@ -5,7 +5,7 @@ export async function GET() {
   const session = getSession();
   return NextResponse.json({
     status: session.status,
-    lastError: (session as Record<string, unknown>).lastError ?? null,
+    lastError: session.lastError ?? null,
     history: session.history.map(r => ({
       id: r.id,
       goal: r.goal,
@@ -30,6 +30,22 @@ export async function GET() {
 }
 
 export async function DELETE() {
+  const session = getSession();
+
+  // Abort the running agent if there's one in progress
+  if (session.currentRun?.abortController) {
+    session.currentRun.abortController.abort();
+  }
+
+  // Close the SSE stream if open
+  if (session.currentRun?.streamController) {
+    try {
+      const data = `data: ${JSON.stringify({ type: 'run_error', error: 'Run cancelled by user' })}\n\n`;
+      session.currentRun.streamController.enqueue(new TextEncoder().encode(data));
+      session.currentRun.streamController.close();
+    } catch { /* stream already closed */ }
+  }
+
   resetSession();
   return NextResponse.json({ ok: true });
 }

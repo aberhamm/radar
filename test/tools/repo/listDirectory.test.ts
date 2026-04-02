@@ -14,8 +14,15 @@ describe('listDirectory', () => {
     expect(names).not.toContain('node_modules');
   });
 
-  it('returns empty for non-existent path', async () => {
+  it('returns error for non-existent path', async () => {
     const result = await listDirectory(FIXTURE, { path: 'does-not-exist' });
     expect(result.entries).toEqual([]);
+    expect(result.error).toContain('does not exist');
+  });
+
+  it('returns error when path is a file, not a directory', async () => {
+    const result = await listDirectory(FIXTURE, { path: 'package.json' });
+    expect(result.entries).toEqual([]);
+    expect(result.error).toContain('not a directory');
   });
 });

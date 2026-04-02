@@ -129,7 +129,22 @@ You can search the web and fetch documentation using the web_search
 and fetch_url tools. Use these when you find outdated dependencies,
 unfamiliar SDK patterns, or version-specific issues that your
 reference material doesn't cover. Prefer approved documentation
-sources. Your web search budget is ${webSearchBudget} searches.`;
+sources. Your web search budget is ${webSearchBudget} searches.
+
+DOCUMENTATION URLS — use fetch_url to check these when relevant:
+- Next.js upgrade guide: https://nextjs.org/docs/app/building-your-application/upgrading
+- Next.js App Router docs: https://nextjs.org/docs/app
+- Next.js security headers: https://nextjs.org/docs/app/building-your-application/configuring/headers
+- Sitecore JSS changelog: https://github.com/Sitecore/jss/blob/main/CHANGELOG.md
+- Sitecore JSS migration: https://github.com/Sitecore/jss/blob/main/docs/upgrades/22.0.md
+- Sitecore XM Cloud starter: https://github.com/Sitecore/xmcloud-starter-js/blob/main/package.json
+- Optimizely CMS docs: https://docs.developers.optimizely.com/content-management-system
+- Optimizely Graph docs: https://docs.developers.optimizely.com/digital-experience-platform/v1.4.0-optimizely-graph/docs
+- Optimizely starter deps: https://github.com/remkoj/optimizely-saas-starter/blob/main/package.json
+- React Server Components: https://react.dev/reference/rsc/server-components
+Note: GitHub blob URLs are automatically converted to raw content for cleaner results.
+Fetch documentation EARLY in investigation when you identify the CMS platform or find
+outdated dependencies. Don't wait until the end — fetched docs should inform your findings.`;
 
   return preamble;
 }

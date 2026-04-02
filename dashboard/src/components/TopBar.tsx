@@ -22,6 +22,7 @@ interface TopBarProps {
   metrics?: RunMetrics;
   history: HistoryItem[];
   onNewRun: () => void;
+  onStop: () => void;
   onSelectHistory: (id: string) => void;
 }
 
@@ -41,7 +42,7 @@ function ScoreDot({ score }: { score: 'red' | 'yellow' | 'green' }) {
   );
 }
 
-export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, history, onNewRun, onSelectHistory }: TopBarProps) {
+export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, history, onNewRun, onStop, onSelectHistory }: TopBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
 
@@ -132,7 +133,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
         {/* History dropdown */}
         {history.length > 0 && (
           <select
-            onChange={e => { if (e.target.value) onSelectHistory(e.target.value); }}
+            onChange={e => { if (e.target.value) { onSelectHistory(e.target.value); e.target.value = ''; } }}
             defaultValue=""
             style={{
               background: 'var(--bg-elevated)',
@@ -151,6 +152,25 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
               </option>
             ))}
           </select>
+        )}
+
+        {/* Stop button */}
+        {isRunning && (
+          <button
+            onClick={onStop}
+            style={{
+              background: 'var(--error)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              padding: '4px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Stop
+          </button>
         )}
 
         {/* New Run button */}
