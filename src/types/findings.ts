@@ -20,8 +20,14 @@ export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export interface Evidence {
   filePath: string;
   lineNumber?: number;
-  snippet?: string;
+  snippet: string;
   description: string;
+  /** Agent's original snippet before auto-correction (set when verification corrects it) */
+  originalSnippet?: string;
+  /** Whether evidence was verified against the actual file */
+  verified?: boolean;
+  /** Granular verification outcome */
+  verificationStatus?: 'verified' | 'corrected' | 'unverifiable';
 }
 
 export interface DocRef {
@@ -40,4 +46,6 @@ export interface Finding {
   tags: string[];
   investigationNote?: string;
   documentationRefs?: DocRef[];
+  /** Notes from post-investigation verification pass */
+  verificationNotes?: string[];
 }

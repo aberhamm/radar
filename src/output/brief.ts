@@ -96,7 +96,11 @@ export function renderBrief(
       if (risk.evidence.length > 0) {
         lines.push('');
         for (const ev of risk.evidence) {
-          lines.push(`- \`${ev.filePath}\`${ev.lineNumber ? `:${ev.lineNumber}` : ''}: ${ev.description}`);
+          const badge = ev.verificationStatus === 'verified' ? ' [verified]'
+            : ev.verificationStatus === 'corrected' ? ' [corrected]'
+            : ev.verificationStatus === 'unverifiable' ? ' [unverifiable]'
+            : '';
+          lines.push(`- \`${ev.filePath}\`${ev.lineNumber ? `:${ev.lineNumber}` : ''}${badge}: ${ev.description}`);
         }
       }
       lines.push('');

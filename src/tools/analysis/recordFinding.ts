@@ -1,5 +1,6 @@
 import type { Finding, FindingCategory, Severity, Evidence, DocRef } from '../../types/findings.js';
 import type { AgentState } from '../../types/state.js';
+import { verifyAndCorrectEvidence } from './verifyEvidence.js';
 
 export interface RecordFindingInput {
   finding: Finding;
@@ -10,6 +11,10 @@ export interface RecordFindingOutput {
   totalFindings: number;
   /** When the LLM passes multiple findings in one call, report how many were recorded */
   recordedCount?: number;
+  /** Verification warnings returned to the agent */
+  warnings?: string[];
+  /** How many evidence items were stripped due to verification failure */
+  rejectedEvidenceCount?: number;
 }
 
 const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low', 'info']);
@@ -36,17 +41,28 @@ function isFindingLike(obj: unknown): obj is Record<string, unknown> {
 }
 
 /**
+ * Normalize a file path for comparison against filesRead.
+ * Strips leading ./ and normalizes separators.
+ */
+function normalizePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+/**
  * Safely construct an Evidence item from an untyped object.
+ * Snippet is required — evidence without a snippet is rejected.
  */
 function toEvidence(obj: unknown): Evidence | null {
   if (typeof obj !== 'object' || obj === null) return null;
   const o = obj as Record<string, unknown>;
   if (typeof o.filePath !== 'string' || typeof o.description !== 'string') return null;
+  // Snippet is required — reject evidence without it
+  if (typeof o.snippet !== 'string' || o.snippet.trim() === '') return null;
   return {
     filePath: o.filePath,
     description: o.description,
+    snippet: o.snippet,
     ...(typeof o.lineNumber === 'number' ? { lineNumber: o.lineNumber } : {}),
-    ...(typeof o.snippet === 'string' ? { snippet: o.snippet } : {}),
   };
 }
 
@@ -81,7 +97,7 @@ function buildFinding(obj: Record<string, unknown>): Finding {
     id: obj.id as string,
     category: obj.category as FindingCategory,
     severity: obj.severity as Severity,
-    title: obj.title as string,
+    title: typeof obj.description === 'string' ? obj.title as string : '',
     description: typeof obj.description === 'string' ? obj.description : '',
     evidence,
     tags,
@@ -177,14 +193,55 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
  *
  * Handles the common LLM behavior of batching multiple findings
  * into a single tool call (array or numeric-keyed object).
+ *
+ * Evidence verification:
+ * - Checks each evidence item's filePath was read by the agent (filesRead)
+ * - Reads the actual file and compares the snippet against real code
+ * - Auto-corrects mismatched snippets, rejects evidence for missing files
  */
-export function recordFinding(
+export async function recordFinding(
   state: AgentState,
   input: RecordFindingInput,
-): RecordFindingOutput {
+): Promise<RecordFindingOutput> {
   const findings = extractFindings(input as Record<string, unknown>);
+  const warnings: string[] = [];
+  let rejectedEvidenceCount = 0;
 
   for (const finding of findings) {
+    const verifiedEvidence: Evidence[] = [];
+
+    for (const ev of finding.evidence) {
+      // Enhancement 6: Check if file was ever read by the agent
+      const normalizedEvPath = normalizePath(ev.filePath);
+      const wasRead = [...state.filesRead].some(
+        (readPath) => normalizePath(readPath) === normalizedEvPath,
+      );
+      if (!wasRead) {
+        warnings.push(
+          `Evidence for "${ev.filePath}" rejected: file was never read by agent. ` +
+          `Use read_file or read_files_batch first.`,
+        );
+        rejectedEvidenceCount++;
+        continue;
+      }
+
+      // Enhancement 1+3: Verify snippet against actual file content
+      const result = await verifyAndCorrectEvidence(state.repo.localPath, ev);
+
+      if (result.status === 'rejected') {
+        warnings.push(`Evidence rejected: ${result.note}`);
+        rejectedEvidenceCount++;
+        continue;
+      }
+
+      if (result.status === 'corrected') {
+        warnings.push(`Evidence auto-corrected: ${result.note}`);
+      }
+
+      verifiedEvidence.push(result.evidence);
+    }
+
+    finding.evidence = verifiedEvidence;
     state.findings.push(finding);
   }
 
@@ -192,5 +249,7 @@ export function recordFinding(
     findingId: findings.map((f) => f.id).join(', '),
     totalFindings: state.findings.length,
     ...(findings.length > 1 ? { recordedCount: findings.length } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(rejectedEvidenceCount > 0 ? { rejectedEvidenceCount } : {}),
   };
 }

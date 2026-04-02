@@ -379,7 +379,7 @@ export function buildPiTools(
           evidence: Type.Array(Type.Object({
             filePath: Type.String(),
             lineNumber: Type.Optional(Type.Number()),
-            snippet: Type.Optional(Type.String({ description: 'Max 5 lines of relevant code' })),
+            snippet: Type.String({ description: 'REQUIRED: Exact code copied from tool output. Max 5 lines.' }),
             description: Type.String(),
           })),
           tags: Type.Array(Type.String()),
@@ -390,7 +390,7 @@ export function buildPiTools(
         }),
       }),
       execute: async (_id, params) => {
-        try { return ok(recordFinding(state, norm(params))); }
+        try { return ok(await recordFinding(state, norm(params))); }
         catch (e) { return err('record_finding', e as Error); }
       },
     },

@@ -16,6 +16,7 @@ import { buildGoalPrompt } from './goalPrompts.js';
 import { redactSecrets } from './redaction.js';
 import { wrapInBoundary, BOUNDARY_SYSTEM_INSTRUCTION, validateFindingContent } from './contextBoundary.js';
 import { buildPiTools, type AssembledSections } from '../tools/piToolAdapter.js';
+import { verifyFindingEvidence } from '../tools/analysis/verifyEvidence.js';
 import { buildPiModel } from '../config/piModel.js';
 import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
@@ -87,7 +88,7 @@ export interface StepEvent {
   /** Tool call arguments (only in verbose mode) */
   args?: string;
   /** Type of event: tool_call, finding, budget_warning, text_response, assemble_output, model_switch */
-  type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output' | 'model_switch';
+  type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output' | 'model_switch' | 'verification';
   /** Identifies which tool calls ran in the same parallel batch (same assistant turn) */
   batchId?: string;
   /** New budget after extension (only on budget_extended events) */
@@ -557,6 +558,33 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
 
   // Post-loop: assemble output (partial if error/stuck)
   const sections = assembledRef.sections ?? {};
+
+  // Post-investigation verification pass: re-verify all evidence against actual files.
+  // Removes findings where ALL evidence is unverifiable (likely hallucinated).
+  const removedFindingIds: string[] = [];
+  for (let i = state.findings.length - 1; i >= 0; i--) {
+    const { finding: verified, allUnverifiable } = await verifyFindingEvidence(
+      config.repoPath,
+      state.findings[i],
+    );
+    if (allUnverifiable) {
+      removedFindingIds.push(state.findings[i].id);
+      state.findings.splice(i, 1);
+    } else {
+      state.findings[i] = verified;
+    }
+  }
+  if (removedFindingIds.length > 0 || state.findings.some((f) => f.verificationNotes?.length)) {
+    config.onStep?.({
+      step: ++stepCount,
+      action: 'verification_pass',
+      type: 'verification',
+      result: removedFindingIds.length > 0
+        ? `Verification: removed ${removedFindingIds.length} finding(s) with all-unverifiable evidence [${removedFindingIds.join(', ')}]. ${state.findings.length} findings retained.`
+        : `Verification: all ${state.findings.length} findings verified.`,
+    });
+  }
+
   const scorecard = computeScorecard(config.repoName, config.goal, state.findings);
 
   const completedAt = new Date();

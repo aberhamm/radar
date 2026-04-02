@@ -37,15 +37,18 @@ function buildFauxResponses() {
       fauxToolCall('parse_package_json', {}),
     ], { stopReason: 'toolUse' }),
 
-    // Step 2: Read key files
+    // Step 2: Read key files (must read all files referenced in evidence below)
     fauxAssistantMessage([
       fauxText('Reading key configuration files.'),
       fauxToolCall('read_file', { path: 'package.json' }),
+      fauxToolCall('read_file', { path: 'tsconfig.json' }),
+      fauxToolCall('read_file', { path: '.gitignore' }),
     ], { stopReason: 'toolUse' }),
 
-    // Step 3: Check env and gitignore
+    // Step 3: Read source files + check env
     fauxAssistantMessage([
-      fauxText('Checking security and environment configuration.'),
+      fauxText('Reading source files and checking environment configuration.'),
+      fauxToolCall('read_files_batch', { paths: ['src/app/api/editing/route.ts', 'src/app/[site]/[locale]/[[...path]]/page.tsx', 'next.config.js', '.env.example', 'src/middleware.ts'] }),
       fauxToolCall('check_gitignore', { patterns: ['.env', '.env.local', 'node_modules'] }),
       fauxToolCall('analyze_env_usage', { repoPath: '.' }),
     ], { stopReason: 'toolUse' }),
@@ -61,10 +64,10 @@ function buildFauxResponses() {
     fauxAssistantMessage([
       fauxText('Recording findings for stack and CMS categories.'),
       fauxToolCall('record_finding', {
-        finding: { id: 'STACK-001', category: 'stack', severity: 'info', title: 'Next.js application with standard configuration', description: 'The project uses Next.js with standard App Router configuration.', evidence: [{ filePath: 'package.json', description: 'Next.js detected in dependencies' }], tags: ['nextjs', 'stack'] },
+        finding: { id: 'STACK-001', category: 'stack', severity: 'info', title: 'Next.js application with standard configuration', description: 'The project uses Next.js with standard App Router configuration.', evidence: [{ filePath: 'package.json', lineNumber: 13, snippet: '"next": "14.1.0"', description: 'Next.js detected in dependencies' }], tags: ['nextjs', 'stack'] },
       }),
       fauxToolCall('record_finding', {
-        finding: { id: 'CMS-001', category: 'cms-integration', severity: 'info', title: 'CMS integration uses standard SDK patterns', description: 'CMS integration follows the recommended SDK approach.', evidence: [{ filePath: 'src/lib/client.ts', description: 'Standard CMS client setup' }], tags: ['cms'] },
+        finding: { id: 'CMS-001', category: 'cms-integration', severity: 'info', title: 'CMS integration uses Sitecore JSS SDK', description: 'CMS integration follows the recommended Sitecore JSS approach.', evidence: [{ filePath: 'package.json', lineNumber: 13, snippet: '"@sitecore-jss/sitecore-jss-nextjs": "21.6.0"', description: 'Sitecore JSS SDK in dependencies' }], tags: ['cms'] },
       }),
     ], { stopReason: 'toolUse' }),
 
@@ -72,13 +75,13 @@ function buildFauxResponses() {
     fauxAssistantMessage([
       fauxText('Recording findings for editing, security, and architecture.'),
       fauxToolCall('record_finding', {
-        finding: { id: 'EDIT-001', category: 'preview-editing', severity: 'info', title: 'Preview mode uses Draft Mode pattern', description: 'Preview/editing uses Next.js Draft Mode correctly.', evidence: [{ filePath: 'src/app/api/editing/route.ts', description: 'Draft Mode integration' }], tags: ['editing'] },
+        finding: { id: 'EDIT-001', category: 'preview-editing', severity: 'info', title: 'Editing endpoint returns basic OK response', description: 'App Router editing endpoint returns a basic JSON response.', evidence: [{ filePath: 'src/app/api/editing/route.ts', lineNumber: 4, snippet: "return NextResponse.json({ status: 'ok' });", description: 'Editing route handler' }], tags: ['editing'] },
       }),
       fauxToolCall('record_finding', {
-        finding: { id: 'SEC-001', category: 'security', severity: 'medium', title: 'Environment variables not documented', description: 'No .env.example file found.', evidence: [{ filePath: '.gitignore', description: '.env gitignored but no example' }], tags: ['security', 'config'] },
+        finding: { id: 'SEC-001', category: 'security', severity: 'medium', title: 'Environment variables documented with placeholders', description: 'Env vars defined with placeholder values.', evidence: [{ filePath: '.env.example', lineNumber: 1, snippet: 'SITECORE_API_KEY=placeholder-api-key', description: '.env.example has placeholder values' }], tags: ['security', 'config'] },
       }),
       fauxToolCall('record_finding', {
-        finding: { id: 'ARCH-001', category: 'architecture', severity: 'info', title: 'App Router with catch-all route pattern', description: 'Uses App Router with a catch-all route for CMS-driven pages.', evidence: [{ filePath: 'src/app/[[...path]]/page.tsx', description: 'Catch-all route' }], tags: ['routing'] },
+        finding: { id: 'ARCH-001', category: 'architecture', severity: 'info', title: 'App Router with catch-all route pattern', description: 'Uses App Router with a catch-all route for CMS-driven pages.', evidence: [{ filePath: 'src/app/[site]/[locale]/[[...path]]/page.tsx', lineNumber: 3, snippet: "export const dynamic = 'force-dynamic';", description: 'Catch-all route with force-dynamic' }], tags: ['routing'] },
       }),
     ], { stopReason: 'toolUse' }),
 
@@ -86,13 +89,13 @@ function buildFauxResponses() {
     fauxAssistantMessage([
       fauxText('Recording findings for dependencies, deployment, and config.'),
       fauxToolCall('record_finding', {
-        finding: { id: 'DEP-001', category: 'dependencies', severity: 'low', title: 'Dependencies are reasonably current', description: 'No critical version gaps detected.', evidence: [{ filePath: 'package.json', description: 'Version check' }], tags: ['dependencies'] },
+        finding: { id: 'DEP-001', category: 'dependencies', severity: 'low', title: 'Dependencies are reasonably current', description: 'No critical version gaps detected.', evidence: [{ filePath: 'package.json', lineNumber: 16, snippet: '"react": "18.2.0"', description: 'React version check' }], tags: ['dependencies'] },
       }),
       fauxToolCall('record_finding', {
-        finding: { id: 'DEPLOY-001', category: 'deployment', severity: 'info', title: 'Deployment target appears to be Vercel', description: 'Vercel-specific configuration detected.', evidence: [{ filePath: 'next.config.ts', description: 'Vercel hints' }], tags: ['deployment'] },
+        finding: { id: 'DEPLOY-001', category: 'deployment', severity: 'info', title: 'Uses withSitecoreConfig wrapper', description: 'Next.js config wrapped with Sitecore JSS config helper.', evidence: [{ filePath: 'next.config.js', lineNumber: 16, snippet: 'module.exports = withSitecoreConfig(nextConfig);', description: 'Sitecore config wrapper' }], tags: ['deployment'] },
       }),
       fauxToolCall('record_finding', {
-        finding: { id: 'CONFIG-001', category: 'configuration', severity: 'info', title: 'TypeScript strict mode enabled', description: 'TypeScript strict mode is enabled.', evidence: [{ filePath: 'tsconfig.json', description: 'strict: true' }], tags: ['config'] },
+        finding: { id: 'CONFIG-001', category: 'configuration', severity: 'info', title: 'TypeScript strict mode enabled', description: 'TypeScript strict mode is enabled.', evidence: [{ filePath: 'tsconfig.json', lineNumber: 7, snippet: '"strict": true', description: 'strict: true in tsconfig' }], tags: ['config'] },
       }),
     ], { stopReason: 'toolUse' }),
 
