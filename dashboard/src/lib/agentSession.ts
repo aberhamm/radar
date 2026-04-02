@@ -105,11 +105,75 @@ declare global {
   var __agentSession: AgentSession | undefined;
 }
 
+// --- Disk persistence (output/ directory) ---
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+const OUTPUT_DIR = path.resolve(process.cwd(), '..', 'output', 'runs');
+
+function ensureOutputDir() {
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  }
+}
+
+/** Save a completed run to disk as JSON. */
+export function persistRun(record: RunRecord): void {
+  try {
+    ensureOutputDir();
+    const ts = record.startedAt instanceof Date
+      ? record.startedAt.toISOString().replace(/[:.]/g, '-')
+      : String(record.startedAt).replace(/[:.]/g, '-');
+    const filename = `${record.repoName}-${record.goal}-${ts}.json`;
+    const data = {
+      id: record.id,
+      goal: record.goal,
+      repoName: record.repoName,
+      startedAt: record.startedAt,
+      completedAt: record.completedAt,
+      result: record.result,
+      events: record.events,
+    };
+    fs.writeFileSync(path.join(OUTPUT_DIR, filename), JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error('[persist] Failed to save run:', (err as Error).message);
+  }
+}
+
+/** Load all saved runs from disk, newest first. */
+export function loadPersistedRuns(): RunRecord[] {
+  try {
+    ensureOutputDir();
+    const files = fs.readdirSync(OUTPUT_DIR)
+      .filter(f => f.endsWith('.json'))
+      .sort()
+      .reverse();
+
+    return files.map(f => {
+      const raw = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, f), 'utf-8'));
+      return {
+        id: raw.id,
+        goal: raw.goal,
+        repoName: raw.repoName,
+        startedAt: new Date(raw.startedAt),
+        completedAt: raw.completedAt ? new Date(raw.completedAt) : undefined,
+        result: raw.result,
+        events: raw.events ?? [],
+      } as RunRecord;
+    });
+  } catch {
+    return [];
+  }
+}
+
+// --- Session management ---
+
 function createSession(): AgentSession {
   return {
     status: 'idle',
     currentRun: null,
-    history: [],
+    history: loadPersistedRuns(),
     result: null,
   };
 }
@@ -122,5 +186,11 @@ export function getSession(): AgentSession {
 }
 
 export function resetSession(): void {
-  globalThis.__agentSession = createSession();
+  const history = globalThis.__agentSession?.history ?? loadPersistedRuns();
+  globalThis.__agentSession = {
+    status: 'idle',
+    currentRun: null,
+    history,
+    result: null,
+  };
 }

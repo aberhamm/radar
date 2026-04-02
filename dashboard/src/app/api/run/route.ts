@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/agentSession';
+import { getSession, persistRun } from '@/lib/agentSession';
 import path from 'node:path';
 
 export const runtime = 'nodejs';
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
 
       const run = session.currentRun;
       if (run) {
-        session.history.unshift({
+        const record = {
           id: crypto.randomUUID(),
           goal: run.goal,
           repoName: run.repoName,
@@ -117,8 +117,10 @@ export async function POST(req: NextRequest) {
           completedAt: new Date(),
           result,
           events: [...run.events],
-        });
-        if (session.history.length > 5) session.history.pop();
+        };
+        session.history.unshift(record);
+        if (session.history.length > 10) session.history.pop();
+        persistRun(record);
       }
 
       session.status = 'complete';
