@@ -90,7 +90,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
           <select
             onChange={e => { if (e.target.value) { onSelectHistory(e.target.value); e.target.value = ''; } }}
             defaultValue=""
-            className="bg-elevated text-secondary-label border-none rounded-md px-2.5 py-1 text-[11px] cursor-pointer outline-none"
+            className="bg-elevated text-secondary-label border-none rounded-md px-2.5 py-1.5 text-[11px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
           >
             <option value="" disabled>History</option>
             {history.map(h => {
@@ -109,7 +109,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
         {isRunning && (
           <button
             onClick={onStop}
-            className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors"
+            className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(255_59_48/0.3)]"
           >
             Stop
           </button>
@@ -119,7 +119,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
         {isComplete && (
           <button
             onClick={onNewRun}
-            className="bg-tint text-white rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[#0077ed] transition-colors"
+            className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
           >
             New Run
           </button>

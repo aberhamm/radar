@@ -42,7 +42,7 @@ export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: Bu
           <button
             onClick={() => handleDecision(true)}
             disabled={loading}
-            className={`bg-tint text-white rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+            className={`bg-tint text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)] ${
               loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[#0077ed] active:scale-[0.98]'
             }`}
           >
@@ -51,7 +51,7 @@ export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: Bu
           <button
             onClick={() => handleDecision(false)}
             disabled={loading}
-            className={`bg-elevated text-label rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+            className={`bg-elevated text-label rounded-lg px-4 py-2.5 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)] ${
               loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[#e8e8ed] active:scale-[0.98]'
             }`}
           >

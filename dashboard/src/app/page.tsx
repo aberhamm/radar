@@ -299,7 +299,7 @@ export default function DashboardPage() {
           <p className="text-danger text-sm">Run failed. Check server logs for details.</p>
           <button
             onClick={handleNewRun}
-            className="bg-tint text-white rounded-lg h-9 px-4 text-sm font-medium cursor-pointer hover:bg-[#0077ed] transition-colors"
+            className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
           >
             Try Again
           </button>
