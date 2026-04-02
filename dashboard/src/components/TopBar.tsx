@@ -47,9 +47,30 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, o
       )}
 
       {/* Brand */}
-      <span className="text-sm font-bold text-tint tracking-tight whitespace-nowrap">
-        Scout
-      </span>
+      <div className="flex items-center gap-2 whitespace-nowrap">
+        <svg className="w-5 h-5 text-tint" viewBox="0 0 24 24" fill="none">
+          {/* Outer ring */}
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+          {/* Inner ring */}
+          <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+          {/* Center dot */}
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+          {/* Sweep arc — rotates when running */}
+          <g style={isRunning ? { animation: 'radar-sweep 2s linear infinite', transformOrigin: '12px 12px' } : undefined}>
+            <path
+              d="M12 12 L12 2 A10 10 0 0 1 20.66 7 Z"
+              fill="currentColor"
+              opacity={isRunning ? 0.2 : 0.1}
+            />
+            <line x1="12" y1="12" x2="12" y2="2" stroke="currentColor" strokeWidth="1.5" />
+          </g>
+          {/* Blip */}
+          <circle cx="9" cy="8" r="1.2" fill="currentColor" opacity="0.6" />
+        </svg>
+        <span className="text-sm font-bold text-tint tracking-tight font-brand">
+          Scout
+        </span>
+      </div>
 
       {/* Center: repo + goal badges */}
       {(isRunning || isComplete) && repoName && (
