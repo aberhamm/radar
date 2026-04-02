@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Scorecard, RunMetrics, CategoryScore, StepEvent } from '@/lib/agentSession';
 import { EventStream } from './EventStream';
 
@@ -303,7 +304,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
           <div style={{ maxWidth: 860, paddingTop: 24, paddingBottom: 40 }}>
             <ScorecardGrid scorecard={scorecard} />
             <div className="md-content" style={{ fontSize: 14, lineHeight: 1.7 }}>
-              <ReactMarkdown>{briefMarkdown}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefMarkdown}</ReactMarkdown>
             </div>
           </div>
         )}
