@@ -60,7 +60,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
               value={repoPath}
               onChange={e => setRepoPath(e.target.value)}
               placeholder="/path/to/your/repo or C:\..."
-              className="w-full h-9 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label outline-none border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-1 focus:ring-[rgb(0_113_227/0.1)] transition-all"
+              className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none transition-all"
               disabled={loading}
             />
           </div>
@@ -73,7 +73,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
               value={goal}
               onChange={e => setGoal(e.target.value)}
               disabled={loading}
-              className="w-full h-9 bg-elevated rounded-lg px-3 text-sm text-label outline-none border border-transparent focus:border-[rgb(0_113_227/0.3)] cursor-pointer"
+              className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none cursor-pointer"
             >
               <option value="onboarding">Onboarding — full codebase overview</option>
               <option value="security-review">Security Review — focus on vulnerabilities</option>
@@ -89,7 +89,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
           <button
             type="submit"
             disabled={loading}
-            className={`rounded-lg h-9 px-4 text-sm font-medium transition-all mt-1 ${
+            className={`rounded-lg h-11 px-5 text-sm font-medium transition-all mt-1 ${
               loading
                 ? 'bg-elevated text-tertiary-label cursor-not-allowed'
                 : 'bg-tint text-white cursor-pointer hover:bg-[#0077ed] active:scale-[0.98]'
