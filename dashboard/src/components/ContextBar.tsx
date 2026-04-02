@@ -27,34 +27,14 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
 
   return (
     <div className="bg-surface border-b border-separator px-4 h-10 flex items-center gap-3 shrink-0 animate-slide-down">
-      {/* Repo name */}
+      {/* Repo name — always first */}
       <span className="bg-elevated rounded-md px-2.5 py-0.5 text-xs font-mono font-medium text-label">
         {repoName}
       </span>
 
-      {/* Goal */}
-      {goal && (
-        <span className="bg-[rgb(0_113_227/0.08)] rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
-          {goal}
-        </span>
-      )}
-
-      {/* Scorecard */}
-      {scorecard && (
-        <span className="flex items-center gap-1.5 text-xs">
-          <span
-            className="w-2 h-2 rounded-full"
-            style={{ background: scoreColor(scorecard.overallScore) }}
-          />
-          <span className="text-secondary-label font-medium">
-            {scorecard.overallScore.toUpperCase()}
-          </span>
-        </span>
-      )}
-
-      {/* Budget progress (running only) */}
+      {/* Running: budget progress is the headline */}
       {isRunning && budget && toolCalls !== undefined && (
-        <div className="flex items-center gap-2 ml-2">
+        <div className="flex items-center gap-2">
           <span className="text-[11px] text-tertiary-label font-mono whitespace-nowrap">
             {toolCalls} / {budget}
           </span>
@@ -68,6 +48,26 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
             />
           </div>
         </div>
+      )}
+
+      {/* Complete/Replay: scorecard is the headline */}
+      {!isRunning && scorecard && (
+        <span className="flex items-center gap-1.5 text-xs">
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{ background: scoreColor(scorecard.overallScore) }}
+          />
+          <span className="text-secondary-label font-medium">
+            {scorecard.overallScore.toUpperCase()}
+          </span>
+        </span>
+      )}
+
+      {/* Goal — context, always last in the info group */}
+      {goal && (
+        <span className="bg-[rgb(0_113_227/0.08)] rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
+          {goal}
+        </span>
       )}
 
       {/* Spacer */}

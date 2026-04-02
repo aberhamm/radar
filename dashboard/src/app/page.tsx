@@ -60,9 +60,20 @@ export default function DashboardPage() {
   const [replayData, setReplayData] = useState<HistoryRunData | null>(null);
   const [ready, setReady] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    // Default open on desktop when there might be history
+    if (typeof window !== 'undefined') return window.innerWidth >= 1024;
+    return false;
+  });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
+
+  // Auto-open sidebar on desktop when history arrives
+  useEffect(() => {
+    if (history.length > 0 && typeof window !== 'undefined' && window.innerWidth >= 1024) {
+      setSidebarOpen(true);
+    }
+  }, [history.length]);
 
   // On mount, check session state (handles page refresh mid-run)
   useEffect(() => {
