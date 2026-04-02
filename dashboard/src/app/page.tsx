@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { StepEvent, Scorecard, RunMetrics, RunResult } from '@/lib/agentSession';
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
+import { useTheme } from '@/lib/useTheme';
 import { TopBar } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -60,6 +61,7 @@ export default function DashboardPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
 
   // On mount, check session state (handles page refresh mid-run)
   useEffect(() => {
@@ -243,11 +245,16 @@ export default function DashboardPage() {
     if (isRunningOrPaused) {
       cmds.push({ id: 'stop', label: 'Stop Run', shortcut: '\u2318.', action: handleStop });
     }
+    cmds.push(
+      { id: 'theme-light', label: 'Theme: Light', action: () => setThemeMode('light') },
+      { id: 'theme-dark', label: 'Theme: Dark', action: () => setThemeMode('dark') },
+      { id: 'theme-system', label: 'Theme: System', action: () => setThemeMode('system') },
+    );
     for (const h of history) {
       cmds.push({ id: `history-${h.id}`, label: `Open: ${h.repoName} (${h.goal})`, action: () => handleSelectHistory(h.id) });
     }
     return cmds;
-  }, [isRunningOrPaused, history, handleNewRun, handleStop, handleSelectHistory]);
+  }, [isRunningOrPaused, history, handleNewRun, handleStop, handleSelectHistory, setThemeMode]);
 
   useKeyboardShortcuts({
     onNewRun: handleNewRun,
@@ -274,6 +281,8 @@ export default function DashboardPage() {
         onToggleSidebar={() => setSidebarOpen(prev => !prev)}
         sidebarOpen={sidebarOpen}
         hasHistory={history.length > 0}
+        themeMode={themeMode}
+        onCycleTheme={cycleTheme}
       />
 
       <div className="flex-1 flex overflow-hidden">
