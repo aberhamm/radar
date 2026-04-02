@@ -5,6 +5,7 @@ export async function GET() {
   const session = getSession();
   return NextResponse.json({
     status: session.status,
+    lastError: (session as Record<string, unknown>).lastError ?? null,
     history: session.history.map(r => ({
       id: r.id,
       goal: r.goal,

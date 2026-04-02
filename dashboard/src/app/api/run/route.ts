@@ -19,7 +19,7 @@ async function loadRunner() {
   try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered or unavailable */ }
 
   const agentPath = path.resolve(process.cwd(), '..', 'src', 'agent', 'runner.ts');
-  const mod = await import(/* webpackIgnore: true */ agentPath);
+  const mod = await import(/* webpackIgnore: true */ pathToFileURL(agentPath).href);
   return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
 }
 
@@ -129,7 +129,9 @@ export async function POST(req: NextRequest) {
       }
 
     } catch (err) {
+      console.error('[run] Agent error:', (err as Error).message, (err as Error).stack);
       session.status = 'error';
+      (session as Record<string, unknown>).lastError = (err as Error).message;
       const run = session.currentRun;
       if (run?.streamController) {
         try {
