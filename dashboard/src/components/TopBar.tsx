@@ -48,7 +48,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, o
 
       {/* Brand */}
       <div className="flex items-center gap-2 whitespace-nowrap">
-        <svg className="w-5 h-5 text-tint" viewBox="0 0 24 24" fill="none">
+        <svg className="w-6 h-6 text-tint" viewBox="0 0 24 24" fill="none">
           {/* Outer ring */}
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
           {/* Inner ring */}
@@ -67,7 +67,7 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, o
           {/* Blip */}
           <circle cx="9" cy="8" r="1.2" fill="currentColor" opacity="0.6" />
         </svg>
-        <span className="text-sm font-bold text-tint tracking-tight font-brand">
+        <span className="text-base font-bold text-tint tracking-tight font-brand">
           Scout
         </span>
       </div>
