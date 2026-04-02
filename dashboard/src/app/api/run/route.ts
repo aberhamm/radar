@@ -14,6 +14,10 @@ async function loadRunner() {
   const { register } = await import(/* webpackIgnore: true */ 'node:module');
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
 
+  // Load .env from the repo root (dotenv is only auto-loaded in src/index.ts CLI entry)
+  const dotenv = await import(/* webpackIgnore: true */ 'dotenv');
+  dotenv.config({ path: path.resolve(process.cwd(), '..', '.env') });
+
   // Register tsx ESM loader so dynamic import() can handle .ts files.
   // Safe to call multiple times — Node ignores duplicate registrations.
   try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered or unavailable */ }
