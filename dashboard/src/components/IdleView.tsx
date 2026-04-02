@@ -43,11 +43,12 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="bg-white rounded-xl border border-black/[0.06] shadow-sm p-6 w-full max-w-md">
+        <div className="text-3xl mb-4">🔍</div>
         <h1 className="text-xl font-bold text-label tracking-tight mb-1">
           Start Investigation
         </h1>
         <p className="text-sm text-secondary-label mb-6">
-          Analyze a headless CMS codebase with the AI agent.
+          Point at a headless CMS codebase. The agent investigates architecture, security, dependencies, and delivery risk, then writes a scored report.
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
