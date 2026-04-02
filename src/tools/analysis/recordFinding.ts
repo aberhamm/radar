@@ -12,16 +12,26 @@ export interface RecordFindingOutput {
   recordedCount?: number;
 }
 
+const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low', 'info']);
+const VALID_CATEGORIES = new Set([
+  'stack', 'cms-integration', 'preview-editing', 'configuration',
+  'security', 'architecture', 'dependencies', 'deployment',
+  'routing', 'data-fetching', 'nextjs',
+]);
+
 /**
- * Check if an object looks like a valid finding (has id, category, severity).
+ * Check if an object looks like a valid finding (has id, category, severity with correct types).
  */
 function isFindingLike(obj: unknown): obj is Record<string, unknown> {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const o = obj as Record<string, unknown>;
   return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    'id' in obj &&
-    'category' in obj &&
-    'severity' in obj
+    typeof o.id === 'string' &&
+    typeof o.category === 'string' &&
+    typeof o.severity === 'string' &&
+    typeof o.title === 'string' &&
+    VALID_SEVERITIES.has(o.severity) &&
+    VALID_CATEGORIES.has(o.category)
   );
 }
 

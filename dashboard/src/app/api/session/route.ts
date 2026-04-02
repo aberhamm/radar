@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSession, resetSession } from '@/lib/agentSession';
+import { getSession, resetSession, sendStreamEvent } from '@/lib/agentSession';
 
 export async function GET() {
   const session = getSession();
@@ -39,11 +39,8 @@ export async function DELETE() {
 
   // Close the SSE stream if open
   if (session.currentRun?.streamController) {
-    try {
-      const data = `data: ${JSON.stringify({ type: 'run_error', error: 'Run cancelled by user' })}\n\n`;
-      session.currentRun.streamController.enqueue(new TextEncoder().encode(data));
-      session.currentRun.streamController.close();
-    } catch { /* stream already closed */ }
+    sendStreamEvent(session.currentRun.streamController, { type: 'run_error', error: 'Run cancelled by user' });
+    try { session.currentRun.streamController.close(); } catch { /* already closed */ }
   }
 
   resetSession();

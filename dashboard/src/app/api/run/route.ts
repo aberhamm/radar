@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, persistRun } from '@/lib/agentSession';
+import { getSession, persistRun, checkpointRun, sendStreamEvent } from '@/lib/agentSession';
 import path from 'node:path';
 
 export const runtime = 'nodejs';
@@ -34,25 +34,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'A run is already in progress' }, { status: 409 });
   }
 
+  // Claim session immediately (before any await) to close the TOCTOU race window
+  session.status = 'running';
+
   let body: { repoPath?: string; goal?: string };
   try {
     body = await req.json();
   } catch {
+    session.status = 'idle';
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
   const { repoPath, goal = 'onboarding' } = body;
 
   if (!repoPath) {
+    session.status = 'idle';
     return NextResponse.json({ error: 'repoPath is required' }, { status: 400 });
   }
 
   const repoName = path.basename(repoPath);
+  const runId = crypto.randomUUID();
   const abortController = new AbortController();
-
-  session.status = 'running';
   session.result = null;
   session.currentRun = {
+    id: runId,
     goal,
     repoPath,
     repoName,
@@ -78,26 +83,19 @@ export async function POST(req: NextRequest) {
           if (!run) return;
 
           run.events.push(event);
+          sendStreamEvent(run.streamController, event);
 
-          if (run.streamController) {
-            try {
-              const data = `data: ${JSON.stringify(event)}\n\n`;
-              run.streamController.enqueue(new TextEncoder().encode(data));
-            } catch {
-              // Stream closed — continue running
-            }
+          // Checkpoint every 10 events so data survives crashes
+          if (run.events.length % 10 === 0) {
+            checkpointRun(run);
           }
         },
         onBudgetExhausted: async (state) => {
           session.status = 'budget_paused';
 
-          const run = session.currentRun;
-          if (run?.streamController) {
-            try {
-              const data = `data: ${JSON.stringify({ type: 'budget_paused', findings: state.findings, toolCalls: state.toolCalls, budget: state.budget })}\n\n`;
-              run.streamController.enqueue(new TextEncoder().encode(data));
-            } catch { /* stream closed */ }
-          }
+          sendStreamEvent(session.currentRun?.streamController ?? null, {
+            type: 'budget_paused', findings: state.findings, toolCalls: state.toolCalls, budget: state.budget,
+          });
 
           return new Promise<boolean>((resolve) => {
             if (session.currentRun) {
@@ -110,7 +108,7 @@ export async function POST(req: NextRequest) {
       const run = session.currentRun;
       if (run) {
         const record = {
-          id: crypto.randomUUID(),
+          id: run.id,
           goal: run.goal,
           repoName: run.repoName,
           startedAt: run.startedAt,
@@ -126,26 +124,18 @@ export async function POST(req: NextRequest) {
       session.status = 'complete';
       session.result = result;
 
-      if (run?.streamController) {
-        try {
-          const data = `data: ${JSON.stringify({ type: 'run_complete', result: { scorecard: result.scorecard, metrics: result.metrics, terminationReason: result.terminationReason } })}\n\n`;
-          run.streamController.enqueue(new TextEncoder().encode(data));
-          run.streamController.close();
-        } catch { /* stream already closed */ }
-      }
+      sendStreamEvent(run?.streamController ?? null, {
+        type: 'run_complete', result: { scorecard: result.scorecard, metrics: result.metrics, terminationReason: result.terminationReason },
+      });
+      try { run?.streamController?.close(); } catch { /* already closed */ }
 
     } catch (err) {
       console.error('[run] Agent error:', (err as Error).message, (err as Error).stack);
       session.status = 'error';
       session.lastError = (err as Error).message;
       const run = session.currentRun;
-      if (run?.streamController) {
-        try {
-          const data = `data: ${JSON.stringify({ type: 'run_error', error: (err as Error).message })}\n\n`;
-          run.streamController.enqueue(new TextEncoder().encode(data));
-          run.streamController.close();
-        } catch { /* stream closed */ }
-      }
+      sendStreamEvent(run?.streamController ?? null, { type: 'run_error', error: (err as Error).message });
+      try { run?.streamController?.close(); } catch { /* already closed */ }
     }
   })();
 

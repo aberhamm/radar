@@ -77,4 +77,44 @@ describe('recordFinding', () => {
     expect(result.totalFindings).toBe(2);
     expect(state.findings).toHaveLength(2);
   });
+
+  it('rejects finding with numeric severity', () => {
+    const state = makeState();
+    const bad = {
+      finding: { id: 'BAD-001', category: 'security', severity: 42, title: 'Numeric sev', description: 'D', evidence: [], tags: [] },
+    };
+    expect(() => recordFinding(state, bad as unknown as { finding: Finding })).toThrow();
+  });
+
+  it('rejects finding with null category', () => {
+    const state = makeState();
+    const bad = {
+      finding: { id: 'BAD-002', category: null, severity: 'high', title: 'Null cat', description: 'D', evidence: [], tags: [] },
+    };
+    expect(() => recordFinding(state, bad as unknown as { finding: Finding })).toThrow();
+  });
+
+  it('rejects finding with invalid severity string', () => {
+    const state = makeState();
+    const bad = {
+      finding: { id: 'BAD-003', category: 'security', severity: 'urgent', title: 'Bad sev', description: 'D', evidence: [], tags: [] },
+    };
+    expect(() => recordFinding(state, bad as unknown as { finding: Finding })).toThrow();
+  });
+
+  it('rejects finding with invalid category string', () => {
+    const state = makeState();
+    const bad = {
+      finding: { id: 'BAD-004', category: 'unknown-cat', severity: 'high', title: 'Bad cat', description: 'D', evidence: [], tags: [] },
+    };
+    expect(() => recordFinding(state, bad as unknown as { finding: Finding })).toThrow();
+  });
+
+  it('rejects finding with missing title', () => {
+    const state = makeState();
+    const bad = {
+      finding: { id: 'BAD-005', category: 'security', severity: 'high', description: 'No title', evidence: [], tags: [] },
+    };
+    expect(() => recordFinding(state, bad as unknown as { finding: Finding })).toThrow();
+  });
 });

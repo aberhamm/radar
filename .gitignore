@@ -30,5 +30,6 @@ coverage/
 
 # Agent output
 /output/
+dashboard/output/*
 .claude/worktrees/
 .gstack/

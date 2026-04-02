@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/agentSession';
+import { getSession, loadRunEvents } from '@/lib/agentSession';
 
 export async function GET(
   _req: NextRequest,
@@ -19,7 +19,7 @@ export async function GET(
     repoName: record.repoName,
     startedAt: record.startedAt,
     completedAt: record.completedAt,
-    events: record.events,
+    events: loadRunEvents(record),
     result: record.result ? {
       scorecard: record.result.scorecard,
       metrics: record.result.metrics,

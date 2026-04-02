@@ -84,11 +84,14 @@ export interface RunRecord {
   completedAt?: Date;
   result?: RunResult;
   events: StepEvent[];
+  /** Path to the persisted JSON file (for lazy-loading events from disk) */
+  _filePath?: string;
 }
 
 export interface AgentSession {
   status: SessionStatus;
   currentRun: {
+    id: string;
     goal: string;
     repoPath: string;
     repoName: string;
@@ -120,14 +123,40 @@ function ensureOutputDir() {
   }
 }
 
-/** Save a completed run to disk as JSON. */
+function runFilename(record: { repoName: string; goal: string; startedAt: Date | string }): string {
+  const ts = record.startedAt instanceof Date
+    ? record.startedAt.toISOString().replace(/[:.]/g, '-')
+    : String(record.startedAt).replace(/[:.]/g, '-');
+  return `${record.repoName}-${record.goal}-${ts}.json`;
+}
+
+/**
+ * Checkpoint an in-progress run to disk. Called periodically during a run
+ * so that events survive crashes. Overwrites the same file each time.
+ */
+export function checkpointRun(run: {
+  id: string; goal: string; repoName: string; startedAt: Date; events: StepEvent[];
+}): void {
+  try {
+    ensureOutputDir();
+    const data = {
+      id: run.id,
+      goal: run.goal,
+      repoName: run.repoName,
+      startedAt: run.startedAt,
+      status: 'in_progress',
+      events: run.events,
+    };
+    fs.writeFileSync(path.join(OUTPUT_DIR, runFilename(run)), JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error('[checkpoint] Failed to save run:', (err as Error).message);
+  }
+}
+
+/** Save a completed run to disk as JSON. Overwrites any in-progress checkpoint. */
 export function persistRun(record: RunRecord): void {
   try {
     ensureOutputDir();
-    const ts = record.startedAt instanceof Date
-      ? record.startedAt.toISOString().replace(/[:.]/g, '-')
-      : String(record.startedAt).replace(/[:.]/g, '-');
-    const filename = `${record.repoName}-${record.goal}-${ts}.json`;
     const data = {
       id: record.id,
       goal: record.goal,
@@ -137,13 +166,13 @@ export function persistRun(record: RunRecord): void {
       result: record.result,
       events: record.events,
     };
-    fs.writeFileSync(path.join(OUTPUT_DIR, filename), JSON.stringify(data, null, 2));
+    fs.writeFileSync(path.join(OUTPUT_DIR, runFilename(record)), JSON.stringify(data, null, 2));
   } catch (err) {
     console.error('[persist] Failed to save run:', (err as Error).message);
   }
 }
 
-/** Load all saved runs from disk, newest first. */
+/** Load all saved runs from disk, newest first. Events are lazy-loaded on demand. */
 export function loadPersistedRuns(): RunRecord[] {
   try {
     ensureOutputDir();
@@ -153,7 +182,8 @@ export function loadPersistedRuns(): RunRecord[] {
       .reverse();
 
     return files.map(f => {
-      const raw = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, f), 'utf-8'));
+      const filePath = path.join(OUTPUT_DIR, f);
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       return {
         id: raw.id,
         goal: raw.goal,
@@ -161,12 +191,43 @@ export function loadPersistedRuns(): RunRecord[] {
         startedAt: new Date(raw.startedAt),
         completedAt: raw.completedAt ? new Date(raw.completedAt) : undefined,
         result: raw.result,
-        events: raw.events ?? [],
+        events: [],       // lazy — use loadRunEvents() when needed
+        _filePath: filePath,
       } as RunRecord;
     });
   } catch {
     return [];
   }
+}
+
+/** Load events for a specific run from its persisted JSON file. */
+export function loadRunEvents(record: RunRecord): StepEvent[] {
+  // If events are already populated (current run, not from disk), return them
+  if (record.events.length > 0) return record.events;
+
+  // Lazy-load from disk
+  if (!record._filePath) return [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(record._filePath, 'utf-8'));
+    return raw.events ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// --- SSE stream helper ---
+
+const encoder = new TextEncoder();
+
+/** Send a JSON-serializable event to the SSE stream. Silently ignores closed streams. */
+export function sendStreamEvent(
+  controller: ReadableStreamDefaultController<Uint8Array> | null,
+  event: unknown,
+): void {
+  if (!controller) return;
+  try {
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  } catch { /* stream closed */ }
 }
 
 // --- Session management ---

@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,13 +21,13 @@ export async function cloneRepo(input: CloneRepoInput): Promise<CloneRepoOutput>
 
   try {
     // Build clone command
-    const args = ['git', 'clone', '--depth', '1'];
+    const args = ['clone', '--depth', '1'];
     if (branch) {
       args.push('--branch', branch);
     }
     args.push(url, tmpDir);
 
-    execSync(args.join(' '), {
+    execFileSync('git', args, {
       stdio: 'pipe',
       timeout: 300_000, // 5 minute timeout for large repos
     });

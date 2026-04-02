@@ -1,6 +1,14 @@
 import { defineConfig } from 'vitest/config';
+import path from 'node:path';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // Allow tests to import dashboard route handlers that depend on next/server.
+      // next is only installed inside dashboard/node_modules.
+      'next/server': path.resolve(__dirname, 'dashboard/node_modules/next/server.js'),
+    },
+  },
   test: {
     globals: true,
     include: ['test/**/*.test.ts'],

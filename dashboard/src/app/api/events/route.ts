@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getSession } from '@/lib/agentSession';
+import { getSession, sendStreamEvent } from '@/lib/agentSession';
 
 export async function GET(_req: NextRequest) {
   const session = getSession();
@@ -10,9 +10,7 @@ export async function GET(_req: NextRequest) {
       if (run) {
         // Replay accumulated events for reconnects
         for (const event of run.events) {
-          try {
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
-          } catch { break; }
+          sendStreamEvent(controller, event);
         }
         // Register for new events
         run.streamController = controller;
@@ -20,11 +18,10 @@ export async function GET(_req: NextRequest) {
 
       // If run is already complete, send completion and close
       if (session.status === 'complete' && session.result) {
-        try {
-          const data = `data: ${JSON.stringify({ type: 'run_complete', result: { scorecard: session.result.scorecard, metrics: session.result.metrics } })}\n\n`;
-          controller.enqueue(new TextEncoder().encode(data));
-          controller.close();
-        } catch { /* already closed */ }
+        sendStreamEvent(controller, {
+          type: 'run_complete', result: { scorecard: session.result.scorecard, metrics: session.result.metrics },
+        });
+        try { controller.close(); } catch { /* already closed */ }
       }
     },
     cancel() {
