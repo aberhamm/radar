@@ -107,6 +107,27 @@ Output Assembler -> scorecard + brief + JSON export
 - **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
 - **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, and full JSON export.
 
+### Evidence Verification
+
+Every finding the agent records is cross-checked against the actual source code before it reaches the final report. This prevents hallucinated evidence -- a known failure mode where LLMs fabricate code snippets or misremember file contents after many tool calls push the original read out of context.
+
+The verification system operates at three layers:
+
+1. **Record-time verification** -- When `record_finding` is called, each evidence snippet is read from disk via `resolveAndRead()` and compared against the agent's claim. Mismatched snippets are auto-corrected to the real code; missing files have their evidence stripped. The agent receives warnings in the tool response so it can self-correct.
+
+2. **Evidence chain tracking** -- Evidence is rejected if the agent cites a file it never read with `read_file` or `read_files_batch`. This prevents the agent from inferring file contents from names or neighboring files without actually opening them.
+
+3. **Post-investigation verification pass** -- After the agent loop ends but before scorecard computation, every finding is re-verified. Findings where all evidence is unverifiable are removed entirely. A `verification_pass` step event is emitted and logged.
+
+All verification is deterministic -- no LLM calls, no cost increase. Evidence in the final brief is tagged `[verified]`, `[corrected]`, or `[unverifiable]` so reviewers can see the verification status at a glance.
+
+| Verification outcome | What happens |
+|----------------------|--------------|
+| **Verified** | Snippet matches actual file content. Included as-is. |
+| **Corrected** | File exists but snippet differs. Replaced with real code, original preserved in `originalSnippet`. |
+| **Rejected** | File doesn't exist, or agent never read it. Evidence item stripped from finding. |
+| **Finding removed** | All evidence on a finding is unverifiable. Entire finding dropped before scoring. |
+
 ## Tool Catalog
 
 | Tool | Description |
@@ -227,7 +248,7 @@ src/
     search/             grep_pattern, find_files
     config/             parse_package_json, parse_next_config, parse_tsconfig, parse_env_file, check_gitignore
     dependency/         compare_versions, query_npm_versions
-    analysis/           analyze_route_structure, analyze_component_directives, analyze_env_usage, analyze_middleware, record_finding
+    analysis/           analyze_route_structure, analyze_component_directives, analyze_env_usage, analyze_middleware, record_finding, verify_evidence
     web/                web_search, fetch_url
   rules/                Consulting rules (markdown)
     core.md             Shared investigation rules
