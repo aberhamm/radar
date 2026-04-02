@@ -186,9 +186,9 @@
   font-family: var(--font-brand), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 
-@keyframes radar-sweep {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────────── */

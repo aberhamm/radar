@@ -15,7 +15,7 @@ const brand = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: 'Scout',
+  title: 'Radar',
   description: 'AI-powered codebase investigation tool',
 };
 
