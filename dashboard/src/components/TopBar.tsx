@@ -37,8 +37,8 @@ export function TopBar({ status, repoName, goal, toolCalls, budget, scorecard, h
   return (
     <header className="bg-white/80 backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 h-14 flex items-center gap-3 sticky top-0 z-10 shrink-0">
       {/* Brand */}
-      <span className="text-sm font-bold text-label tracking-tight whitespace-nowrap">
-        <span className="text-tint">repo</span>-audit
+      <span className="text-sm font-bold text-tint tracking-tight whitespace-nowrap">
+        Scout
       </span>
 
       {/* Center: repo + goal badges */}

@@ -15,8 +15,8 @@ const code = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'repo-audit-agent',
-  description: 'Live agent investigation dashboard',
+  title: 'Scout',
+  description: 'AI-powered codebase investigation tool',
 };
 
 export default function RootLayout({
