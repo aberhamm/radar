@@ -16,7 +16,7 @@ const brand = Outfit({
 
 export const metadata: Metadata = {
   title: 'Radar',
-  description: 'AI-powered codebase investigation tool',
+  description: 'AI-powered codebase analysis tool',
 };
 
 export default function RootLayout({

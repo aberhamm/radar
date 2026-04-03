@@ -49,10 +49,10 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
           <path d="M11 8v6M8 11h6" />
         </svg>
         <h1 className="text-xl font-bold text-label tracking-tight mb-1">
-          Start Investigation
+          Start Analysis
         </h1>
         <p className="text-sm text-secondary-label mb-6">
-          Point at a headless CMS codebase. The agent investigates architecture, security, dependencies, and delivery risk, then writes a scored report.
+          Point at a headless CMS codebase. The agent analyzes architecture, security, dependencies, and delivery risk, then writes a scored report.
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -100,7 +100,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
                 : 'bg-tint text-white cursor-pointer hover:bg-[#0077ed] active:scale-[0.98]'
             }`}
           >
-            {loading ? 'Starting...' : 'Start Investigation'}
+            {loading ? 'Starting...' : 'Start Analysis'}
           </button>
         </form>
       </div>
