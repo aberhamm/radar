@@ -32,6 +32,7 @@ const READ_ONLY_TOOLS = new Set([
   'detect_app_roots',
   'web_search',
   'fetch_url',
+  'tool_search',
 ]);
 
 /** Tools that mutate shared state and must not run concurrently. */

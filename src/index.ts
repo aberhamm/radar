@@ -66,6 +66,7 @@ program
       toolCallCount: 0, toolCallBudget: 0, webSearchCount: 0, webSearchBudget: 0,
       urlFetchCount: 0, urlFetchBudget: 0, docTokensUsed: 0, docTokenBudget: 0,
       fetchedDocs: [], investigationLog: [], modelUsage: new Map(),
+      fileReadCache: new Map(),
     };
     const { tools } = buildPiTools(dummyState);
     console.log(`\nRegistered tools (${tools.length}):\n`);

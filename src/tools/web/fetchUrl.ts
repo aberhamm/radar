@@ -1,17 +1,14 @@
 import type { FetchUrlInput, FetchUrlOutput } from '../../types/tools.js';
+import { fetchCache } from './fetchCache.js';
+import { isDomainBlocked } from './domainBlocklist.js';
 
 const DEFAULT_MAX_LENGTH = 15_000;
 const TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10MB — abort to prevent OOM
+const MAX_REDIRECTS = 10;
 
 /**
  * Browser-like request headers.
- *
- * Most documentation sites check User-Agent + standard browser headers.
- * Node.js fetch has a distinct TLS fingerprint that some sites (Cloudflare)
- * can detect, but proper headers handle ~90% of cases. For the remaining
- * sites, we rewrite URLs to API endpoints that don't need browser TLS
- * (e.g. raw.githubusercontent.com, registry.npmjs.org).
  */
 const BROWSER_HEADERS: Record<string, string> = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -31,10 +28,7 @@ const BROWSER_HEADERS: Record<string, string> = {
  * Cloudflare/bot detection and return cleaner content.
  */
 function rewriteUrl(url: string): { url: string; headers: Record<string, string> } {
-  const parsed = new URL(url);
-
-  // GitHub blob URLs → raw.githubusercontent.com (pure markdown, no HTML parsing needed)
-  // e.g. github.com/Sitecore/jss/blob/main/CHANGELOG.md → raw.githubusercontent.com/Sitecore/jss/main/CHANGELOG.md
+  // GitHub blob URLs → raw.githubusercontent.com
   const ghBlobMatch = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/);
   if (ghBlobMatch) {
     return {
@@ -43,8 +37,7 @@ function rewriteUrl(url: string): { url: string; headers: Record<string, string>
     };
   }
 
-  // npmjs.com package pages → registry API (JSON, no Cloudflare)
-  // e.g. npmjs.com/package/next → registry.npmjs.org/next/latest
+  // npmjs.com package pages → registry API
   const npmMatch = url.match(/^https?:\/\/(?:www\.)?npmjs\.com\/package\/([^/]+)\/?$/);
   if (npmMatch) {
     return {
@@ -53,17 +46,75 @@ function rewriteUrl(url: string): { url: string; headers: Record<string, string>
     };
   }
 
-  // Default: use full browser headers
   return { url, headers: BROWSER_HEADERS };
 }
 
 /**
- * Fetch and extract text content from a documentation URL.
- * Strips HTML tags and returns plain text, truncated to maxLength.
+ * Follow redirects manually with safety checks.
+ * Cross-host redirects return the redirect URL instead of following (SSRF protection).
+ */
+async function safeFetch(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ response: Response; redirectedTo?: string }> {
+  let currentUrl = url;
+  const originalHost = new URL(url).host;
+
+  for (let i = 0; i < MAX_REDIRECTS; i++) {
+    const response = await fetch(currentUrl, {
+      headers,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      redirect: 'manual',
+    });
+
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return { response };
+    }
+
+    const location = response.headers.get('location');
+    if (!location) return { response };
+
+    const nextUrl = new URL(location, currentUrl);
+
+    // Cross-host redirect: stop and report
+    if (nextUrl.host !== originalHost) {
+      return { response, redirectedTo: nextUrl.href };
+    }
+
+    currentUrl = nextUrl.href;
+  }
+
+  throw new Error(`Too many redirects (>${MAX_REDIRECTS})`);
+}
+
+// --- Turndown (lazy-loaded) ---
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let turndownInstance: any = null;
+
+async function htmlToMarkdown(html: string): Promise<string> {
+  try {
+    if (!turndownInstance) {
+      const { default: TurndownService } = await import('turndown');
+      turndownInstance = new TurndownService({
+        headingStyle: 'atx',
+        codeBlockStyle: 'fenced',
+        bulletListMarker: '-',
+      });
+      turndownInstance.remove(['script', 'style', 'nav', 'footer', 'header', 'aside']);
+    }
+    return turndownInstance.turndown(html);
+  } catch {
+    // Fallback to regex-based stripping if Turndown fails
+    return htmlToText(html);
+  }
+}
+
+/**
+ * Fetch and extract content from a documentation URL.
  *
- * Uses browser-like headers to avoid bot detection on documentation sites.
- * Rewrites known URLs (GitHub blob, npmjs.com) to API endpoints that
- * return cleaner content and bypass Cloudflare TLS fingerprinting.
+ * Features: LRU caching, HTML→Markdown via Turndown, redirect safety,
+ * domain blocklist, URL rewriting for GitHub/npm.
  */
 export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
   const { url: originalUrl, maxLength = DEFAULT_MAX_LENGTH } = input;
@@ -80,16 +131,35 @@ export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
     return { url: originalUrl, title: '', content: 'Error: Only HTTP(S) URLs supported', truncated: false };
   }
 
+  // Domain blocklist check (SSRF protection)
+  const blocked = isDomainBlocked(originalUrl);
+  if (blocked) {
+    return { url: originalUrl, title: '', content: `Error: ${blocked}`, truncated: false };
+  }
+
+  // Cache check
+  const cached = fetchCache.get(originalUrl);
+  if (cached) {
+    return { ...cached, fromCache: true };
+  }
+
   const rewritten = rewriteUrl(originalUrl);
 
   try {
-    const response = await fetch(rewritten.url, {
-      headers: rewritten.headers,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      redirect: 'follow',
-    });
+    const { response, redirectedTo } = await safeFetch(rewritten.url, rewritten.headers);
 
-    // Check Content-Length before reading body to avoid OOM on huge responses
+    // Cross-host redirect — return the redirect URL without following
+    if (redirectedTo) {
+      const result: FetchUrlOutput = {
+        url: originalUrl,
+        title: '',
+        content: `Redirected to different host: ${redirectedTo}. Fetch that URL directly if needed.`,
+        truncated: false,
+      };
+      return result;
+    }
+
+    // Check Content-Length before reading body
     const contentLength = parseInt(response.headers.get('content-length') ?? '0', 10);
     if (contentLength > MAX_RESPONSE_BYTES) {
       return {
@@ -101,7 +171,6 @@ export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
     }
 
     if (!response.ok) {
-      // If we got a 403 with browser headers, note it may be TLS fingerprinting
       const hint = response.status === 403
         ? ' (site may use TLS fingerprinting to block non-browser requests)'
         : '';
@@ -116,53 +185,52 @@ export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
     const contentType = response.headers.get('content-type') ?? '';
     const body = await response.text();
 
-    // JSON content — return formatted
+    let result: FetchUrlOutput;
+
+    // JSON content
     if (contentType.includes('application/json')) {
       const content = body.slice(0, maxLength);
-      return {
+      result = {
         url: originalUrl,
         title: extractJsonTitle(body),
         content,
         truncated: body.length > maxLength,
       };
     }
-
-    // Plain text or markdown — return as-is
-    if (contentType.includes('text/plain') || rewritten.url.includes('raw.githubusercontent.com')) {
+    // Plain text or markdown
+    else if (contentType.includes('text/plain') || rewritten.url.includes('raw.githubusercontent.com')) {
       const content = body.slice(0, maxLength);
       const truncated = body.length > maxLength;
-      return {
+      result = {
         url: originalUrl,
         title: '',
         content: truncated ? content + '\n\n[Content truncated]' : content,
         truncated,
       };
     }
+    // HTML → Markdown via Turndown
+    else {
+      const title = extractHtmlTitle(body);
+      const markdown = await htmlToMarkdown(body);
+      const truncated = markdown.length > maxLength;
+      const content = truncated ? markdown.slice(0, maxLength) + '\n\n[Content truncated]' : markdown;
+      result = { url: originalUrl, title, content, truncated };
+    }
 
-    // HTML — extract text
-    const title = extractHtmlTitle(body);
-    const text = htmlToText(body);
-    const truncated = text.length > maxLength;
-    const content = truncated ? text.slice(0, maxLength) + '\n\n[Content truncated]' : text;
-
-    return { url: originalUrl, title, content, truncated };
+    // Store in cache
+    fetchCache.set(originalUrl, result);
+    return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return { url: originalUrl, title: '', content: `Error: ${message}`, truncated: false };
   }
 }
 
-/**
- * Extract title from HTML.
- */
 function extractHtmlTitle(html: string): string {
   const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return match ? decodeHtmlEntities(match[1].trim()) : '';
 }
 
-/**
- * Try to extract a title from JSON (common patterns).
- */
 function extractJsonTitle(json: string): string {
   try {
     const parsed = JSON.parse(json);
@@ -173,44 +241,30 @@ function extractJsonTitle(json: string): string {
 }
 
 /**
- * Convert HTML to readable plain text.
- * Strips tags, scripts, styles, and normalizes whitespace.
+ * Fallback HTML→text conversion (regex-based).
+ * Used when Turndown is not available.
  */
 function htmlToText(html: string): string {
   let text = html;
-
-  // Remove script and style blocks
   text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
   text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
   text = text.replace(/<nav[\s\S]*?<\/nav>/gi, '');
   text = text.replace(/<footer[\s\S]*?<\/footer>/gi, '');
   text = text.replace(/<header[\s\S]*?<\/header>/gi, '');
-
-  // Convert common elements to text equivalents
   text = text.replace(/<br\s*\/?>/gi, '\n');
   text = text.replace(/<\/p>/gi, '\n\n');
   text = text.replace(/<\/div>/gi, '\n');
   text = text.replace(/<\/h[1-6]>/gi, '\n\n');
   text = text.replace(/<li[^>]*>/gi, '- ');
   text = text.replace(/<\/li>/gi, '\n');
-
-  // Strip remaining tags
   text = text.replace(/<[^>]+>/g, '');
-
-  // Decode HTML entities
   text = decodeHtmlEntities(text);
-
-  // Normalize whitespace
   text = text.replace(/[ \t]+/g, ' ');
   text = text.replace(/\n{3,}/g, '\n\n');
   text = text.trim();
-
   return text;
 }
 
-/**
- * Decode common HTML entities.
- */
 function decodeHtmlEntities(text: string): string {
   return text
     .replace(/&amp;/g, '&')

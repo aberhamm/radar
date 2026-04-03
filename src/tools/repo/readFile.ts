@@ -9,7 +9,7 @@ export async function readFile(
   input: ReadFileInput,
 ): Promise<ReadFileOutput> {
   const maxLines = input.maxLines ?? DEFAULT_MAX_LINES;
-  const result = await resolveAndRead(repoRoot, input.path, maxLines);
+  const result = await resolveAndRead(repoRoot, input.path, maxLines, input.startLine);
 
   if (isResolveError(result)) {
     return {

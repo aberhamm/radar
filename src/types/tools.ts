@@ -26,6 +26,7 @@ export interface ListDirectoryOutput {
 
 export interface ReadFileInput {
   path: string;
+  startLine?: number;
   maxLines?: number;
 }
 
@@ -34,6 +35,7 @@ export interface ReadFileOutput {
   content: string;
   lineCount: number;
   language: string;
+  unchanged?: boolean;
   error?: string;
 }
 
@@ -53,7 +55,11 @@ export interface GrepPatternInput {
   path?: string;
   fileGlob?: string;
   maxResults?: number;
+  offset?: number;
   isRegex?: boolean;
+  outputMode?: 'content' | 'files_with_matches' | 'count';
+  multiline?: boolean;
+  sortByMtime?: boolean;
 }
 
 export interface GrepMatch {
@@ -65,6 +71,9 @@ export interface GrepMatch {
 
 export interface GrepPatternOutput {
   matches: GrepMatch[];
+  truncated?: boolean;
+  fileCounts?: Record<string, number>;
+  matchedFiles?: string[];
   error?: string;
 }
 
@@ -302,6 +311,7 @@ export interface FetchUrlOutput {
   title: string;
   content: string;
   truncated: boolean;
+  fromCache?: boolean;
 }
 
 // --- Detect App Roots ---

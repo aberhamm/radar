@@ -88,6 +88,7 @@ export async function resolveAndRead(
   repoRoot: string,
   filePath: string,
   maxLines?: number,
+  startLine?: number,
 ): Promise<ResolveResult> {
   try {
     const resolved = path.resolve(repoRoot, filePath);
@@ -125,8 +126,16 @@ export async function resolveAndRead(
     const lineCount = lines.length;
 
     let content: string;
-    if (maxLines && lineCount > maxLines) {
-      content = lines.slice(0, maxLines).join('\n') + `\n... (truncated, ${lineCount} total lines)`;
+    const start = startLine ? Math.max(0, startLine - 1) : 0; // convert 1-based to 0-based
+    const effectiveMaxLines = maxLines ?? lineCount;
+    const end = Math.min(start + effectiveMaxLines, lineCount);
+
+    if (start > 0 || end < lineCount) {
+      const sliced = lines.slice(start, end);
+      content = sliced.join('\n');
+      if (start > 0 || end < lineCount) {
+        content += `\n... (showing lines ${start + 1}-${Math.min(end, lineCount)} of ${lineCount} total)`;
+      }
     } else {
       content = raw;
     }

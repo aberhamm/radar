@@ -5,6 +5,11 @@
  * LLM path arguments, tracks state side effects, and returns Pi's
  * { content, details } result format.
  *
+ * All tools are wrapped via makeTool() which runs input validation
+ * from validators.ts before execute(). Deferred tools (web_search,
+ * fetch_url, compare_versions) have stub descriptions — use tool_search
+ * to discover their full capabilities.
+ *
  * Also includes assemble_output, which stores sections in a closure
  * ref for post-loop retrieval by the runner.
  */
@@ -12,6 +17,9 @@
 import { Type } from '@mariozechner/pi-ai';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import type { AgentState } from '../types/state.js';
+import { VALIDATORS } from './validators.js';
+import { createHash } from 'node:crypto';
+import { stat as fsStat, open as fsOpen } from 'node:fs/promises';
 
 // Tool implementations
 import { listDirectory } from './repo/listDirectory.js';
@@ -35,9 +43,112 @@ import { webSearch } from './web/webSearch.js';
 import { fetchUrl } from './web/fetchUrl.js';
 import { detectAppRoots } from './analysis/detectAppRoots.js';
 
+import { isStateful, StatefulToolMutex } from './concurrency.js';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve as pathResolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+
 /** Sections captured by assemble_output, accessible after agent.prompt() returns. */
 export interface AssembledSections {
   sections: Record<string, string> | null;
+}
+
+// --- Deferred tool loading ---
+
+const DEFERRED_TOOL_NAMES = new Set(['web_search', 'fetch_url', 'compare_versions']);
+
+interface DeferredToolEntry {
+  name: string;
+  fullDescription: string;
+  parameterNames: string[];
+}
+
+const DEFERRED_TOOL_ENTRIES: DeferredToolEntry[] = [
+  {
+    name: 'web_search',
+    fullDescription: 'Search the web for documentation, changelogs, migration guides, and known issues. Filters results through approved documentation sources.',
+    parameterNames: ['query', 'siteFilter', 'maxResults'],
+  },
+  {
+    name: 'fetch_url',
+    fullDescription: 'Fetch and extract content from a documentation URL. Converts HTML to Markdown via Turndown. Includes LRU cache with 15-min TTL, SSRF protection (domain blocklist), and safe redirect following (cross-host redirects are blocked).',
+    parameterNames: ['url', 'maxLength'],
+  },
+  {
+    name: 'compare_versions',
+    fullDescription: 'Compare installed package versions against latest available versions from npm. Returns version delta, severity classification (patch/minor/major), and upgrade recommendations for each package.',
+    parameterNames: ['installed', 'latest'],
+  },
+];
+
+// --- makeTool helper ---
+
+/**
+ * Wrap a tool definition with input validation from validators.ts.
+ * Every tool goes through this — validation runs before execute().
+ */
+function makeTool(
+  name: string,
+  label: string,
+  description: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parameters: any,
+  impl: AgentTool['execute'],
+): AgentTool {
+  return {
+    name,
+    label,
+    description,
+    parameters,
+    execute: async (id, params, signal?, onUpdate?) => {
+      const v = VALIDATORS[name];
+      if (v) {
+        const vErr = v(params as Record<string, unknown>);
+        if (vErr) return err(name, new Error(`Validation: ${vErr}`));
+      }
+      return impl(id, params, signal, onUpdate);
+    },
+  };
+}
+
+// --- File dedup helpers ---
+
+async function isFileUnchanged(state: AgentState, repoRoot: string, filePath: string): Promise<boolean> {
+  try {
+    const absPath = pathResolve(repoRoot, filePath);
+    const stats = await fsStat(absPath);
+    const cached = state.fileReadCache.get(filePath);
+    if (!cached || cached.mtime !== stats.mtimeMs) return false;
+    // mtime matches — verify content hash of first 1KB
+    const fh = await fsOpen(absPath, 'r');
+    try {
+      const buf = Buffer.alloc(1024);
+      const { bytesRead } = await fh.read(buf, 0, 1024, 0);
+      const hash = createHash('sha256').update(buf.subarray(0, bytesRead)).digest('hex');
+      return cached.contentHash === hash;
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function updateFileCache(state: AgentState, repoRoot: string, filePath: string): Promise<void> {
+  try {
+    const absPath = pathResolve(repoRoot, filePath);
+    const stats = await fsStat(absPath);
+    const fh = await fsOpen(absPath, 'r');
+    try {
+      const buf = Buffer.alloc(1024);
+      const { bytesRead } = await fh.read(buf, 0, 1024, 0);
+      const hash = createHash('sha256').update(buf.subarray(0, bytesRead)).digest('hex');
+      state.fileReadCache.set(filePath, { mtime: stats.mtimeMs, contentHash: hash });
+    } finally {
+      await fh.close();
+    }
+  } catch { /* ignore — dedup is best-effort */ }
 }
 
 /**
@@ -103,11 +214,6 @@ const PER_TOOL_LIMITS: Record<string, number> = {
 const DEFAULT_RESULT_LIMIT = 4_000;
 
 // --- Disk spill for oversized results ---
-import { isStateful, StatefulToolMutex } from './concurrency.js';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 
 let spillDir: string | null = null;
 
@@ -181,169 +287,229 @@ export function buildPiTools(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const norm = (params: unknown): any => normalizePathArgs({ ...(params as Record<string, unknown>) }, repoRoot());
 
+  /** Get stub or full description for a tool based on deferred status. */
+  const desc = (name: string, full: string): string => {
+    if (DEFERRED_TOOL_NAMES.has(name)) {
+      return `${name}: available. Call tool_search("${name}") for full description and parameters.`;
+    }
+    return full;
+  };
+
   const tools: AgentTool[] = [
     // --- Repo tools ---
-    {
-      name: 'list_directory',
-      label: 'List Directory',
-      description: 'List files and directories at a given path with configurable depth. Excludes node_modules, .next, dist, build, .git.',
-      parameters: Type.Object({
+    makeTool('list_directory', 'List Directory',
+      'List files and directories at a given path with configurable depth. Excludes node_modules, .next, dist, build, .git.',
+      Type.Object({
         path: Type.String({ description: 'Relative path from repo root' }),
         depth: Type.Optional(Type.Number({ description: 'Max directory depth (default 2)' })),
         includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden files/dirs' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('list_directory', await listDirectory(repoRoot(), norm(params))); }
         catch (e) { return err('list_directory', e as Error); }
       },
-    },
-    {
-      name: 'read_file',
-      label: 'Read File',
-      description: 'Read the contents of a file. Returns content, line count, and detected language.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('read_file', 'Read File',
+      'Read the contents of a file. Returns content, line count, and detected language. Supports line-range reads via startLine. Returns unchanged=true if file has not changed since last read.',
+      Type.Object({
         path: Type.String({ description: 'Relative file path from repo root' }),
         maxLines: Type.Optional(Type.Number({ description: 'Max lines to return (default 500)' })),
+        startLine: Type.Optional(Type.Number({ description: 'Start reading from this line number (1-based)' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try {
           const a = norm(params);
+          const filePath = a.path as string;
+
+          // Dedup check: skip re-read if file is unchanged
+          if (state.fileReadCache && await isFileUnchanged(state, repoRoot(), filePath)) {
+            state.filesRead.add(filePath);
+            return ok('read_file', {
+              path: filePath,
+              content: '[file_unchanged]',
+              lineCount: 0,
+              language: 'text',
+              unchanged: true,
+            });
+          }
+
           const result = await readFile(repoRoot(), a);
-          state.filesRead.add(a.path);
+          state.filesRead.add(filePath);
+
+          // Update dedup cache on successful read
+          if (!result.error) {
+            await updateFileCache(state, repoRoot(), filePath);
+          }
+
           return ok('read_file', result);
         } catch (e) { return err('read_file', e as Error); }
       },
-    },
-    {
-      name: 'read_files_batch',
-      label: 'Read Files Batch',
-      description: 'Read multiple files in one call. Returns partial results on errors.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('read_files_batch', 'Read Files Batch',
+      'Read multiple files in one call. Returns partial results on errors. Skips files unchanged since last read.',
+      Type.Object({
         paths: Type.Array(Type.String(), { description: 'Relative file paths from repo root' }),
         maxLinesPerFile: Type.Optional(Type.Number({ description: 'Max lines per file (default 500)' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try {
           const a = norm(params);
-          const result = await readFilesBatch(repoRoot(), a);
-          for (const p of a.paths ?? []) state.filesRead.add(p);
-          return ok('read_files_batch', result);
+          const paths = (a.paths ?? []) as string[];
+
+          // Dedup: split into unchanged vs needs-read
+          const unchangedPaths: string[] = [];
+          const toRead: string[] = [];
+          if (state.fileReadCache) {
+            for (const p of paths) {
+              if (await isFileUnchanged(state, repoRoot(), p)) {
+                unchangedPaths.push(p);
+              } else {
+                toRead.push(p);
+              }
+            }
+          } else {
+            toRead.push(...paths);
+          }
+
+          // Read only changed files
+          const result = toRead.length > 0
+            ? await readFilesBatch(repoRoot(), { ...a, paths: toRead })
+            : { files: [] };
+
+          // Add unchanged stubs
+          const resultWithDedup = {
+            ...result,
+            files: [
+              ...unchangedPaths.map((p) => ({
+                path: p,
+                content: '[file_unchanged]',
+                lineCount: 0,
+                language: 'text' as const,
+                unchanged: true,
+              })),
+              ...(result.files ?? []),
+            ],
+          };
+
+          // Track all paths as read + update cache for newly read files
+          for (const p of paths) state.filesRead.add(p);
+          for (const p of toRead) await updateFileCache(state, repoRoot(), p);
+
+          return ok('read_files_batch', resultWithDedup);
         } catch (e) { return err('read_files_batch', e as Error); }
       },
-    },
+    ),
 
     // --- Search tools ---
-    {
-      name: 'grep_pattern',
-      label: 'Grep Pattern',
-      description: 'Search for a text pattern or regex across the repo or a subdirectory. Returns matching lines with context.',
-      parameters: Type.Object({
+    makeTool('grep_pattern', 'Grep Pattern',
+      'Search for a text pattern or regex across the repo or a subdirectory. Returns matching lines with context. Supports pagination (offset), output modes (content/files_with_matches/count), multiline matching, and mtime sorting.',
+      Type.Object({
         pattern: Type.String({ description: 'Search pattern (text or regex)' }),
         path: Type.Optional(Type.String({ description: 'Subdirectory to search (default: repo root)' })),
         fileGlob: Type.Optional(Type.String({ description: 'File glob filter, e.g. "*.ts,*.tsx"' })),
         maxResults: Type.Optional(Type.Number({ description: 'Max results (default 50)' })),
         isRegex: Type.Optional(Type.Boolean({ description: 'Treat pattern as regex' })),
+        offset: Type.Optional(Type.Number({ description: 'Skip first N matches for pagination (default 0)' })),
+        outputMode: Type.Optional(Type.Union([
+          Type.Literal('content'),
+          Type.Literal('files_with_matches'),
+          Type.Literal('count'),
+        ], { description: 'Output format: content (default), files_with_matches, or count' })),
+        multiline: Type.Optional(Type.Boolean({ description: 'Enable multiline matching across line boundaries' })),
+        sortByMtime: Type.Optional(Type.Boolean({ description: 'Sort results by file modification time (most recent first)' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('grep_pattern', await grepPattern(repoRoot(), norm(params))); }
         catch (e) { return err('grep_pattern', e as Error); }
       },
-    },
-    {
-      name: 'find_files',
-      label: 'Find Files',
-      description: 'Find files matching a glob or name pattern.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('find_files', 'Find Files',
+      'Find files matching a glob or name pattern.',
+      Type.Object({
         pattern: Type.String({ description: 'Glob pattern, e.g. "componentFactory*"' }),
         path: Type.Optional(Type.String({ description: 'Subdirectory to search' })),
         type: Type.Optional(Type.Union([Type.Literal('file'), Type.Literal('directory')], { description: 'Filter by type' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('find_files', await findFiles(repoRoot(), norm(params))); }
         catch (e) { return err('find_files', e as Error); }
       },
-    },
+    ),
 
     // --- Config tools ---
-    {
-      name: 'parse_package_json',
-      label: 'Parse package.json',
-      description: 'Parse package.json and return structured dependency and script information.',
-      parameters: Type.Object({
+    makeTool('parse_package_json', 'Parse package.json',
+      'Parse package.json and return structured dependency and script information.',
+      Type.Object({
         path: Type.Optional(Type.String({ description: 'Relative path to package.json directory' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('parse_package_json', await parsePackageJson(repoRoot(), norm(params))); }
         catch (e) { return err('parse_package_json', e as Error); }
       },
-    },
-    {
-      name: 'parse_next_config',
-      label: 'Parse Next Config',
-      description: 'Parse next.config.js/mjs/ts and extract configuration (images, redirects, env, i18n, experimental).',
-      parameters: Type.Object({
+    ),
+
+    makeTool('parse_next_config', 'Parse Next Config',
+      'Parse next.config.js/mjs/ts and extract configuration (images, redirects, env, i18n, experimental).',
+      Type.Object({
         path: Type.Optional(Type.String({ description: 'Relative path to config directory' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('parse_next_config', await parseNextConfig(repoRoot(), norm(params))); }
         catch (e) { return err('parse_next_config', e as Error); }
       },
-    },
-    {
-      name: 'parse_tsconfig',
-      label: 'Parse tsconfig',
-      description: 'Parse tsconfig.json and return key TypeScript settings.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('parse_tsconfig', 'Parse tsconfig',
+      'Parse tsconfig.json and return key TypeScript settings.',
+      Type.Object({
         path: Type.Optional(Type.String({ description: 'Relative path to tsconfig directory' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('parse_tsconfig', await parseTsconfig(repoRoot(), norm(params))); }
         catch (e) { return err('parse_tsconfig', e as Error); }
       },
-    },
-    {
-      name: 'parse_env_file',
-      label: 'Parse Env File',
-      description: 'Parse .env.example or similar file. Returns variable names only, never values.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('parse_env_file', 'Parse Env File',
+      'Parse .env.example or similar file. Returns variable names only, never values.',
+      Type.Object({
         path: Type.String({ description: 'Relative path to the env file' }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('parse_env_file', await parseEnvFile(repoRoot(), norm(params))); }
         catch (e) { return err('parse_env_file', e as Error); }
       },
-    },
-    {
-      name: 'check_gitignore',
-      label: 'Check Gitignore',
-      description: 'Check whether specific patterns are present in .gitignore.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('check_gitignore', 'Check Gitignore',
+      'Check whether specific patterns are present in .gitignore.',
+      Type.Object({
         patterns: Type.Array(Type.String(), { description: 'Patterns to check, e.g. [".env", "node_modules"]' }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('check_gitignore', await checkGitignore(repoRoot(), norm(params))); }
         catch (e) { return err('check_gitignore', e as Error); }
       },
-    },
+    ),
 
     // --- Dependency tools ---
-    {
-      name: 'query_npm_versions',
-      label: 'Query npm Versions',
-      description: 'Fetch latest versions for a list of packages from npm registry (uses 24h cache).',
-      parameters: Type.Object({
+    makeTool('query_npm_versions', 'Query npm Versions',
+      'Fetch latest versions for a list of packages from npm registry (uses 24h cache).',
+      Type.Object({
         packages: Type.Array(Type.String(), { description: 'Package names to query' }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('query_npm_versions', await queryNpmVersions(norm(params))); }
         catch (e) { return err('query_npm_versions', e as Error); }
       },
-    },
-    {
-      name: 'compare_versions',
-      label: 'Compare Versions',
-      description: 'Compare installed package versions against latest. Returns delta and severity.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('compare_versions', 'Compare Versions',
+      desc('compare_versions', 'Compare installed package versions against latest. Returns delta and severity.'),
+      Type.Object({
         installed: Type.Array(
           Type.Object({ name: Type.String(), version: Type.String(), isDev: Type.Boolean() }),
           { description: 'Installed packages with versions' },
@@ -352,79 +518,72 @@ export function buildPiTools(
           description: 'Map of package name to resolved latest version info',
         }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('compare_versions', compareVersions(norm(params))); }
         catch (e) { return err('compare_versions', e as Error); }
       },
-    },
+    ),
 
     // --- Analysis tools ---
-    {
-      name: 'analyze_route_structure',
-      label: 'Analyze Route Structure',
-      description: 'Scan pages/ and app/ directories to detect router type (pages/app/hybrid) and extract route map.',
-      parameters: Type.Object({
+    makeTool('analyze_route_structure', 'Analyze Route Structure',
+      'Scan pages/ and app/ directories to detect router type (pages/app/hybrid) and extract route map.',
+      Type.Object({
         repoPath: Type.String({ description: 'Relative path within the repo' }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('analyze_route_structure', await analyzeRouteStructure(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_route_structure', e as Error); }
       },
-    },
-    {
-      name: 'analyze_component_directives',
-      label: 'Analyze Component Directives',
-      description: 'Scan components for "use client" / "use server" directives and compute client/server ratio.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('analyze_component_directives', 'Analyze Component Directives',
+      'Scan components for "use client" / "use server" directives and compute client/server ratio.',
+      Type.Object({
         path: Type.String({ description: 'Relative path to components directory' }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('analyze_component_directives', await analyzeComponentDirectives(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_component_directives', e as Error); }
       },
-    },
-    {
-      name: 'analyze_env_usage',
-      label: 'Analyze Env Usage',
-      description: 'Scan the codebase for process.env references. Classifies as public (NEXT_PUBLIC_) or server.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('analyze_env_usage', 'Analyze Env Usage',
+      'Scan the codebase for process.env references. Classifies as public (NEXT_PUBLIC_) or server.',
+      Type.Object({
         repoPath: Type.String({ description: 'Relative path to scan' }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('analyze_env_usage', await analyzeEnvUsage(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_env_usage', e as Error); }
       },
-    },
-    {
-      name: 'analyze_middleware',
-      label: 'Analyze Middleware',
-      description: 'Parse middleware.ts/js and identify its purpose (auth, i18n, multisite, etc.), matchers, and imports.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('analyze_middleware', 'Analyze Middleware',
+      'Parse middleware.ts/js and identify its purpose (auth, i18n, multisite, etc.), matchers, and imports.',
+      Type.Object({
         repoPath: Type.String({ description: 'Relative path within the repo' }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('analyze_middleware', await analyzeMiddleware(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_middleware', e as Error); }
       },
-    },
-    {
-      name: 'detect_app_roots',
-      label: 'Detect App Roots',
-      description: 'Scan for multiple app entry points in a repo (monorepo detection). Finds package.json files, classifies each app by framework (Next.js, React, Node), and detects monorepo tooling (lerna, nx, turborepo, pnpm workspaces).',
-      parameters: Type.Object({
+    ),
+
+    makeTool('detect_app_roots', 'Detect App Roots',
+      'Scan for multiple app entry points in a repo (monorepo detection). Finds package.json files, classifies each app by framework (Next.js, React, Node), and detects monorepo tooling (lerna, nx, turborepo, pnpm workspaces).',
+      Type.Object({
         repoPath: Type.Optional(Type.String({ description: 'Subdirectory to scan (default: repo root)' })),
         maxDepth: Type.Optional(Type.Number({ description: 'Max scan depth (default 4)' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('detect_app_roots', await detectAppRoots(repoRoot(), norm(params))); }
         catch (e) { return err('detect_app_roots', e as Error); }
       },
-    },
-    {
-      name: 'record_finding',
-      label: 'Record Finding',
-      description: 'Record an investigation finding with category, severity, evidence, and description.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('record_finding', 'Record Finding',
+      'Record an investigation finding with category, severity, evidence, and description.',
+      Type.Object({
         finding: Type.Object({
           id: Type.String({ description: 'Unique finding ID, e.g. "DEP-JSS-OUTDATED"' }),
           category: Type.Union([
@@ -452,73 +611,81 @@ export function buildPiTools(
           }))),
         }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try { return ok('record_finding', await recordFinding(state, norm(params))); }
         catch (e) { return err('record_finding', e as Error); }
       },
-    },
+    ),
 
     // --- Web tools ---
-    {
-      name: 'web_search',
-      label: 'Web Search',
-      description: 'Search the web for documentation, changelogs, migration guides, and known issues.',
-      parameters: Type.Object({
+    makeTool('web_search', 'Web Search',
+      desc('web_search', 'Search the web for documentation, changelogs, migration guides, and known issues.'),
+      Type.Object({
         query: Type.String({ description: 'Search query' }),
         siteFilter: Type.Optional(Type.String({ description: 'Restrict to a domain' })),
         maxResults: Type.Optional(Type.Number({ description: 'Max results (default 5)' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try {
           state.webSearchCount++;
           return ok('web_search', await webSearch(norm(params)));
         } catch (e) { return err('web_search', e as Error); }
       },
-    },
-    {
-      name: 'fetch_url',
-      label: 'Fetch URL',
-      description: 'Fetch and extract text content from a documentation URL. Strips HTML, returns plain text.',
-      parameters: Type.Object({
+    ),
+
+    makeTool('fetch_url', 'Fetch URL',
+      desc('fetch_url', 'Fetch and extract text content from a documentation URL. Converts HTML to Markdown. Includes caching, SSRF protection, and safe redirect following.'),
+      Type.Object({
         url: Type.String({ description: 'URL to fetch' }),
         maxLength: Type.Optional(Type.Number({ description: 'Max characters to return (default 15000)' })),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         try {
           state.urlFetchCount++;
           return ok('fetch_url', await fetchUrl(norm(params)));
         } catch (e) { return err('fetch_url', e as Error); }
       },
-    },
+    ),
 
     // --- Model switching ---
-    {
-      name: 'switch_to_fast_model',
-      label: 'Switch to Fast Model',
-      description: 'Call this when you have finished investigating and are ready to record findings and assemble the brief. Switches to a faster, cheaper model for the writing phase. Only call this once — after you have gathered all the evidence you need.',
-      parameters: Type.Object({}),
-      execute: async () => {
+    makeTool('switch_to_fast_model', 'Switch to Fast Model',
+      'Call this when you have finished investigating and are ready to record findings and assemble the brief. Switches to a faster, cheaper model for the writing phase. Only call this once — after you have gathered all the evidence you need.',
+      Type.Object({}),
+      async () => {
         // Actual model switch happens in runner.ts afterToolCall hook.
         // This tool just signals intent — the return confirms the switch.
         return ok('switch_to_fast_model', { status: 'acknowledged', message: 'Switching to fast model for writing phase.' });
       },
-    },
+    ),
 
     // --- Output assembly ---
-    {
-      name: 'assemble_output',
-      label: 'Assemble Output',
-      description: 'Call this when you have enough findings to produce the deliverable. Provide ALL sections with your written narrative content.',
-      parameters: Type.Object({
+    makeTool('assemble_output', 'Assemble Output',
+      'Call this when you have enough findings to produce the deliverable. Provide ALL sections with your written narrative content.',
+      Type.Object({
         sections: Type.Record(Type.String(), Type.String(), {
           description: 'Map of section key to markdown content.',
         }),
       }),
-      execute: async (_id, params) => {
+      async (_id, params) => {
         assembledRef.sections = (params as { sections: Record<string, string> }).sections;
         return ok('assemble_output', { status: 'acknowledged', message: 'Output assembly triggered.' });
       },
-    },
+    ),
+
+    // --- Meta tools ---
+    makeTool('tool_search', 'Tool Search',
+      'Search for available tools by keyword. Returns matching tool names, full descriptions, and parameter lists. Use this to discover specialized tools like web_search, fetch_url, and compare_versions.',
+      Type.Object({
+        query: Type.String({ description: 'Search keyword to match against tool names and descriptions' }),
+      }),
+      async (_id, params) => {
+        const query = ((params as Record<string, unknown>).query as string).toLowerCase();
+        const matches = DEFERRED_TOOL_ENTRIES.filter((e) =>
+          e.name.includes(query) || e.fullDescription.toLowerCase().includes(query),
+        );
+        return ok('tool_search', { matches, total: matches.length });
+      },
+    ),
   ];
 
   // Wrap stateful tools with a mutex so they serialize even when Pi fires

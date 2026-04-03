@@ -69,6 +69,55 @@ const APPROVED_SOURCES: ApprovedSource[] = [
     description: 'npm package registry',
     platforms: ['sitecore', 'optimizely'],
   },
+
+  // TypeScript
+  {
+    domain: 'typescriptlang.org',
+    description: 'Official TypeScript documentation',
+    platforms: ['sitecore', 'optimizely'],
+  },
+
+  // Tailwind CSS
+  {
+    domain: 'tailwindcss.com',
+    description: 'Tailwind CSS documentation',
+    platforms: ['sitecore', 'optimizely'],
+  },
+
+  // GraphQL
+  {
+    domain: 'graphql.org',
+    description: 'GraphQL specification and documentation',
+    platforms: ['sitecore', 'optimizely'],
+  },
+
+  // Vercel
+  {
+    domain: 'vercel.com/docs',
+    description: 'Vercel deployment documentation',
+    platforms: ['sitecore', 'optimizely'],
+  },
+
+  // MDN
+  {
+    domain: 'developer.mozilla.org',
+    description: 'MDN Web Docs — web standards reference',
+    platforms: ['sitecore', 'optimizely'],
+  },
+
+  // Stack Overflow
+  {
+    domain: 'stackoverflow.com',
+    description: 'Stack Overflow Q&A',
+    platforms: ['sitecore', 'optimizely'],
+  },
+
+  // GitHub Docs
+  {
+    domain: 'docs.github.com',
+    description: 'GitHub documentation',
+    platforms: ['sitecore', 'optimizely'],
+  },
 ];
 
 /**

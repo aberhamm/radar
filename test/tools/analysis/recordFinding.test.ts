@@ -24,6 +24,7 @@ function makeState(): AgentState {
     fetchedDocs: [],
     investigationLog: [],
     modelUsage: new Map(),
+    fileReadCache: new Map(),
   };
 }
 

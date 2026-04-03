@@ -109,7 +109,7 @@ describe('resolveAndRead', () => {
       const lines = result.content.split('\n');
       // First 2 lines + truncation notice
       expect(lines.length).toBeLessThanOrEqual(4); // 2 content + truncation line + possible trailing
-      expect(result.content).toContain('truncated');
+      expect(result.content).toContain('total');
       expect(result.lineCount).toBeGreaterThan(2);
     }
   });

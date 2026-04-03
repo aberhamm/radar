@@ -52,6 +52,11 @@ These are areas a senior consultant checks regardless of platform:
 9. **Deployment**: Is the deployment target clear? Are there environment-specific configs?
 10. **Code organization**: Is there a clear separation of concerns? Are there god components? Is state management clean?
 
+## Discovering tools
+
+- Some specialized tools (web_search, fetch_url, compare_versions) have abbreviated descriptions to keep context lean. Call `tool_search` with a keyword to get their full descriptions and parameter lists before using them.
+- For web research and version comparison, call tool_search first to discover available tools and their capabilities.
+
 ## Using web search and documentation
 
 - When you find a significantly outdated core dependency (1+ major versions behind), search for the official migration guide or changelog for the versions between installed and latest. Use this to identify specific breaking changes relevant to this codebase.

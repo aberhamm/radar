@@ -160,6 +160,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     fetchedDocs: [],
     investigationLog: [],
     modelUsage: new Map(),
+    fileReadCache: new Map(),
   };
 
   // Detect platform if not provided

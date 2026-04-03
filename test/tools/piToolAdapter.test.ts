@@ -24,19 +24,21 @@ function makeState(): AgentState {
     fetchedDocs: [],
     investigationLog: [],
     modelUsage: new Map(),
+    fileReadCache: new Map(),
   };
 }
 
 describe('buildPiTools', () => {
-  it('returns 22 tools (19 + web_search + switch_to_fast_model + assemble_output)', () => {
+  it('returns 23 tools (19 + web_search + switch_to_fast_model + assemble_output + tool_search)', () => {
     const state = makeState();
     const { tools } = buildPiTools(state);
-    expect(tools.length).toBe(22);
+    expect(tools.length).toBe(23);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_directory');
     expect(names).toContain('record_finding');
     expect(names).toContain('assemble_output');
     expect(names).toContain('web_search');
+    expect(names).toContain('tool_search');
   });
 
   it('all tools have name, label, description, parameters, execute', () => {
@@ -69,6 +71,76 @@ describe('buildPiTools', () => {
     expect(assembledRef.sections).toBeNull();
     await assemble.execute('call_2', { sections: { project_overview: '## Overview\nTest' } });
     expect(assembledRef.sections).toEqual({ project_overview: '## Overview\nTest' });
+  });
+
+  it('tool_search returns deferred tool entries', async () => {
+    const state = makeState();
+    const { tools } = buildPiTools(state);
+    const search = tools.find((t) => t.name === 'tool_search')!;
+    const result = await search.execute('call_ts', { query: 'fetch' });
+    const text = (result.content[0] as { type: 'text'; text: string }).text;
+    const parsed = JSON.parse(text);
+    expect(parsed.matches.length).toBeGreaterThan(0);
+    expect(parsed.matches[0].name).toBe('fetch_url');
+    expect(parsed.matches[0].fullDescription).toContain('HTML');
+  });
+
+  it('tool_search returns empty for no matches', async () => {
+    const state = makeState();
+    const { tools } = buildPiTools(state);
+    const search = tools.find((t) => t.name === 'tool_search')!;
+    const result = await search.execute('call_ts2', { query: 'xyzzy_nothing' });
+    const text = (result.content[0] as { type: 'text'; text: string }).text;
+    const parsed = JSON.parse(text);
+    expect(parsed.matches).toEqual([]);
+    expect(parsed.total).toBe(0);
+  });
+
+  it('deferred tools have stub descriptions', () => {
+    const state = makeState();
+    const { tools } = buildPiTools(state);
+    const webSearch = tools.find((t) => t.name === 'web_search')!;
+    const fetchUrl = tools.find((t) => t.name === 'fetch_url')!;
+    expect(webSearch.description).toContain('tool_search');
+    expect(fetchUrl.description).toContain('tool_search');
+  });
+
+  it('validation rejects bad input before execute', async () => {
+    const state = makeState();
+    const { tools } = buildPiTools(state);
+    const grep = tools.find((t) => t.name === 'grep_pattern')!;
+    // pattern is required — empty should fail validation
+    const result = await grep.execute('call_v', { pattern: '' });
+    const text = (result.content[0] as { type: 'text'; text: string }).text;
+    expect(text).toContain('Validation');
+    expect(text).toContain('pattern');
+  });
+
+  it('read_file returns unchanged for cached file', async () => {
+    const state = makeState();
+    const { tools } = buildPiTools(state);
+    const readFile = tools.find((t) => t.name === 'read_file')!;
+
+    // First read — populates cache
+    const r1 = await readFile.execute('call_r1', { path: 'package.json' });
+    const p1 = JSON.parse((r1.content[0] as { type: 'text'; text: string }).text);
+    expect(p1.unchanged).toBeUndefined();
+    expect(p1.content).toContain('"name"');
+
+    // Second read — should return unchanged
+    const r2 = await readFile.execute('call_r2', { path: 'package.json' });
+    const p2 = JSON.parse((r2.content[0] as { type: 'text'; text: string }).text);
+    expect(p2.unchanged).toBe(true);
+    expect(p2.content).toBe('[file_unchanged]');
+  });
+
+  it('read_file supports startLine parameter', async () => {
+    const state = makeState();
+    const { tools } = buildPiTools(state);
+    const readFile = tools.find((t) => t.name === 'read_file')!;
+    const result = await readFile.execute('call_sl', { path: 'package.json', startLine: 3, maxLines: 2 });
+    const parsed = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+    expect(parsed.content).toContain('showing lines');
   });
 });
 
