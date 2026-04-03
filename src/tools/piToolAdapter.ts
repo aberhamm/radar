@@ -33,6 +33,7 @@ import { analyzeMiddleware } from './analysis/analyzeMiddleware.js';
 import { recordFinding } from './analysis/recordFinding.js';
 import { webSearch } from './web/webSearch.js';
 import { fetchUrl } from './web/fetchUrl.js';
+import { detectAppRoots } from './analysis/detectAppRoots.js';
 
 /** Sections captured by assemble_output, accessible after agent.prompt() returns. */
 export interface AssembledSections {
@@ -89,21 +90,69 @@ export function normalizePathArgs(args: Record<string, unknown>, repoRoot?: stri
 }
 
 /**
- * Max characters for a single tool result. Prevents conversation history bloat
- * from large grep/file results. 4000 chars ~= 1000 tokens.
+ * Per-tool result size limits. Large search/read results get more room;
+ * small tools stay tight to keep conversation history lean.
  */
-const MAX_RESULT_CHARS = 4000;
+const PER_TOOL_LIMITS: Record<string, number> = {
+  grep_pattern: 20_000,
+  read_file: 65_000,
+  read_files_batch: 65_000,
+  fetch_url: 100_000,
+  find_files: 20_000,
+};
+const DEFAULT_RESULT_LIMIT = 4_000;
 
-/** Truncate a string to a max length, appending a notice if truncated. */
-function truncate(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return text.slice(0, max) + '\n...[truncated, ' + (text.length - max) + ' chars omitted]';
+// --- Disk spill for oversized results ---
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+
+let spillDir: string | null = null;
+
+function getSpillDir(): string {
+  if (!spillDir) {
+    spillDir = join(tmpdir(), `repo-audit-${randomUUID().slice(0, 8)}`);
+    mkdirSync(spillDir, { recursive: true });
+  }
+  return spillDir;
 }
 
-/** Wrap a tool result as Pi's AgentToolResult format. */
-function ok(result: unknown): AgentToolResult<unknown> {
+/** Clean up the spill directory. Call after the run completes. */
+export function cleanupSpillDir(): void {
+  if (spillDir) {
+    try { rmSync(spillDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    spillDir = null;
+  }
+}
+
+/**
+ * Truncate a tool result to its per-tool limit. If the result exceeds the
+ * limit, spill the full result to a temp file on disk and append a reference.
+ * Falls back to in-memory truncation if the disk write fails.
+ */
+export function spillAndTruncate(toolName: string, resultJson: string): string {
+  const limit = PER_TOOL_LIMITS[toolName] ?? DEFAULT_RESULT_LIMIT;
+  if (resultJson.length <= limit) return resultJson;
+
+  const omitted = resultJson.length - limit;
+  try {
+    const dir = getSpillDir();
+    const filename = `${toolName}-${Date.now()}.json`;
+    const filepath = join(dir, filename);
+    writeFileSync(filepath, resultJson, 'utf-8');
+    return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted. Full result: ${filepath}]`;
+  } catch {
+    return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted]`;
+  }
+}
+
+/** Wrap a tool result as Pi's AgentToolResult format with per-tool size limits. */
+function ok(toolName: string, result: unknown): AgentToolResult<unknown> {
+  const json = JSON.stringify(result);
+  const text = spillAndTruncate(toolName, json);
   return {
-    content: [{ type: 'text' as const, text: truncate(JSON.stringify(result), MAX_RESULT_CHARS) }],
+    content: [{ type: 'text' as const, text }],
     details: {},
   };
 }
@@ -143,7 +192,7 @@ export function buildPiTools(
         includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden files/dirs' })),
       }),
       execute: async (_id, params) => {
-        try { return ok(await listDirectory(repoRoot(), norm(params))); }
+        try { return ok('list_directory', await listDirectory(repoRoot(), norm(params))); }
         catch (e) { return err('list_directory', e as Error); }
       },
     },
@@ -160,7 +209,7 @@ export function buildPiTools(
           const a = norm(params);
           const result = await readFile(repoRoot(), a);
           state.filesRead.add(a.path);
-          return ok(result);
+          return ok('read_file', result);
         } catch (e) { return err('read_file', e as Error); }
       },
     },
@@ -177,7 +226,7 @@ export function buildPiTools(
           const a = norm(params);
           const result = await readFilesBatch(repoRoot(), a);
           for (const p of a.paths ?? []) state.filesRead.add(p);
-          return ok(result);
+          return ok('read_files_batch', result);
         } catch (e) { return err('read_files_batch', e as Error); }
       },
     },
@@ -195,7 +244,7 @@ export function buildPiTools(
         isRegex: Type.Optional(Type.Boolean({ description: 'Treat pattern as regex' })),
       }),
       execute: async (_id, params) => {
-        try { return ok(await grepPattern(repoRoot(), norm(params))); }
+        try { return ok('grep_pattern', await grepPattern(repoRoot(), norm(params))); }
         catch (e) { return err('grep_pattern', e as Error); }
       },
     },
@@ -209,7 +258,7 @@ export function buildPiTools(
         type: Type.Optional(Type.Union([Type.Literal('file'), Type.Literal('directory')], { description: 'Filter by type' })),
       }),
       execute: async (_id, params) => {
-        try { return ok(await findFiles(repoRoot(), norm(params))); }
+        try { return ok('find_files', await findFiles(repoRoot(), norm(params))); }
         catch (e) { return err('find_files', e as Error); }
       },
     },
@@ -223,7 +272,7 @@ export function buildPiTools(
         path: Type.Optional(Type.String({ description: 'Relative path to package.json directory' })),
       }),
       execute: async (_id, params) => {
-        try { return ok(await parsePackageJson(repoRoot(), norm(params))); }
+        try { return ok('parse_package_json', await parsePackageJson(repoRoot(), norm(params))); }
         catch (e) { return err('parse_package_json', e as Error); }
       },
     },
@@ -235,7 +284,7 @@ export function buildPiTools(
         path: Type.Optional(Type.String({ description: 'Relative path to config directory' })),
       }),
       execute: async (_id, params) => {
-        try { return ok(await parseNextConfig(repoRoot(), norm(params))); }
+        try { return ok('parse_next_config', await parseNextConfig(repoRoot(), norm(params))); }
         catch (e) { return err('parse_next_config', e as Error); }
       },
     },
@@ -247,7 +296,7 @@ export function buildPiTools(
         path: Type.Optional(Type.String({ description: 'Relative path to tsconfig directory' })),
       }),
       execute: async (_id, params) => {
-        try { return ok(await parseTsconfig(repoRoot(), norm(params))); }
+        try { return ok('parse_tsconfig', await parseTsconfig(repoRoot(), norm(params))); }
         catch (e) { return err('parse_tsconfig', e as Error); }
       },
     },
@@ -259,7 +308,7 @@ export function buildPiTools(
         path: Type.String({ description: 'Relative path to the env file' }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await parseEnvFile(repoRoot(), norm(params))); }
+        try { return ok('parse_env_file', await parseEnvFile(repoRoot(), norm(params))); }
         catch (e) { return err('parse_env_file', e as Error); }
       },
     },
@@ -271,7 +320,7 @@ export function buildPiTools(
         patterns: Type.Array(Type.String(), { description: 'Patterns to check, e.g. [".env", "node_modules"]' }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await checkGitignore(repoRoot(), norm(params))); }
+        try { return ok('check_gitignore', await checkGitignore(repoRoot(), norm(params))); }
         catch (e) { return err('check_gitignore', e as Error); }
       },
     },
@@ -285,7 +334,7 @@ export function buildPiTools(
         packages: Type.Array(Type.String(), { description: 'Package names to query' }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await queryNpmVersions(norm(params))); }
+        try { return ok('query_npm_versions', await queryNpmVersions(norm(params))); }
         catch (e) { return err('query_npm_versions', e as Error); }
       },
     },
@@ -303,7 +352,7 @@ export function buildPiTools(
         }),
       }),
       execute: async (_id, params) => {
-        try { return ok(compareVersions(norm(params))); }
+        try { return ok('compare_versions', compareVersions(norm(params))); }
         catch (e) { return err('compare_versions', e as Error); }
       },
     },
@@ -317,7 +366,7 @@ export function buildPiTools(
         repoPath: Type.String({ description: 'Relative path within the repo' }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await analyzeRouteStructure(repoRoot(), norm(params))); }
+        try { return ok('analyze_route_structure', await analyzeRouteStructure(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_route_structure', e as Error); }
       },
     },
@@ -329,7 +378,7 @@ export function buildPiTools(
         path: Type.String({ description: 'Relative path to components directory' }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await analyzeComponentDirectives(repoRoot(), norm(params))); }
+        try { return ok('analyze_component_directives', await analyzeComponentDirectives(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_component_directives', e as Error); }
       },
     },
@@ -341,7 +390,7 @@ export function buildPiTools(
         repoPath: Type.String({ description: 'Relative path to scan' }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await analyzeEnvUsage(repoRoot(), norm(params))); }
+        try { return ok('analyze_env_usage', await analyzeEnvUsage(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_env_usage', e as Error); }
       },
     },
@@ -353,8 +402,21 @@ export function buildPiTools(
         repoPath: Type.String({ description: 'Relative path within the repo' }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await analyzeMiddleware(repoRoot(), norm(params))); }
+        try { return ok('analyze_middleware', await analyzeMiddleware(repoRoot(), norm(params))); }
         catch (e) { return err('analyze_middleware', e as Error); }
+      },
+    },
+    {
+      name: 'detect_app_roots',
+      label: 'Detect App Roots',
+      description: 'Scan for multiple app entry points in a repo (monorepo detection). Finds package.json files, classifies each app by framework (Next.js, React, Node), and detects monorepo tooling (lerna, nx, turborepo, pnpm workspaces).',
+      parameters: Type.Object({
+        repoPath: Type.Optional(Type.String({ description: 'Subdirectory to scan (default: repo root)' })),
+        maxDepth: Type.Optional(Type.Number({ description: 'Max scan depth (default 4)' })),
+      }),
+      execute: async (_id, params) => {
+        try { return ok('detect_app_roots', await detectAppRoots(repoRoot(), norm(params))); }
+        catch (e) { return err('detect_app_roots', e as Error); }
       },
     },
     {
@@ -390,7 +452,7 @@ export function buildPiTools(
         }),
       }),
       execute: async (_id, params) => {
-        try { return ok(await recordFinding(state, norm(params))); }
+        try { return ok('record_finding', await recordFinding(state, norm(params))); }
         catch (e) { return err('record_finding', e as Error); }
       },
     },
@@ -408,7 +470,7 @@ export function buildPiTools(
       execute: async (_id, params) => {
         try {
           state.webSearchCount++;
-          return ok(await webSearch(norm(params)));
+          return ok('web_search', await webSearch(norm(params)));
         } catch (e) { return err('web_search', e as Error); }
       },
     },
@@ -423,7 +485,7 @@ export function buildPiTools(
       execute: async (_id, params) => {
         try {
           state.urlFetchCount++;
-          return ok(await fetchUrl(norm(params)));
+          return ok('fetch_url', await fetchUrl(norm(params)));
         } catch (e) { return err('fetch_url', e as Error); }
       },
     },
@@ -437,7 +499,7 @@ export function buildPiTools(
       execute: async () => {
         // Actual model switch happens in runner.ts afterToolCall hook.
         // This tool just signals intent — the return confirms the switch.
-        return ok({ status: 'acknowledged', message: 'Switching to fast model for writing phase.' });
+        return ok('switch_to_fast_model', { status: 'acknowledged', message: 'Switching to fast model for writing phase.' });
       },
     },
 
@@ -453,7 +515,7 @@ export function buildPiTools(
       }),
       execute: async (_id, params) => {
         assembledRef.sections = (params as { sections: Record<string, string> }).sections;
-        return ok({ status: 'acknowledged', message: 'Output assembly triggered.' });
+        return ok('assemble_output', { status: 'acknowledged', message: 'Output assembly triggered.' });
       },
     },
   ];

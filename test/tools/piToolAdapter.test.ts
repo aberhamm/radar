@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { buildPiTools } from '../../src/tools/piToolAdapter.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import { buildPiTools, spillAndTruncate, cleanupSpillDir } from '../../src/tools/piToolAdapter.js';
 import type { AgentState } from '../../src/types/state.js';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const FIXTURE = path.resolve('test/fixtures/sitecore-minimal');
@@ -27,10 +28,10 @@ function makeState(): AgentState {
 }
 
 describe('buildPiTools', () => {
-  it('returns 21 tools (18 + web_search + switch_to_fast_model + assemble_output)', () => {
+  it('returns 22 tools (19 + web_search + switch_to_fast_model + assemble_output)', () => {
     const state = makeState();
     const { tools } = buildPiTools(state);
-    expect(tools.length).toBe(21);
+    expect(tools.length).toBe(22);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_directory');
     expect(names).toContain('record_finding');
@@ -68,5 +69,57 @@ describe('buildPiTools', () => {
     expect(assembledRef.sections).toBeNull();
     await assemble.execute('call_2', { sections: { project_overview: '## Overview\nTest' } });
     expect(assembledRef.sections).toEqual({ project_overview: '## Overview\nTest' });
+  });
+});
+
+describe('spillAndTruncate', () => {
+  afterEach(() => {
+    cleanupSpillDir();
+  });
+
+  it('returns unchanged for small results', () => {
+    const small = JSON.stringify({ data: 'hello' });
+    expect(spillAndTruncate('list_directory', small)).toBe(small);
+  });
+
+  it('truncates at per-tool limit for large results', () => {
+    // Default limit is 4000 for unknown tools
+    const large = 'x'.repeat(5000);
+    const result = spillAndTruncate('list_directory', large);
+    expect(result.length).toBeLessThan(5000);
+    expect(result).toContain('truncated');
+    expect(result).toContain('1000 chars omitted');
+  });
+
+  it('uses per-tool limit (grep_pattern gets 20K)', () => {
+    const medium = 'x'.repeat(10_000);
+    // grep_pattern limit is 20K, so 10K should pass through unchanged
+    expect(spillAndTruncate('grep_pattern', medium)).toBe(medium);
+
+    // But 25K should truncate
+    const large = 'x'.repeat(25_000);
+    const result = spillAndTruncate('grep_pattern', large);
+    expect(result).toContain('truncated');
+  });
+
+  it('writes full result to disk when truncating', () => {
+    const large = 'x'.repeat(5000);
+    const result = spillAndTruncate('list_directory', large);
+    // Extract file path from the truncation message
+    const match = result.match(/Full result: (.+)\]/);
+    expect(match).toBeTruthy();
+    const filepath = match![1];
+    expect(existsSync(filepath)).toBe(true);
+    expect(readFileSync(filepath, 'utf-8')).toBe(large);
+  });
+
+  it('cleanupSpillDir removes spill directory', () => {
+    // Trigger a spill to create the directory
+    spillAndTruncate('list_directory', 'x'.repeat(5000));
+    cleanupSpillDir();
+    // After cleanup, next spill should create a new directory
+    const result = spillAndTruncate('list_directory', 'x'.repeat(5000));
+    const match = result.match(/Full result: (.+)\]/);
+    expect(match).toBeTruthy();
   });
 });

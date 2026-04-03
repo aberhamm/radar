@@ -14,8 +14,10 @@ import type { Scorecard, RunMetrics } from '../types/output.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { buildGoalPrompt } from './goalPrompts.js';
 import { redactSecrets } from './redaction.js';
-import { wrapInBoundary, BOUNDARY_SYSTEM_INSTRUCTION, validateFindingContent } from './contextBoundary.js';
-import { buildPiTools, type AssembledSections } from '../tools/piToolAdapter.js';
+import { wrapInBoundary, BOUNDARY_SYSTEM_INSTRUCTION, validateFindingContent, sanitizeToolOutput } from './contextBoundary.js';
+import { withRetry } from './retry.js';
+import { renderInvestigationHtml } from '../output/investigationHtml.js';
+import { buildPiTools, type AssembledSections, cleanupSpillDir } from '../tools/piToolAdapter.js';
 import { verifyFindingEvidence } from '../tools/analysis/verifyEvidence.js';
 import { buildPiModel } from '../config/piModel.js';
 import { computeScorecard } from '../output/scorecard.js';
@@ -348,12 +350,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       return undefined;
     }
 
-    // Return redacted + boundary-wrapped content to LLM context.
-    // AfterToolCallResult.content replaces the full content array in the tool result.
-    // Wrapping prevents injected instructions in repo files from hijacking the agent.
-    // We send the redacted (not path-stripped) version so the LLM sees real paths.
+    // Sanitize → boundary-wrap → return to LLM context.
+    // sanitizeToolOutput flags instruction-like patterns in repo files.
+    // wrapInBoundary adds delimiters so the LLM treats output as data.
     if (redactedResult) {
-      const wrapped = wrapInBoundary(toolName, redactedResult);
+      const sanitized = sanitizeToolOutput(redactedResult);
+      const wrapped = wrapInBoundary(toolName, sanitized);
       return { content: [{ type: 'text', text: wrapped }] };
     }
 
@@ -391,30 +393,53 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   };
 
   /**
-   * Context pruning: truncate tool result content in older messages to control
-   * conversation history size. Keep the most recent KEEP_RECENT messages intact
-   * (the agent needs recent results for reasoning). Older tool results get
-   * replaced with a short summary.
+   * Tiered context compression: control conversation history size with 3 tiers.
+   *
+   *   Tier 1 (recent):  last KEEP_RECENT messages — full fidelity
+   *   Tier 2 (mid-age): next MID_AGE_WINDOW messages — tool results summarized (600 chars)
+   *   Tier 3 (old):     everything older — tool results dropped to 120 chars
+   *
+   * Only tool result messages are compressed; assistant/user messages pass through.
+   * Summaries are cached by tool call ID to avoid recomputing on each turn.
    */
-  const KEEP_RECENT = 10; // messages to keep at full fidelity
-  const OLD_RESULT_MAX = 200; // chars to keep from old tool results
+  const KEEP_RECENT = 10;
+  const MID_AGE_WINDOW = 15;
+  const MID_SUMMARY_MAX = 600;
+  const OLD_SUMMARY_MAX = 120;
+  const summaryCache = new Map<string, string>();
+
+  function compressToolResult(text: string, maxChars: number): string {
+    if (text.length <= maxChars) return text;
+    return text.slice(0, maxChars) + '...[pruned]';
+  }
 
   const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
     if (messages.length <= KEEP_RECENT) return messages;
-    const cutoff = messages.length - KEEP_RECENT;
+
+    const tier2Start = Math.max(0, messages.length - KEEP_RECENT - MID_AGE_WINDOW);
+    const tier1Start = messages.length - KEEP_RECENT;
+
     return messages.map((msg, i) => {
-      if (i >= cutoff) return msg; // recent — keep intact
+      // Tier 1: recent — keep intact
+      if (i >= tier1Start) return msg;
       if (!msg || typeof msg !== 'object' || !('role' in msg)) return msg;
       if ((msg as { role: string }).role !== 'toolResult') return msg;
-      // Truncate old tool result content
-      const tr = msg as unknown as { role: string; content: { type: string; text?: string }[]; [k: string]: unknown };
+
+      const tr = msg as unknown as { role: string; toolCallId?: string; content: { type: string; text?: string }[]; [k: string]: unknown };
+      const maxChars = i >= tier2Start ? MID_SUMMARY_MAX : OLD_SUMMARY_MAX;
+
       return {
         ...tr,
         content: tr.content.map((c) => {
-          if (c.type === 'text' && c.text && c.text.length > OLD_RESULT_MAX) {
-            return { ...c, text: c.text.slice(0, OLD_RESULT_MAX) + '...[pruned]' };
+          if (c.type !== 'text' || !c.text || c.text.length <= maxChars) return c;
+          // Check cache
+          const cacheKey = tr.toolCallId ? `${tr.toolCallId}:${maxChars}` : undefined;
+          if (cacheKey && summaryCache.has(cacheKey)) {
+            return { ...c, text: summaryCache.get(cacheKey)! };
           }
-          return c;
+          const compressed = compressToolResult(c.text, maxChars);
+          if (cacheKey) summaryCache.set(cacheKey, compressed);
+          return { ...c, text: compressed };
         }),
       } as AgentMessage;
     });
@@ -498,8 +523,18 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   });
 
   try {
-    // Run the agent
-    await agent.prompt(goalPrompt);
+    // Run the agent with retry on transient API errors (429, 529, connection)
+    await withRetry(() => agent.prompt(goalPrompt), {
+      maxRetries: 3,
+      onRetry: (attempt, error, delayMs) => {
+        config.onStep?.({
+          step: stepCount,
+          action: 'retry',
+          type: 'budget_warning',
+          result: `Transient API error (attempt ${attempt}): ${error.message}. Retrying in ${Math.round(delayMs / 1000)}s...`,
+        });
+      },
+    });
 
     // If agent finished without calling assemble_output, try nudging
     // (terminationReason may have been set to 'completed' by afterToolCall hook)
@@ -518,7 +553,17 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           content: 'You must call assemble_output now with written content for all required sections. Use your investigation findings to write the brief.',
           timestamp: Date.now(),
         });
-        await agent.continue();
+        await withRetry(() => agent.continue(), {
+          maxRetries: 2,
+          onRetry: (attempt, error) => {
+            config.onStep?.({
+              step: stepCount,
+              action: 'retry',
+              type: 'budget_warning',
+              result: `Retry nudge attempt ${attempt}: ${error.message}`,
+            });
+          },
+        });
         if (assembledRef.sections !== null) {
           terminationReason = 'completed';
           break;
@@ -629,6 +674,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     fs.writeFileSync(debugPath, debugContent, 'utf-8');
     outputPaths.push(debugPath);
   }
+
+  // Clean up spilled tool results from tmpdir
+  cleanupSpillDir();
 
   return {
     scorecard,
@@ -789,6 +837,18 @@ function writeOutputFiles(
   const logContent = renderInvestigationLog(state);
   fs.writeFileSync(logPath, logContent, 'utf-8');
   paths.push(logPath);
+
+  // Investigation log HTML (static, browsable)
+  const htmlLogPath = path.join(outputDir, `${slug}-investigation.html`);
+  const htmlContent = renderInvestigationHtml({
+    repoName: state.repo.name,
+    entries: state.investigationLog,
+    scorecard,
+    toolCallCount: state.toolCallCount,
+    findingCount: state.findings.length,
+  });
+  fs.writeFileSync(htmlLogPath, htmlContent, 'utf-8');
+  paths.push(htmlLogPath);
 
   return paths;
 }

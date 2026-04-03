@@ -2,6 +2,7 @@ import type { FetchUrlInput, FetchUrlOutput } from '../../types/tools.js';
 
 const DEFAULT_MAX_LENGTH = 15_000;
 const TIMEOUT_MS = 10_000;
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10MB — abort to prevent OOM
 
 /**
  * Browser-like request headers.
@@ -87,6 +88,17 @@ export async function fetchUrl(input: FetchUrlInput): Promise<FetchUrlOutput> {
       signal: AbortSignal.timeout(TIMEOUT_MS),
       redirect: 'follow',
     });
+
+    // Check Content-Length before reading body to avoid OOM on huge responses
+    const contentLength = parseInt(response.headers.get('content-length') ?? '0', 10);
+    if (contentLength > MAX_RESPONSE_BYTES) {
+      return {
+        url: originalUrl,
+        title: '',
+        content: `Error: Response too large (${Math.round(contentLength / 1024 / 1024)}MB, limit ${MAX_RESPONSE_BYTES / 1024 / 1024}MB). Aborted to prevent memory issues.`,
+        truncated: true,
+      };
+    }
 
     if (!response.ok) {
       // If we got a 403 with browser headers, note it may be TLS fingerprinting

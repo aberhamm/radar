@@ -18,9 +18,18 @@ import 'dotenv/config';
 const program = new Command();
 
 program
-  .name('repo-audit-delivery-agent')
-  .description('Agentic consulting tool for headless CMS codebase analysis')
-  .version('1.0.0');
+  .name('radar')
+  .description('Radar — agentic consulting tool for headless CMS codebase analysis.\n\nPoint it at a Sitecore XM Cloud or Optimizely SaaS repo and get a scored\nonboarding brief with evidence-backed findings in minutes, not days.')
+  .version('1.0.0')
+  .addHelpText('after', `
+Examples:
+  $ radar analyze --repo ./my-sitecore-repo
+  $ radar analyze --repo https://github.com/Sitecore/xmcloud-starter-js --verbose
+  $ radar compare --repos ./repo-a ./repo-b
+  $ radar tools
+  $ radar rules --validate
+  $ radar dashboard --port 3001
+`);
 
 program
   .command('analyze')

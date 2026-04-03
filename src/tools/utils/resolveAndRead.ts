@@ -4,8 +4,65 @@
  * and config parsing tools.
  */
 
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, readdir, open } from 'node:fs/promises';
 import path from 'node:path';
+
+/** Extensions that are always binary — skip without reading. */
+const BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.ico', '.bmp', '.tiff', '.webp',
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+  '.mp3', '.mp4', '.avi', '.mov', '.webm',
+  '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
+  '.pdf', '.exe', '.dll', '.so', '.dylib', '.node', '.wasm',
+]);
+
+/** Check first N bytes for null bytes — indicates binary content. */
+async function isBinaryFile(filePath: string): Promise<boolean> {
+  const fh = await open(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(8192);
+    const { bytesRead } = await fh.read(buf, 0, 8192, 0);
+    for (let i = 0; i < bytesRead; i++) {
+      if (buf[i] === 0) return true;
+    }
+    return false;
+  } finally {
+    await fh.close();
+  }
+}
+
+/** Simple Levenshtein distance for file name suggestions. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+/** Find similar filenames in the same directory. */
+async function suggestSimilar(repoRoot: string, filePath: string): Promise<string[]> {
+  const dir = path.dirname(path.resolve(repoRoot, filePath));
+  const target = path.basename(filePath);
+  try {
+    const entries = await readdir(dir);
+    return entries
+      .map((name) => ({ name, dist: levenshtein(target.toLowerCase(), name.toLowerCase()) }))
+      .filter((e) => e.dist <= 3 && e.dist > 0)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 3)
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
 
 export interface ResolvedFile {
   content: string;
@@ -52,6 +109,17 @@ export async function resolveAndRead(
       return { error: `Not a file: ${filePath}` };
     }
 
+    // Fast-path binary check by extension
+    const ext = path.extname(resolved).toLowerCase();
+    if (BINARY_EXTENSIONS.has(ext)) {
+      return { error: `Binary file detected: ${filePath}. Use a specialized tool to inspect binary content.` };
+    }
+
+    // Content-based binary check (first 8KB)
+    if (await isBinaryFile(resolved)) {
+      return { error: `Binary file detected: ${filePath}. Use a specialized tool to inspect binary content.` };
+    }
+
     const raw = await readFile(resolved, 'utf-8');
     const lines = raw.split('\n');
     const lineCount = lines.length;
@@ -67,6 +135,10 @@ export async function resolveAndRead(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('ENOENT')) {
+      const suggestions = await suggestSimilar(repoRoot, filePath);
+      if (suggestions.length > 0) {
+        return { error: `File not found: ${filePath}. Did you mean: ${suggestions.join(', ')}?` };
+      }
       return { error: `File not found: ${filePath}` };
     }
     return { error: msg };

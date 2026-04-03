@@ -303,3 +303,23 @@ export interface FetchUrlOutput {
   content: string;
   truncated: boolean;
 }
+
+// --- Detect App Roots ---
+
+export interface DetectAppRootsInput {
+  repoPath?: string;  // subdirectory to scan (default: repo root)
+  maxDepth?: number;  // max directory depth (default: 4)
+}
+
+export interface AppRoot {
+  path: string;           // relative path from repo root
+  type: 'nextjs' | 'react' | 'node' | 'unknown';
+  hasPackageJson: boolean;
+  framework?: string;
+}
+
+export interface DetectAppRootsOutput {
+  roots: AppRoot[];
+  isMonorepo: boolean;
+  monorepoTool?: string;
+}

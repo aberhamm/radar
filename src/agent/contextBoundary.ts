@@ -41,6 +41,13 @@ const INJECTION_PATTERNS = [
   /new system prompt/i,
   /disregard your/i,
   /forget everything/i,
+  /override your (instructions|rules|guidelines)/i,
+  /act as if you (are|were)/i,
+  /pretend (you are|to be)/i,
+  /from now on,? (you|your)/i,
+  /do not follow/i,
+  /<<<\s*system/i,       // delimiter injection
+  /TOOL_OUTPUT_DATA/i,   // boundary escape attempt
 ];
 
 /**
@@ -49,4 +56,17 @@ const INJECTION_PATTERNS = [
  */
 export function validateFindingContent(content: string): boolean {
   return !INJECTION_PATTERNS.some((p) => p.test(content));
+}
+
+/**
+ * Sanitize tool output by flagging instruction-like content.
+ * Replaces suspicious patterns with a warning marker so the LLM
+ * sees the content was flagged but doesn't act on it.
+ */
+export function sanitizeToolOutput(content: string): string {
+  let result = content;
+  for (const pattern of INJECTION_PATTERNS) {
+    result = result.replace(pattern, (match) => `[FLAGGED_CONTENT: ${match}]`);
+  }
+  return result;
 }
