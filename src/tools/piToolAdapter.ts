@@ -103,6 +103,7 @@ const PER_TOOL_LIMITS: Record<string, number> = {
 const DEFAULT_RESULT_LIMIT = 4_000;
 
 // --- Disk spill for oversized results ---
+import { isStateful, StatefulToolMutex } from './concurrency.js';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -519,6 +520,17 @@ export function buildPiTools(
       },
     },
   ];
+
+  // Wrap stateful tools with a mutex so they serialize even when Pi fires
+  // them concurrently in parallel mode. Read-only tools stay fully parallel.
+  const mutex = new StatefulToolMutex();
+  for (const tool of tools) {
+    if (isStateful(tool.name)) {
+      const original = tool.execute;
+      tool.execute = (id, params, signal?, onUpdate?) =>
+        mutex.serialize(() => original(id, params, signal, onUpdate));
+    }
+  }
 
   return { tools, assembledRef };
 }

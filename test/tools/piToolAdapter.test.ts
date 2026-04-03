@@ -72,6 +72,42 @@ describe('buildPiTools', () => {
   });
 });
 
+describe('concurrency partitioning', () => {
+  it('stateful tools serialize concurrent calls', async () => {
+    const state = makeState();
+    const { tools, assembledRef } = buildPiTools(state);
+    const assemble = tools.find((t) => t.name === 'assemble_output')!;
+    const switchModel = tools.find((t) => t.name === 'switch_to_fast_model')!;
+
+    // Fire both concurrently — they should not interleave
+    const [r1, r2] = await Promise.all([
+      assemble.execute('c1', { sections: { overview: 'test' } }),
+      switchModel.execute('c2', {}),
+    ]);
+
+    // Both should succeed without errors
+    expect(r1.content[0].type).toBe('text');
+    expect(r2.content[0].type).toBe('text');
+    expect(assembledRef.sections).toEqual({ overview: 'test' });
+  });
+
+  it('read-only tools run without serialization', async () => {
+    const state = makeState();
+    const { tools } = buildPiTools(state);
+    const listDir = tools.find((t) => t.name === 'list_directory')!;
+    const findFiles = tools.find((t) => t.name === 'find_files')!;
+
+    // Fire concurrently — both should complete (no deadlock, no serialization wait)
+    const [r1, r2] = await Promise.all([
+      listDir.execute('c1', { path: '.' }),
+      findFiles.execute('c2', { pattern: '*.json' }),
+    ]);
+
+    expect(r1.content[0].type).toBe('text');
+    expect(r2.content[0].type).toBe('text');
+  });
+});
+
 describe('spillAndTruncate', () => {
   afterEach(() => {
     cleanupSpillDir();

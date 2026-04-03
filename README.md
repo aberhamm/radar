@@ -103,8 +103,12 @@ Output Assembler -> scorecard + brief + JSON export
 - **References** -- Static knowledge files in `src/references/` (platform best practices, known antipatterns, compatibility matrices) loaded selectively by the agent.
 - **Agent loop** -- Pi's `Agent` class handles tool dispatch, message threading, and loop control. `beforeToolCall`/`afterToolCall` hooks enforce budgets. The loop runs until `assemble_output` is called or the budget is spent.
 - **Dual-model** -- Investigation phase uses `AGENT_MODEL` (Sonnet, heavy reasoning). The agent calls `switch_to_fast_model` when it decides investigation is complete, switching to `FAST_MODEL` (Haiku, cheaper) for finding assembly and brief writing. Fallback: force-switch at 5 calls remaining.
+- **Tool concurrency** -- Pi's `toolExecution: 'parallel'` fires all tool calls from a single turn concurrently. Read-only tools (16 of 22) run fully parallel. Stateful tools (`record_finding`, `assemble_output`, `switch_to_fast_model`) self-serialize via an async mutex (`StatefulToolMutex`) so they never corrupt shared state, even when Pi fires them in the same batch.
 - **Cost controls** -- Per-tool result size limits (grep: 20K, read_file: 65K, fetch_url: 100K, default: 4K) with disk spill to tmpdir for oversized results. 3-tier context compression (recent 10 messages full, mid-age 15 at 600 chars, older at 120 chars, cached by tool call ID). `onPayload` injects prompt cache breakpoints. Default budget is 45 calls.
 - **Retry** -- Transient API errors (429, 529, 502, 503, connection resets) are retried with exponential backoff and jitter, up to 3 attempts. Wired into both `agent.prompt()` and nudge `agent.continue()` calls.
+- **Ripgrep integration** -- `grep_pattern` tries `rg` first with JSON output parsing for structured results, then falls back to an optimized Node.js walker using `readdir({ withFileTypes: true })` when ripgrep isn't available. Either path respects the same ignore rules and result limits.
+- **Defensive file handling** -- Binary files are detected via extension check + null-byte scan of the first 8KB and rejected before they waste tokens. When a file path doesn't exist, Levenshtein-based suggestions surface the top 3 similar filenames (distance ≤ 3) so the agent can self-correct typos without another exploratory tool call.
+- **Monorepo detection** -- `detect_app_roots` scans for `package.json` files, classifies each by framework (Next.js, React, Angular, etc.), and detects monorepo tooling (workspaces, Turborepo, Nx, Lerna). The agent uses this early in investigation to scope its search to the right app root.
 - **Security** -- Prompt injection defense wraps all tool outputs in context boundary delimiters and sanitizes instruction-like patterns (12 patterns including "ignore previous instructions", delimiter injection, boundary escape). Secret redaction strips KEY/SECRET/TOKEN/PASSWORD patterns from tool results before they enter LLM context or logs.
 - **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
 - **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, and full JSON export.
@@ -156,6 +160,22 @@ All verification is deterministic -- no LLM calls, no cost increase. Evidence in
 | `fetch_url` | Fetch and extract text content from a documentation URL |
 | `switch_to_fast_model` | Signal that investigation is complete, switch to cheaper model for writing |
 | `assemble_output` | Signal the agent to assemble the final deliverable from accumulated findings |
+
+## Dashboard
+
+A Next.js dashboard for browsing investigation runs, replaying agent reasoning, and comparing results across repos.
+
+```bash
+pnpm dashboard
+```
+
+Features:
+- **Live event stream** -- Watch the agent investigate in real time with grouped tool calls and reasoning steps
+- **Replay mode** -- Step through completed investigations to understand the agent's decision-making
+- **Run history** -- Browse past runs with sidebar navigation, persisted to disk
+- **Dark/light/system theme** -- Manual toggle with system preference detection
+- **Command palette** -- Keyboard-driven navigation (`Cmd+K` / `Ctrl+K`)
+- **Radar branding** -- Terminal-inspired wordmark with typing animation
 
 ## Provider Setup
 
