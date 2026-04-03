@@ -11,7 +11,16 @@
  * fully parallel.
  */
 
-/** Tools that only read data and never mutate shared state. */
+/**
+ * Tools that only read data. Their execute() functions do not perform any
+ * writes that require mutex protection.
+ *
+ * Exception: read_file and read_files_batch do mutate state.filesRead, but
+ * that's intentional — recordFinding checks filesRead inside its own execute()
+ * and would race with afterToolCall, so the add must happen in execute().
+ * webSearchCount and urlFetchCount are tracked in afterToolCall in runner.ts
+ * since they're only checked in beforeToolCall (no execute()-level race).
+ */
 const READ_ONLY_TOOLS = new Set([
   'list_directory',
   'read_file',

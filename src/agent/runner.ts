@@ -282,6 +282,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state.toolCallCount++;
     stepCount++;
 
+    // Track web tool budgets here (not in execute()) so the check-then-act in
+    // beforeToolCall is race-free: beforeToolCall reads the counter, afterToolCall
+    // increments it, and Pi doesn't fire a new batch until afterToolCall completes.
+    // Note: filesRead.add() stays in execute() because recordFinding checks it
+    // inside its own execute() and can race with afterToolCall.
+    if (toolName === 'web_search') state.webSearchCount++;
+    if (toolName === 'fetch_url') state.urlFetchCount++;
+
     // Log investigation step — use captured reasoning from last assistant message.
     // Don't clear it here: parallel tool calls in the same message share the same reasoning.
     // It gets overwritten naturally when the next message_end event fires.

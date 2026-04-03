@@ -113,6 +113,42 @@ Output Assembler -> scorecard + brief + JSON export
 - **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
 - **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, and full JSON export.
 
+### Engineering Notes
+
+**Budget enforcement and the afterToolCall timing guarantee**
+
+The agent enforces web search and URL fetch budgets in `beforeToolCall`. The naive implementation increments the counter inside `execute()` — which creates a check-then-act race: if Pi fires two `web_search` calls in the same parallel batch, both pass the `beforeToolCall` check before either increments the counter. The fix is to move the increment to `afterToolCall`. This works because Pi doesn't start the next parallel batch until all `afterToolCall` hooks from the current batch have resolved. So `beforeToolCall` for batch N+1 always sees the fully-incremented counter from batch N.
+
+**Why `filesRead.add()` can't follow the same pattern**
+
+`read_file` and `read_files_batch` also mutate shared state — they add to `state.filesRead`, which `record_finding` checks to verify that each evidence file was actually read before being cited. The obvious fix is to move `filesRead.add()` to `afterToolCall` for consistency. This breaks things.
+
+The reason: `record_finding` is a *stateful* tool serialized by `StatefulToolMutex`. Its `execute()` runs concurrently with `read_file.execute()` in the same parallel batch. If `record_finding.execute()` starts (as a mutex microtask) before `read_file`'s `afterToolCall` fires, `state.filesRead` is empty and all evidence gets rejected. The `afterToolCall` timing guarantee only applies between batches, not within a batch. `filesRead.add()` has to happen in `execute()` so it's visible to any concurrent stateful tool in the same turn.
+
+**StatefulToolMutex: promise chain serialization**
+
+`StatefulToolMutex` uses a self-advancing promise chain to serialize concurrent calls without a lock primitive:
+
+```ts
+serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const result = this._chain.then(fn, fn);
+  this._chain = result.then(() => {}, () => {});
+  return result;
+}
+```
+
+`fn` is chained onto the current tail with `.then(fn, fn)` — the second `fn` argument means it runs whether the previous step succeeded or failed, so one throwing call doesn't deadlock the queue. The chain always advances via `result.then(noop, noop)`. No `Promise.race`, no polling, no external queue.
+
+**Deferred tool loading**
+
+23 tools is a lot of schema text to put in the system prompt. Frequently unused tools (`web_search`, `fetch_url`, `compare_versions`) have stub descriptions — enough for the agent to know they exist, not enough to waste context tokens on their full parameter lists. A `tool_search` meta-tool lets the agent discover full descriptions and schemas on demand by keyword. The agent only pays the token cost for tools it actually needs, and it self-discovers when it hits a task that needs them.
+
+**Mid-loop model mutation**
+
+Pi's `Agent._runLoop()` captures `const model = this._state.model` once at loop start and holds a reference for the entire run. The agent's `setModel()` method replaces `_state.model` with a new object — but the loop still holds the original reference. Calling `setModel()` mid-loop does nothing.
+
+The fix: when `switch_to_fast_model` is called, `runner.ts` mutates the *original model object's properties in place* using `Object.assign(piModel, fastModelProps)`. The loop's captured reference now points to an object with the fast model's ID, token limits, and cost config. No abort, no restart — the next LLM call goes to Haiku.
+
 ### Evidence Verification
 
 Every finding the agent records is cross-checked against the actual source code before it reaches the final report. This prevents hallucinated evidence -- a known failure mode where LLMs fabricate code snippets or misremember file contents after many tool calls push the original read out of context.

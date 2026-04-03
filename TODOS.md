@@ -116,15 +116,15 @@ Sourced from `C:/_projects/claude-code-main` analysis on 2026-04-02. Patterns th
 
 ### Correctness (fix before next eng review)
 
-- [ ] **Fix broken READ_ONLY classification** — `web_search` and `fetch_url` both increment `state.webSearchCount`/`state.urlFetchCount` inside functions classified as READ_ONLY in `concurrency.ts`. `read_file` mutates `state.filesRead.add()`. The JS event loop makes this safe today (synchronous before any `await`), but the invariant stated in the comment (`"never mutate shared state"`) is false. Options: (a) remove the counter increments from the tool execute() and track them in the afterToolCall hook instead — cleanest, (b) add a comment explaining the safe-by-event-loop guarantee. `src/tools/piToolAdapter.ts`, `src/tools/concurrency.ts`. (P1, S effort)
-- [ ] **Add enforcement for STATEFUL_TOOLS classification** — No build-time or runtime check ensures every tool is in exactly one of STATEFUL_TOOLS or READ_ONLY_TOOLS. A new stateful tool added without updating concurrency.ts gets no mutex protection silently. Add a validation assertion at the bottom of `buildPiTools()`: check every tool name against both sets, throw/warn if unclassified. `src/tools/piToolAdapter.ts`. (P1, XS effort)
-- [ ] **Fix double assemble_output silent overwrite** — If the agent somehow calls `assemble_output` twice (hallucination scenario), the mutex serializes both calls but the second silently overwrites `assembledRef.sections`. Add a warning log or guard. `src/tools/piToolAdapter.ts:517`. (P2, XS effort)
+- [x] **Fix broken READ_ONLY classification** — Moved `webSearchCount++` and `urlFetchCount++` from execute() to afterToolCall in runner.ts (race-free: beforeToolCall checks, afterToolCall increments). `filesRead.add()` stays in execute() because `recordFinding` checks it inside its own execute() and would race with afterToolCall. Updated comment in `concurrency.ts` to explain the distinction. `src/tools/piToolAdapter.ts`, `src/tools/concurrency.ts`, `src/agent/runner.ts`. (P1, S effort)
+- [x] **Add enforcement for STATEFUL_TOOLS classification** — Added assertion loop at bottom of `buildPiTools()` that warns via `console.warn` for any tool not classified as read-only or stateful. `src/tools/piToolAdapter.ts`. (P1, XS effort)
+- [x] **Fix double assemble_output silent overwrite** — Added guard: if `assembledRef.sections !== null`, logs `[assemble_output] Called twice — overwriting previous sections`. `src/tools/piToolAdapter.ts`. (P2, XS effort)
 
 ### Test gaps (from /autoplan)
 
-- [ ] **Strengthen concurrency test: verify mutual exclusion** — Current `piToolAdapter.test.ts` concurrency test (lines 76-92) only confirms both calls succeed, not that they ran sequentially. The test would pass even with the mutex removed. Add a test with a shared resource that proves actual serialization. `test/tools/piToolAdapter.test.ts`. (P2, XS effort)
-- [ ] **Test double assemble_output** — No test for `assemble_output` called twice concurrently. Should verify the guard added above. (P2, XS effort)
-- [ ] **Add comment explaining per-call mutex isolation** — `StatefulToolMutex` is created inside `buildPiTools()`. If called twice, each gets a fresh mutex (correct for isolation, but implicit). Add a comment. `src/tools/piToolAdapter.ts:523`. (P3, XS effort)
+- [x] **Strengthen concurrency test: verify mutual exclusion** — Replaced weak "both succeed" test with one that uses `StatefulToolMutex` directly + an activeCalls counter to prove maxConcurrent = 1. Also added classification assertion checking all 3 stateful tools are registered. `test/tools/piToolAdapter.test.ts`. (P2, XS effort)
+- [x] **Test double assemble_output** — Added test that spies on `console.warn` and verifies the guard fires when assemble_output is called twice. `test/tools/piToolAdapter.test.ts`. (P2, XS effort)
+- [x] **Add comment explaining per-call mutex isolation** — Added comment above mutex creation in `buildPiTools()` explaining each call gets its own independent mutex (correct for isolation between agent runs). `src/tools/piToolAdapter.ts`. (P3, XS effort)
 
 ### Decision Audit Trail
 

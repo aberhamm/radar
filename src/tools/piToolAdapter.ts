@@ -43,7 +43,7 @@ import { webSearch } from './web/webSearch.js';
 import { fetchUrl } from './web/fetchUrl.js';
 import { detectAppRoots } from './analysis/detectAppRoots.js';
 
-import { isStateful, StatefulToolMutex } from './concurrency.js';
+import { isReadOnly, isStateful, StatefulToolMutex } from './concurrency.js';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve as pathResolve } from 'node:path';
@@ -335,6 +335,8 @@ export function buildPiTools(
           }
 
           const result = await readFile(repoRoot(), a);
+          // Track before returning: recordFinding checks filesRead inside execute()
+          // and can race with afterToolCall, so tracking must happen here.
           state.filesRead.add(filePath);
 
           // Update dedup cache on successful read
@@ -393,7 +395,9 @@ export function buildPiTools(
             ],
           };
 
-          // Track all paths as read + update cache for newly read files
+          // Track all paths as read + update cache for newly read files.
+          // Must happen in execute() (not afterToolCall) because recordFinding
+          // checks filesRead inside its own execute() and can race with afterToolCall.
           for (const p of paths) state.filesRead.add(p);
           for (const p of toRead) await updateFileCache(state, repoRoot(), p);
 
@@ -627,7 +631,6 @@ export function buildPiTools(
       }),
       async (_id, params) => {
         try {
-          state.webSearchCount++;
           return ok('web_search', await webSearch(norm(params)));
         } catch (e) { return err('web_search', e as Error); }
       },
@@ -641,7 +644,6 @@ export function buildPiTools(
       }),
       async (_id, params) => {
         try {
-          state.urlFetchCount++;
           return ok('fetch_url', await fetchUrl(norm(params)));
         } catch (e) { return err('fetch_url', e as Error); }
       },
@@ -667,6 +669,9 @@ export function buildPiTools(
         }),
       }),
       async (_id, params) => {
+        if (assembledRef.sections !== null) {
+          console.warn('[assemble_output] Called twice — overwriting previous sections');
+        }
         assembledRef.sections = (params as { sections: Record<string, string> }).sections;
         return ok('assemble_output', { status: 'acknowledged', message: 'Output assembly triggered.' });
       },
@@ -690,12 +695,23 @@ export function buildPiTools(
 
   // Wrap stateful tools with a mutex so they serialize even when Pi fires
   // them concurrently in parallel mode. Read-only tools stay fully parallel.
+  //
+  // Note: this mutex is created inside buildPiTools(), so each call gets its
+  // own independent mutex. That's intentional — each agent run is isolated.
   const mutex = new StatefulToolMutex();
   for (const tool of tools) {
     if (isStateful(tool.name)) {
       const original = tool.execute;
       tool.execute = (id, params, signal?, onUpdate?) =>
         mutex.serialize(() => original(id, params, signal, onUpdate));
+    }
+  }
+
+  // Enforce that every tool is classified as either read-only or stateful.
+  // A new tool added without updating concurrency.ts would be silently unprotected.
+  for (const tool of tools) {
+    if (!isReadOnly(tool.name) && !isStateful(tool.name)) {
+      console.warn(`[concurrency] Tool "${tool.name}" is not classified as read-only or stateful — update concurrency.ts`);
     }
   }
 

@@ -1,5 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import { isReadOnly, isStateful, StatefulToolMutex } from '../../src/tools/concurrency.js';
+import { buildPiTools } from '../../src/tools/piToolAdapter.js';
+import type { AgentState } from '../../src/types/state.js';
+import path from 'node:path';
+
+const FIXTURE = path.resolve('test/fixtures/sitecore-minimal');
+
+function makeState(): AgentState {
+  return {
+    goal: 'onboarding',
+    repo: { source: 'local', localPath: FIXTURE, name: 'test' },
+    resolvedVersions: {},
+    findings: [],
+    filesRead: new Set(),
+    toolCallCount: 0,
+    toolCallBudget: 50,
+    webSearchCount: 0,
+    webSearchBudget: 5,
+    urlFetchCount: 0,
+    urlFetchBudget: 3,
+    docTokensUsed: 0,
+    docTokenBudget: 20000,
+    fetchedDocs: [],
+    investigationLog: [],
+    modelUsage: new Map(),
+    fileReadCache: new Map(),
+  };
+}
 
 describe('isReadOnly / isStateful classification', () => {
   it('classifies read-only tools', () => {
@@ -81,6 +108,20 @@ describe('StatefulToolMutex', () => {
     const mutex = new StatefulToolMutex();
     const result = await mutex.serialize(async () => 42);
     expect(result).toBe(42);
+  });
+});
+
+describe('classification coverage', () => {
+  it('every tool from buildPiTools() is classified as read-only or stateful', () => {
+    const { tools } = buildPiTools(makeState());
+    const unclassified = tools.filter((t) => !isReadOnly(t.name) && !isStateful(t.name));
+    expect(unclassified.map((t) => t.name)).toEqual([]);
+  });
+
+  it('read-only and stateful sets are disjoint across all registered tools', () => {
+    const { tools } = buildPiTools(makeState());
+    const both = tools.filter((t) => isReadOnly(t.name) && isStateful(t.name));
+    expect(both.map((t) => t.name)).toEqual([]);
   });
 });
 
