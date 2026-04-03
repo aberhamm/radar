@@ -45,7 +45,7 @@ npx tsx src/index.ts analyze [options]
 | `--repo <path>` | Repository local path or GitHub URL (required) | -- |
 | `--goal <type>` | Analysis goal (see [Goals](#goals)) | `onboarding` |
 | `--platform <name>` | Platform override: `sitecore`, `optimizely` | auto-detected |
-| `--budget <n>` | Tool call budget | `35` |
+| `--budget <n>` | Tool call budget | `45` |
 | `--output <dir>` | Output directory | `./output` |
 | `--verbose` | Show real-time agent reasoning and tool calls | off |
 | `--json` | Output summary as JSON (for CI integration) | off |
@@ -90,7 +90,7 @@ Goal Prompt
 |                                                   |
 |  System instructions (consulting rules from .md)  |
 |  Reference knowledge (platform-specific .md)      |
-|  Pi AgentTools (20 deterministic functions)       |
+|  Pi AgentTools (22 deterministic functions)       |
 |  Working state (findings, file cache, log)        |
 +--------------------------------------------------+
     |
@@ -102,8 +102,10 @@ Output Assembler -> scorecard + brief + JSON export
 - **Rules** -- Plain English markdown files in `src/rules/` that shape the agent's priorities and quality standards. Editable by senior consultants without code changes.
 - **References** -- Static knowledge files in `src/references/` (platform best practices, known antipatterns, compatibility matrices) loaded selectively by the agent.
 - **Agent loop** -- Pi's `Agent` class handles tool dispatch, message threading, and loop control. `beforeToolCall`/`afterToolCall` hooks enforce budgets. The loop runs until `assemble_output` is called or the budget is spent.
-- **Dual-model** -- Investigation phase uses `AGENT_MODEL` (Sonnet, heavy reasoning). At the halfway budget mark, switches to `FAST_MODEL` (Haiku, cheaper) for finding assembly and brief writing via Pi's `setModel()`.
-- **Cost controls** -- Tool results capped at 4K chars, `transformContext` prunes old tool results to 200 chars, `onPayload` injects prompt cache breakpoints. Default budget is 35 calls.
+- **Dual-model** -- Investigation phase uses `AGENT_MODEL` (Sonnet, heavy reasoning). The agent calls `switch_to_fast_model` when it decides investigation is complete, switching to `FAST_MODEL` (Haiku, cheaper) for finding assembly and brief writing. Fallback: force-switch at 5 calls remaining.
+- **Cost controls** -- Per-tool result size limits (grep: 20K, read_file: 65K, fetch_url: 100K, default: 4K) with disk spill to tmpdir for oversized results. 3-tier context compression (recent 10 messages full, mid-age 15 at 600 chars, older at 120 chars, cached by tool call ID). `onPayload` injects prompt cache breakpoints. Default budget is 45 calls.
+- **Retry** -- Transient API errors (429, 529, 502, 503, connection resets) are retried with exponential backoff and jitter, up to 3 attempts. Wired into both `agent.prompt()` and nudge `agent.continue()` calls.
+- **Security** -- Prompt injection defense wraps all tool outputs in context boundary delimiters and sanitizes instruction-like patterns (12 patterns including "ignore previous instructions", delimiter injection, boundary escape). Secret redaction strips KEY/SECRET/TOKEN/PASSWORD patterns from tool results before they enter LLM context or logs.
 - **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
 - **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, and full JSON export.
 
@@ -148,9 +150,11 @@ All verification is deterministic -- no LLM calls, no cost increase. Evidence in
 | `analyze_component_directives` | Scan for "use client"/"use server" directives, compute ratio |
 | `analyze_env_usage` | Find process.env references, classify as public or server |
 | `analyze_middleware` | Parse middleware for purpose (auth, i18n, multisite), matchers, imports |
+| `detect_app_roots` | Scan for multiple app entry points (monorepo detection), classify by framework |
 | `record_finding` | Record an investigation finding with category, severity, and evidence |
 | `web_search` | Search the web for documentation and known issues |
 | `fetch_url` | Fetch and extract text content from a documentation URL |
+| `switch_to_fast_model` | Signal that investigation is complete, switch to cheaper model for writing |
 | `assemble_output` | Signal the agent to assemble the final deliverable from accumulated findings |
 
 ## Provider Setup
@@ -176,7 +180,7 @@ FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 | `AGENT_MODEL` | Heavy model for investigation and reasoning (first half of budget) |
 | `FAST_MODEL` | Lightweight model for finding assembly and brief writing (second half) |
 
-Model IDs are provider-agnostic. Swap to any provider's model IDs without code changes. Both models are built by `src/config/piModel.ts` and the runner switches between them at the budget midpoint.
+Model IDs are provider-agnostic. Swap to any provider's model IDs without code changes. Both models are built by `src/config/piModel.ts`. The agent decides when to switch via the `switch_to_fast_model` tool.
 
 ## Output Files
 
@@ -189,6 +193,7 @@ Each run writes to `output/<timestamp>/`:
 | `findings.json` | All recorded findings with evidence, severity, and categories |
 | `export.json` | Complete export: scorecard + findings + stack profile + investigation log |
 | `investigation.md` | Step-by-step log of agent reasoning and tool calls |
+| `investigation.html` | Browsable HTML investigation log with collapsible steps and inline scorecard |
 
 The onboarding brief includes these sections: Project Overview, Stack & Architecture, Key Files, CMS Integration, Preview & Editing, Configuration & Environment, Local Development Setup, Architecture Scorecard, Top Risks, First Week Reading List, Questions for the Client, and Suggested Next Actions.
 
@@ -242,14 +247,18 @@ src/
     runner.ts           Pi Agent runner -- creates Agent, hooks, post-loop output
     goalPrompts.ts      Goal-specific prompt templates
     systemPrompt.ts     Rule loader and system prompt assembler
+    retry.ts            Retry with exponential backoff for transient API errors
+    contextBoundary.ts  Prompt injection defense (boundary wrapping, pattern detection, sanitization)
+    redaction.ts        Secret redaction (KEY/SECRET/TOKEN/PASSWORD patterns)
   tools/
-    piToolAdapter.ts    All 20 tools as Pi AgentTool[] with TypeBox schemas
+    piToolAdapter.ts    All 22 tools as Pi AgentTool[] with TypeBox schemas + per-tool result limits + disk spill
     repo/               list_directory, read_file, read_files_batch
-    search/             grep_pattern, find_files
+    search/             grep_pattern (ripgrep + Node.js fallback), find_files
     config/             parse_package_json, parse_next_config, parse_tsconfig, parse_env_file, check_gitignore
     dependency/         compare_versions, query_npm_versions
-    analysis/           analyze_route_structure, analyze_component_directives, analyze_env_usage, analyze_middleware, record_finding, verify_evidence
-    web/                web_search, fetch_url
+    analysis/           analyze_route_structure, analyze_component_directives, analyze_env_usage, analyze_middleware, detect_app_roots, record_finding, verify_evidence
+    utils/              resolveAndRead (binary detection, ENOENT suggestions, path traversal guard)
+    web/                web_search, fetch_url (10MB response size cap)
   rules/                Consulting rules (markdown)
     core.md             Shared investigation rules
     goal-onboarding.md  Onboarding brief requirements
@@ -266,6 +275,7 @@ src/
     scorecard.ts        Scorecard computation from findings
     brief.ts            Markdown brief renderer
     json.ts             Full JSON export builder
+    investigationHtml.ts  Static HTML investigation log with collapsible steps
   config/
     piModel.ts          Pi Model builder (env vars -> agent + fast Model<'openai-completions'>)
     model-pricing.json  Per-model token pricing for cost estimates
@@ -277,8 +287,12 @@ docs/
   designs/              Design documents and plans
 test/
   fixtures/             Test fixture repos (sitecore-minimal)
-  tools/                Unit tests per tool
-  e2e/                  End-to-end agent loop tests
+  tools/                Unit tests per tool (118 tests)
+  agent/                Retry, step events (12 tests)
+  security/             Context boundary, redaction (25 tests)
+  output/               Investigation HTML, scorecard (10 tests)
+  commands/             CLI command handlers (23 tests)
+  e2e/                  End-to-end agent loop tests (10 tests)
 ```
 
 ## License
