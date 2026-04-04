@@ -22,6 +22,8 @@ export interface Activity {
   label: string;
   files: string[];
   detail?: string;
+  /** True while tool is executing (tool_start received, tool_call not yet) */
+  pending?: boolean;
 }
 
 export interface Finding {

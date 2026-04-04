@@ -21,6 +21,7 @@ export async function GET() {
       startedAt: session.currentRun.startedAt,
       eventCount: session.currentRun.events.length,
       isAlive: !!session.currentRun.abortController && !session.currentRun.abortController.signal.aborted,
+      budgetPausedData: session.currentRun.budgetPausedData ?? null,
     } : null,
     result: session.result ? {
       scorecard: session.result.scorecard,

@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
     events: [],
     streamController: null,
     budgetResolve: null,
+    budgetPausedData: null,
     abortController,
   };
 
@@ -96,6 +97,14 @@ export async function POST(req: NextRequest) {
           const run = session.currentRun;
           if (!run) return;
 
+          // Stream transient events to client but don't persist
+          // text_delta: high-frequency, replaced by text_response on message_end
+          // tool_start: replaced by tool_call after execution completes
+          if (event.type === 'text_delta' || event.type === 'tool_start') {
+            sendStreamEvent(run.streamController, event);
+            return;
+          }
+
           run.events.push(event);
           sendStreamEvent(run.streamController, event);
 
@@ -106,9 +115,14 @@ export async function POST(req: NextRequest) {
         },
         onBudgetExhausted: async (state) => {
           session.status = 'budget_paused';
+          const pauseData = { findings: state.findings, toolCalls: state.toolCalls, budget: state.budget };
+
+          if (session.currentRun) {
+            session.currentRun.budgetPausedData = pauseData;
+          }
 
           sendStreamEvent(session.currentRun?.streamController ?? null, {
-            type: 'budget_paused', findings: state.findings, toolCalls: state.toolCalls, budget: state.budget,
+            type: 'budget_paused', ...pauseData,
           });
 
           return new Promise<boolean>((resolve) => {

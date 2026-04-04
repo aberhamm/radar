@@ -44,18 +44,21 @@ export function useLiveAnalysis(
     const findings: Finding[] = [];
     let switchSeen = false;
     let assembleOutputSeen = false;
+    let pendingDeltaText = ''; // accumulates text_delta content for live typing
 
     for (const ev of events) {
-      // Model switch
+      // Model switch (may arrive as both tool_call and model_switch — dedupe)
       if (ev.action === 'switch_to_fast_model' || ev.type === 'model_switch') {
-        if (currentReasoning) {
-          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+        if (!switchSeen) {
+          if (currentReasoning) {
+            turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+          }
+          turns.push({ reasoning: '', activities: [], phase: 'analyze', isSwitch: true });
+          currentReasoning = '';
+          currentActivities = [];
+          currentPhase = 'write';
+          switchSeen = true;
         }
-        turns.push({ reasoning: '', activities: [], phase: 'analyze', isSwitch: true });
-        currentReasoning = '';
-        currentActivities = [];
-        currentPhase = 'write';
-        switchSeen = true;
         continue;
       }
 
@@ -82,17 +85,61 @@ export function useLiveAnalysis(
         assembleOutputSeen = true;
       }
 
-      // New reasoning = new turn boundary
-      if (ev.type === 'text_response' && ev.reasoning) {
-        if (currentReasoning) {
-          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
-        }
-        currentReasoning = ev.reasoning;
-        currentActivities = [];
+      // Streaming text delta — update live typing text as LLM generates
+      if (ev.type === 'text_delta' && ev.reasoning) {
+        pendingDeltaText = ev.reasoning;
         continue;
       }
 
-      // Tool call — accumulate under current reasoning
+      // New reasoning = new turn boundary (fires on message_end, finalizes the turn)
+      // Prefer fullReasoning (verbose mode) over reasoning (truncated to 100 chars)
+      const reasoning = ev.fullReasoning ?? ev.reasoning;
+      if (ev.type === 'text_response' && reasoning) {
+        if (currentReasoning) {
+          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+        }
+        currentReasoning = reasoning;
+        currentActivities = [];
+        pendingDeltaText = ''; // clear — text_response supersedes deltas
+        continue;
+      }
+
+      // Tool start — show activity chip immediately before execution completes
+      if (ev.type === 'tool_start' && ev.action) {
+        // Commit any pending reasoning as a turn so chips appear under it
+        if (pendingDeltaText || currentReasoning) {
+          const text = pendingDeltaText || currentReasoning;
+          if (text && currentActivities.length === 0) {
+            // First tool_start after reasoning — start accumulating under this reasoning
+            currentReasoning = text;
+            pendingDeltaText = '';
+          }
+        }
+        let files: string[] = [];
+        let detail = '';
+        try {
+          const args = ev.args ? JSON.parse(ev.args) : {};
+          if (args.path) files = [args.path];
+          if (args.paths) files = args.paths;
+          if (args.filePath) files = [args.filePath];
+          if (args.pattern) detail = args.pattern;
+        } catch { /* parse error */ }
+
+        const existing = currentActivities.find(a => a.label === ev.action);
+        if (existing) {
+          existing.files.push(...files);
+        } else {
+          currentActivities.push({ label: ev.action, files, detail, pending: true });
+        }
+
+        files.filter(f => f && f !== '.').forEach(f => examinedFilesSet.add(f));
+
+        const hints = ACTION_CATEGORY_HINTS[ev.action];
+        if (hints) hints.forEach(c => coveredTopics.add(c));
+        continue;
+      }
+
+      // Tool call complete — accumulate under current reasoning
       if (ev.type === 'tool_call' && ev.action) {
         let files: string[] = [];
         let detail = '';
@@ -108,6 +155,7 @@ export function useLiveAnalysis(
         const existing = currentActivities.find(a => a.label === ev.action);
         if (existing) {
           existing.files.push(...files);
+          existing.pending = false; // tool_call completes what tool_start started
         } else {
           currentActivities.push({ label: ev.action, files, detail });
         }
@@ -129,6 +177,10 @@ export function useLiveAnalysis(
       } else {
         typingText = currentReasoning;
       }
+    }
+    // Streaming text (text_delta) takes priority — shows live LLM output
+    if (pendingDeltaText) {
+      typingText = pendingDeltaText;
     }
 
     // Derive phase

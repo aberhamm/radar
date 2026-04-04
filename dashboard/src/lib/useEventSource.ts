@@ -10,9 +10,13 @@ interface UseEventSourceCallbacks {
   onRunError: (error: string) => void;
 }
 
+/** Poll interval when SSE goes stale (no events for this long) */
+const STALE_CHECK_MS = 10_000;
+
 /**
  * Opens an SSE connection to /api/events when enabled.
  * Dispatches parsed events to the appropriate callback.
+ * Falls back to polling /api/session if the SSE stream goes stale.
  */
 export function useEventSource(enabled: boolean, callbacks: UseEventSourceCallbacks) {
   const cbRef = useRef(callbacks);
@@ -21,9 +25,11 @@ export function useEventSource(enabled: boolean, callbacks: UseEventSourceCallba
   useEffect(() => {
     if (!enabled) return;
 
+    let lastEventAt = Date.now();
     const es = new EventSource('/api/events');
 
     es.onmessage = (e) => {
+      lastEventAt = Date.now();
       try {
         const data = JSON.parse(e.data);
         if (data.type === 'budget_paused') {
@@ -44,6 +50,28 @@ export function useEventSource(enabled: boolean, callbacks: UseEventSourceCallba
 
     es.onerror = () => {};
 
-    return () => { es.close(); };
+    // Staleness detector: if no SSE events arrive for STALE_CHECK_MS,
+    // poll the session API to catch missed state transitions.
+    const staleTimer = setInterval(async () => {
+      if (Date.now() - lastEventAt < STALE_CHECK_MS) return;
+      try {
+        const res = await fetch('/api/session');
+        const data = await res.json();
+        if (data.status === 'budget_paused' && data.currentRun?.budgetPausedData) {
+          cbRef.current.onBudgetPaused(data.currentRun.budgetPausedData);
+        } else if (data.status === 'complete' && data.result) {
+          cbRef.current.onRunComplete(data.result);
+          es.close();
+        } else if (data.status === 'error') {
+          cbRef.current.onRunError(data.lastError ?? 'Unknown error');
+          es.close();
+        }
+      } catch { /* polling failed — will retry next interval */ }
+    }, STALE_CHECK_MS);
+
+    return () => {
+      es.close();
+      clearInterval(staleTimer);
+    };
   }, [enabled]);
 }

@@ -47,7 +47,7 @@ export function ActivityChipButton({
       onClick={hasContent ? onToggle : undefined}
       className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg text-left ${hasContent ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
-        ...(active ? {
+        ...(active || activity.pending ? {
           background: `color-mix(in srgb, ${accentColor} 8%, transparent)`,
           color: accentColor,
         } : {
@@ -58,7 +58,7 @@ export function ActivityChipButton({
         transition: 'background 0.3s ease, color 0.3s ease',
       }}
     >
-      {active ? (
+      {active || activity.pending ? (
         <div
           className="w-1.5 h-1.5 rounded-full shrink-0"
           style={{ background: accentColor, animation: 'pulse-dot 1s ease-in-out infinite' }}

@@ -120,6 +120,10 @@ export default function DashboardPage() {
             });
             setStatus(data.status);
             setIsSampleReplay(false);
+            // Restore budget pause data so the overlay appears on reconnect
+            if (data.status === 'budget_paused' && data.currentRun.budgetPausedData) {
+              setBudgetPausedData(data.currentRun.budgetPausedData);
+            }
           }
         } else if (data.status === 'complete' && data.result) {
           setResult(data.result);
@@ -158,9 +162,32 @@ export default function DashboardPage() {
   const handleNewEvent = useCallback((event: StepEvent) => {
     setCurrentRun((prev) => {
       if (!prev) return prev;
+
+      // text_delta: replace previous delta (high-frequency, only latest matters)
+      if (event.type === 'text_delta') {
+        const events = prev.events;
+        const last = events[events.length - 1];
+        if (last?.type === 'text_delta') {
+          const updated = [...events];
+          updated[updated.length - 1] = event;
+          return { ...prev, events: updated };
+        }
+        return { ...prev, events: [...events, event] };
+      }
+
+      // tool_start: append directly (parallel tools start simultaneously, ~5-10 per batch)
+      if (event.type === 'tool_start') {
+        return { ...prev, events: [...prev.events, event] };
+      }
+
+      // Regular events: strip trailing text_delta (superseded by text_response/tool_call)
+      const events = prev.events;
+      const last = events[events.length - 1];
+      const base = last?.type === 'text_delta' ? events.slice(0, -1) : events;
+
       return {
         ...prev,
-        events: [...prev.events, event],
+        events: [...base, event],
         toolCalls: event.step > 0 ? event.step : prev.toolCalls,
         budget: event.newBudget ?? prev.budget,
       };
@@ -184,6 +211,21 @@ export default function DashboardPage() {
     }
     setBudgetPausedData(null);
   }, []);
+
+  /** Budget decision from ContextBar — calls the API then updates UI */
+  const handleBudgetDecisionWithApi = useCallback(async (extend: boolean) => {
+    try {
+      const res = await fetch('/api/extend-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extend }),
+      });
+      if (!res.ok) return; // stay paused if API rejects
+      handleBudgetDecision(extend);
+    } catch {
+      // network error — stay paused
+    }
+  }, [handleBudgetDecision]);
 
   const handleRunComplete = useCallback(
     (data: { scorecard: unknown; metrics: unknown; terminationReason: string }) => {
@@ -444,6 +486,7 @@ export default function DashboardPage() {
           onStop={handleStop}
           onNewRun={handleNewRun}
           onViewReport={isSampleReplay || !result ? undefined : handleViewReport}
+          onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
         />
       )}
 

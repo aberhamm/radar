@@ -278,6 +278,23 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                     </p>
                   </div>
                 )}
+
+                {/* Thinking indicator: shows between turns when no typing text yet */}
+                {isLive && !typingText && turns.length > 0 && phase !== 'done' && (
+                  <div className="py-2 flex items-center gap-1" style={{ animation: 'fadeIn 0.4s ease 0.6s both' }}>
+                    {[0, 1, 2].map(i => (
+                      <div
+                        key={i}
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{
+                          background: accentColor,
+                          opacity: 0.4,
+                          animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Resume autoscroll button */}

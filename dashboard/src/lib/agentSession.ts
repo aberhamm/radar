@@ -100,6 +100,7 @@ export interface AgentSession {
     events: StepEvent[];
     streamController: ReadableStreamDefaultController<Uint8Array> | null;
     budgetResolve: ((extend: boolean) => void) | null;
+    budgetPausedData: { findings: number; toolCalls: number; budget: number } | null;
     abortController: AbortController | null;
   } | null;
   history: RunRecord[];

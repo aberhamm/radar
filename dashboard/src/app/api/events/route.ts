@@ -16,6 +16,14 @@ export async function GET(_req: NextRequest) {
         run.streamController = controller;
       }
 
+      // If run is budget-paused, re-send the pause event so reconnecting clients see the overlay
+      if (session.status === 'budget_paused' && run?.budgetPausedData) {
+        sendStreamEvent(controller, {
+          type: 'budget_paused',
+          ...run.budgetPausedData,
+        });
+      }
+
       // If run is already complete, send completion and close
       if (session.status === 'complete' && session.result) {
         sendStreamEvent(controller, {

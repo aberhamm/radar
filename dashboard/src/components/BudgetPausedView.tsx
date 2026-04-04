@@ -12,16 +12,26 @@ interface BudgetPausedViewProps {
 export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: BudgetPausedViewProps) {
   const [loading, setLoading] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleDecision = async (extend: boolean) => {
     setLoading(true);
+    setError(null);
     try {
-      await fetch('/api/extend-budget', {
+      const res = await fetch('/api/extend-budget', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ extend }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Request failed' }));
+        setError(data.error ?? `Failed (${res.status})`);
+        setLoading(false);
+        return;
+      }
       onDecision(extend);
     } catch {
+      setError('Network error — check connection');
       setLoading(false);
     }
   };
@@ -37,6 +47,10 @@ export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: Bu
         <p className="text-sm text-secondary-label mb-6">
           {findings} findings recorded so far.
         </p>
+
+        {error && (
+          <p className="text-xs text-danger mb-3">{error}</p>
+        )}
 
         <div className="flex gap-3 justify-center">
           <button

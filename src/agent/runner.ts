@@ -90,7 +90,7 @@ export interface StepEvent {
   /** Tool call arguments (only in verbose mode) */
   args?: string;
   /** Type of event: tool_call, finding, budget_warning, text_response, assemble_output, model_switch */
-  type?: 'tool_call' | 'finding' | 'budget_warning' | 'text_response' | 'assemble_output' | 'model_switch' | 'verification';
+  type?: 'tool_call' | 'tool_start' | 'finding' | 'budget_warning' | 'text_response' | 'text_delta' | 'assemble_output' | 'model_switch' | 'verification';
   /** Identifies which tool calls ran in the same parallel batch (same assistant turn) */
   batchId?: string;
   /** New budget after extension (only on budget_extended events) */
@@ -494,11 +494,40 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   });
 
   // Subscribe to events for usage tracking, reasoning capture, and batchId rotation
+  let streamingText = ''; // accumulates text deltas within a single message
   agent.subscribe((event: AgentEvent) => {
     if (event.type === 'message_start' && event.message && 'role' in event.message && event.message.role === 'assistant') {
       // New assistant turn — rotate the batchId so parallel tool calls in this turn share it
       currentBatchId = randomUUID();
+      streamingText = '';
     }
+
+    // Stream text deltas to dashboard in real-time (no waiting for message_end)
+    if (event.type === 'message_update') {
+      const ame = (event as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
+      if (ame?.type === 'text_delta' && ame.delta) {
+        streamingText += ame.delta;
+        config.onStep?.({
+          step: stepCount,
+          action: 'text_delta',
+          type: 'text_delta',
+          reasoning: streamingText,
+        });
+      }
+    }
+
+    // Emit tool_start immediately when Pi begins executing a tool (before it completes)
+    if (event.type === 'tool_execution_start') {
+      const te = event as { toolName?: string; args?: Record<string, unknown> };
+      config.onStep?.({
+        step: stepCount,
+        action: te.toolName ?? 'unknown',
+        type: 'tool_start',
+        args: te.args ? JSON.stringify(te.args) : undefined,
+        batchId: currentBatchId,
+      });
+    }
+
     if (event.type === 'message_end' && event.message && 'role' in event.message && event.message.role === 'assistant') {
       const msg = event.message;
       trackUsage(state, msg.model, {

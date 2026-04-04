@@ -14,13 +14,14 @@ interface ContextBarProps {
   onStop: () => void;
   onNewRun: () => void;
   onViewReport?: () => void;
+  onBudgetDecision?: (extend: boolean) => void;
 }
 
 function scoreColor(score: 'red' | 'yellow' | 'green'): string {
   return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
 }
 
-export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport }: ContextBarProps) {
+export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport, onBudgetDecision }: ContextBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
   const isReplaying = status === 'replaying';
@@ -74,7 +75,29 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
       <div className="flex-1" />
 
       {/* Contextual action */}
-      {isRunning && (
+      {isRunning && status === 'budget_paused' && onBudgetDecision && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onBudgetDecision(true)}
+            className="bg-tint text-white rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+          >
+            Resume +50
+          </button>
+          <button
+            onClick={() => onBudgetDecision(false)}
+            className="bg-elevated text-label rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[#e8e8ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
+          >
+            Finish Now
+          </button>
+          <button
+            onClick={onStop}
+            className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(255_59_48/0.3)]"
+          >
+            Stop
+          </button>
+        </div>
+      )}
+      {isRunning && status !== 'budget_paused' && (
         <button
           onClick={onStop}
           className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(255_59_48/0.3)]"
