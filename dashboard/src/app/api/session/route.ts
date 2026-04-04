@@ -13,6 +13,7 @@ export async function GET() {
       startedAt: r.startedAt,
       completedAt: r.completedAt,
       hasResult: !!r.result,
+      score: r.result?.scorecard?.overallScore ?? null,
     })),
     currentRun: session.currentRun ? {
       goal: session.currentRun.goal,

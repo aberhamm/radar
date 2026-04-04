@@ -315,7 +315,8 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
                     {examinedFiles.length > 0 ? examinedFiles.map((file, fi) => (
                       <div
                         key={`${fi}-${file}`}
-                        className="text-[9px] font-mono text-secondary-label bg-elevated px-1.5 py-0.5 rounded"
+                        title={file}
+                        className="text-[9px] font-mono text-secondary-label bg-elevated px-1.5 py-0.5 rounded truncate"
                         style={{ animation: 'chip-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                       >
                         {file}

@@ -372,7 +372,7 @@ export default function DashboardPage() {
           budget={currentRun.budget}
           onStop={handleStop}
           onNewRun={handleNewRun}
-          onViewReport={handleViewReport}
+          onViewReport={isSampleReplay || !result ? undefined : handleViewReport}
         />
       )}
 

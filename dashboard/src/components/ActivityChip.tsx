@@ -45,14 +45,14 @@ export function ActivityChipButton({
     <button
       type="button"
       onClick={hasContent ? onToggle : undefined}
-      className={`inline-flex items-center gap-1.5 text-[10px] font-medium px-2.5 py-1 rounded-lg text-left ${hasContent ? 'cursor-pointer' : 'cursor-default'}`}
+      className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg text-left ${hasContent ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
         ...(active ? {
           background: `color-mix(in srgb, ${accentColor} 8%, transparent)`,
           color: accentColor,
         } : {
           background: expanded ? `color-mix(in srgb, ${accentColor} 6%, var(--color-elevated))` : 'var(--color-elevated)',
-          color: expanded ? 'var(--color-secondary-label)' : 'var(--color-tertiary-label)',
+          color: expanded ? 'var(--color-secondary-label)' : 'var(--color-secondary-label)',
         }),
         ...(!entered ? { animation: `chip-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) ${index * 50}ms both` } : {}),
         transition: 'background 0.3s ease, color 0.3s ease',

@@ -7,6 +7,7 @@ interface HistoryItem {
   startedAt: string;
   completedAt?: string;
   hasResult: boolean;
+  score?: 'red' | 'yellow' | 'green' | null;
 }
 
 interface SidebarProps {
@@ -102,14 +103,21 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                   minute: '2-digit',
                 });
                 const isActive = h.id === activeRunId;
+                const scoreDot = h.score === 'red'
+                  ? 'bg-danger'
+                  : h.score === 'yellow'
+                    ? 'bg-warning'
+                    : h.score === 'green'
+                      ? 'bg-success'
+                      : null;
                 return (
                   <button
                     key={h.id}
                     onClick={() => onSelectHistory(h.id)}
-                    className={`text-left rounded-lg p-2.5 transition-all cursor-pointer group ${
+                    className={`text-left rounded-lg p-2.5 transition-all cursor-pointer group border-l-2 ${
                       isActive
-                        ? 'bg-[rgb(0_113_227/0.08)] shadow-sm'
-                        : 'hover:bg-surface hover:shadow-sm'
+                        ? 'bg-[rgb(0_113_227/0.1)] border-tint shadow-sm'
+                        : 'border-transparent hover:bg-surface hover:shadow-sm'
                     }`}
                   >
                     <div className={`text-[13px] font-semibold truncate transition-colors ${
@@ -126,6 +134,9 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                       }`}>
                         {h.goal}
                       </span>
+                      {scoreDot && (
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
+                      )}
                     </div>
                   </button>
                 );
