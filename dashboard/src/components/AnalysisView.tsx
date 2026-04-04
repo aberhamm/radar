@@ -5,12 +5,25 @@ import type { Finding, TransformedRunData } from '@/lib/runTransform';
 import { CATEGORIES } from '@/lib/runTransform';
 import { SAMPLE_ANALYSIS_TURNS, SAMPLE_FINDINGS } from '@/lib/sampleRunData';
 import { useAnimationSequence } from '@/lib/useAnimationSequence';
+import type { LiveAnalysisState } from '@/lib/useLiveAnalysis';
 import { ActivityChipGroup } from '@/components/ActivityChip';
 import { FindingCard } from '@/components/FindingCard';
+import { BudgetPausedView } from '@/components/BudgetPausedView';
+
+// ─── Props ──────────────────────────────────────────────────────
+
+interface AnalysisViewProps {
+  runData?: TransformedRunData;
+  isLive?: boolean;
+  liveState?: LiveAnalysisState;
+  budgetPaused?: boolean;
+  budgetPausedData?: { findings: number; toolCalls: number; budget: number } | null;
+  onBudgetDecision?: (extend: boolean) => void;
+}
 
 // ─── Analysis View ───────────────────────────────────────────────
 
-export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
+export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetPausedData, onBudgetDecision }: AnalysisViewProps) {
   // Use real data when provided, fall back to sample data
   const DATA_TURNS = runData?.analysisTurns ?? SAMPLE_ANALYSIS_TURNS;
   const DATA_FINDINGS: Finding[] = runData?.findings ?? SAMPLE_FINDINGS;
@@ -21,12 +34,17 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
   const INV_TURNS = switchIndex >= 0 ? DATA_TURNS.slice(0, switchIndex) : DATA_TURNS;
   const HAS_SWITCH = switchIndex >= 0;
 
-  // Animation state + orchestration from hook
+  // Animation hook (used for replay mode; runs but is ignored in live mode)
+  const animState = useAnimationSequence(INV_TURNS, DATA_FINDINGS, DATA_BATCHES, HAS_SWITCH);
+
+  // Pick state source: live events or animation replay
   const {
     phase, turns, typingText, activeTurnIndex, coveredTopics,
     examinedFiles, findings, scoreVisible, progressPercent,
-    run, reset,
-  } = useAnimationSequence(INV_TURNS, DATA_FINDINGS, DATA_BATCHES, HAS_SWITCH);
+  } = isLive && liveState ? liveState : animState;
+
+  // Findings for score panel: live findings grow over time, replay uses full set
+  const scorePanelFindings = isLive ? findings : DATA_FINDINGS;
 
   // UI-only state
   const [filesCollapsed, setFilesCollapsed] = useState(false);
@@ -61,41 +79,56 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
     setAutoScroll(atBottom);
   }, []);
 
-  // Reset autoScroll when animation resets
+  // Replay controls (no-ops in live mode)
   const handleRun = useCallback(() => {
     setAutoScroll(true);
-    run();
-  }, [run]);
+    if (!isLive) animState.run();
+  }, [isLive, animState]);
 
   const handleReset = useCallback(() => {
     setAutoScroll(true);
-    reset();
-  }, [reset]);
+    if (!isLive) animState.reset();
+  }, [isLive, animState]);
 
   const isWriting = phase === 'recording' || phase === 'assembling';
   const accentColor = isWriting || phase === 'done' ? 'var(--color-success)' : phase === 'switching' ? 'var(--color-warning)' : 'var(--color-tint)';
 
   return (
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         {/* Left: phase bar + scrollable stream */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Phase progress rail */}
           <div className="h-10 px-4 flex items-center gap-4 border-b border-separator bg-surface-translucent backdrop-blur-sm shrink-0">
-            {/* Play / Reset button */}
-            <button
-              type="button"
-              onClick={phase === 'idle' || phase === 'done' ? handleRun : handleReset}
-              className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 ${
-                phase === 'idle' || phase === 'done'
-                  ? 'bg-tint text-white hover:brightness-110 active:scale-95'
-                  : 'bg-elevated text-tertiary-label hover:text-label'
-              }`}
-            >
-              {phase === 'idle' ? 'Play' : phase === 'done' ? 'Replay' : 'Reset'}
-            </button>
+            {/* Live indicator or Play/Reset button */}
+            {isLive ? (
+              <div className="flex items-center gap-2 shrink-0">
+                <div
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{
+                    background: budgetPaused ? 'var(--color-warning)' : phase === 'done' ? 'var(--color-success)' : 'var(--color-tint)',
+                    animation: phase !== 'done' ? 'pulse-dot 1.5s ease-in-out infinite' : undefined,
+                  }}
+                />
+                <span className="text-[10px] font-bold tracking-wider text-secondary-label">
+                  {budgetPaused ? 'PAUSED' : phase === 'done' ? 'DONE' : 'LIVE'}
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={phase === 'idle' || phase === 'done' ? handleRun : handleReset}
+                className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 ${
+                  phase === 'idle' || phase === 'done'
+                    ? 'bg-tint text-white hover:brightness-110 active:scale-95'
+                    : 'bg-elevated text-tertiary-label hover:text-label'
+                }`}
+              >
+                {phase === 'idle' ? 'Play' : phase === 'done' ? 'Replay' : 'Reset'}
+              </button>
+            )}
               {/* Status dot + label */}
               <div className="flex items-center gap-2 shrink-0">
-                {phase !== 'idle' && (
+                {phase !== 'idle' && !isLive && (
                   <div
                     className="w-1.5 h-1.5 rounded-full transition-all duration-500"
                     style={{
@@ -105,7 +138,7 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
                   />
                 )}
                 <span className="text-[11px] font-semibold text-label">
-                  {phase === 'idle' ? 'Ready' : phase === 'analyzing' ? 'Analyzing' : phase === 'switching' ? 'Switching' : phase === 'recording' ? 'Recording' : phase === 'assembling' ? 'Assembling' : 'Complete'}
+                  {phase === 'idle' ? (isLive ? 'Starting' : 'Ready') : phase === 'analyzing' ? 'Analyzing' : phase === 'switching' ? 'Switching' : phase === 'recording' ? 'Recording' : phase === 'assembling' ? 'Assembling' : 'Complete'}
                 </span>
               </div>
 
@@ -123,7 +156,7 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
                     className="flex-1 h-[4px] rounded-full overflow-hidden relative"
                     style={{
                       background: 'var(--color-elevated)',
-                      opacity: phase === 'idle' ? 0 : 1,
+                      opacity: phase === 'idle' && !isLive ? 0 : 1,
                       transition: 'opacity 0.4s ease',
                     }}
                   >
@@ -171,9 +204,24 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
                 onScroll={handleStreamScroll}
                 className="absolute inset-0 overflow-y-auto p-4 space-y-1"
               >
-                {phase === 'idle' && (
+                {/* Idle / loading state */}
+                {phase === 'idle' && !isLive && (
                   <div className="text-xs text-quaternary-label text-center pt-32">
                     Press Play to watch the full agent run
+                  </div>
+                )}
+
+                {/* Live: waiting for first event */}
+                {isLive && turns.length === 0 && !typingText && (
+                  <div className="flex flex-col items-center justify-center gap-3 pt-24 text-center animate-slide-up">
+                    <div
+                      className="w-5 h-5 border-2 border-tint border-t-transparent rounded-full"
+                      style={{ animation: 'spin 0.6s linear infinite' }}
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-secondary-label">Agent is starting up</div>
+                      <div className="text-xs text-tertiary-label mt-0.5">Events will stream in real-time</div>
+                    </div>
                   </div>
                 )}
 
@@ -355,12 +403,12 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
                     className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5 min-h-0"
                     style={{ animation: 'expand-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                   >
-                    {findings.length === 0 && phase !== 'idle' && (
+                    {findings.length === 0 && (phase !== 'idle' || isLive) && (
                       <div className="text-[10px] text-quaternary-label text-center pt-1 pb-2">
                         Findings appear after analysis
                       </div>
                     )}
-                    {findings.length === 0 && phase === 'idle' && (
+                    {findings.length === 0 && phase === 'idle' && !isLive && (
                       <div className="text-[10px] text-quaternary-label text-center pt-1 pb-2">
                         &mdash;
                       </div>
@@ -387,28 +435,41 @@ export function AnalysisView({ runData }: { runData?: TransformedRunData }) {
               </div>
               <div className="px-3 pb-2 flex gap-1.5">
                 {[
-                  { n: DATA_FINDINGS.filter(f => f.severity === 'critical').length, l: 'Crit', c: 'var(--color-danger)' },
-                  { n: DATA_FINDINGS.filter(f => f.severity === 'high').length, l: 'High', c: 'var(--color-danger)' },
-                  { n: DATA_FINDINGS.filter(f => f.severity === 'medium').length, l: 'Med', c: 'var(--color-warning)' },
-                  { n: DATA_FINDINGS.filter(f => f.severity === 'low' || f.severity === 'info').length, l: 'Low', c: 'var(--color-success)' },
-                ].map(s => (
-                  <div
-                    key={s.l}
-                    className={`flex-1 text-center rounded-md py-0.5 transition-all duration-500 ${scoreVisible ? 'opacity-100' : 'opacity-30'}`}
-                    style={scoreVisible ? {
-                      background: `color-mix(in srgb, ${s.c} 6%, transparent)`,
-                      animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both',
-                    } : undefined}
-                  >
-                    <div className="text-xs font-bold font-brand" style={{ color: scoreVisible ? s.c : 'var(--color-quaternary-label)' }}>
-                      {scoreVisible ? s.n : '\u2014'}
+                  { n: scorePanelFindings.filter(f => f.severity === 'critical').length, l: 'Crit', c: 'var(--color-danger)' },
+                  { n: scorePanelFindings.filter(f => f.severity === 'high').length, l: 'High', c: 'var(--color-danger)' },
+                  { n: scorePanelFindings.filter(f => f.severity === 'medium').length, l: 'Med', c: 'var(--color-warning)' },
+                  { n: scorePanelFindings.filter(f => f.severity === 'low' || f.severity === 'info').length, l: 'Low', c: 'var(--color-success)' },
+                ].map(s => {
+                  const showCount = isLive ? findings.length > 0 : scoreVisible;
+                  return (
+                    <div
+                      key={s.l}
+                      className={`flex-1 text-center rounded-md py-0.5 transition-all duration-500 ${showCount ? (scoreVisible ? 'opacity-100' : 'opacity-40') : 'opacity-30'}`}
+                      style={showCount ? {
+                        background: `color-mix(in srgb, ${s.c} 6%, transparent)`,
+                        animation: scoreVisible ? 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' : undefined,
+                      } : undefined}
+                    >
+                      <div className="text-xs font-bold font-brand" style={{ color: showCount ? s.c : 'var(--color-quaternary-label)' }}>
+                        {showCount ? s.n : '\u2014'}
+                      </div>
+                      <div className="text-[8px] text-tertiary-label leading-none">{s.l}</div>
                     </div>
-                    <div className="text-[8px] text-tertiary-label leading-none">{s.l}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
-        </div>
+
+        {/* Budget pause overlay (live mode only) */}
+        {isLive && budgetPaused && budgetPausedData && onBudgetDecision && (
+          <BudgetPausedView
+            findings={budgetPausedData.findings}
+            toolCalls={budgetPausedData.toolCalls}
+            budget={budgetPausedData.budget}
+            onDecision={onBudgetDecision}
+          />
+        )}
+      </div>
   );
 }
