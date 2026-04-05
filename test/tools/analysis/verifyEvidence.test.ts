@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   snippetMatchesContent,
   extractCodeWindow,
+  extractKeyIdentifiers,
+  findSnippetLine,
   verifyAndCorrectEvidence,
   verifyFindingEvidence,
 } from '../../../src/tools/analysis/verifyEvidence.js';
@@ -43,6 +45,93 @@ describe('snippetMatchesContent', () => {
 
   it('returns false for empty snippet', () => {
     expect(snippetMatchesContent('', 'some content')).toBe(false);
+  });
+
+  it('rejects snippet with hallucinated env var even when boilerplate lines match', () => {
+    // The actual middleware.ts uses SITECORE_API_KEY, not SITECORE_EDITING_SECRET.
+    // Boilerplate lines (imports, function sig) would pass the 60% threshold
+    // but the identifier guard should catch the hallucinated env var.
+    const snippet = [
+      "import { NextResponse } from 'next/server';",
+      "import type { NextRequest } from 'next/server';",
+      'export function middleware(request: NextRequest) {',
+      '  const secret = process.env.SITECORE_EDITING_SECRET;',
+    ].join('\n');
+
+    const actual = [
+      "import { NextResponse } from 'next/server';",
+      "import type { NextRequest } from 'next/server';",
+      '',
+      'export function middleware(request: NextRequest) {',
+      '  const apiKey = process.env.SITECORE_API_KEY;',
+      '  if (!apiKey) {',
+      "    return NextResponse.redirect(new URL('/error', request.url));",
+      '  }',
+      '  return NextResponse.next();',
+      '}',
+    ].join('\n');
+
+    expect(snippetMatchesContent(snippet, actual)).toBe(false);
+  });
+
+  it('accepts snippet where all identifiers exist in the actual file', () => {
+    const snippet = [
+      "import { NextResponse } from 'next/server';",
+      'export function middleware(request: NextRequest) {',
+      '  const apiKey = process.env.SITECORE_API_KEY;',
+    ].join('\n');
+
+    const actual = [
+      "import { NextResponse } from 'next/server';",
+      "import type { NextRequest } from 'next/server';",
+      '',
+      'export function middleware(request: NextRequest) {',
+      '  const apiKey = process.env.SITECORE_API_KEY;',
+    ].join('\n');
+
+    expect(snippetMatchesContent(snippet, actual)).toBe(true);
+  });
+});
+
+describe('extractKeyIdentifiers', () => {
+  it('extracts UPPER_SNAKE_CASE identifiers', () => {
+    const ids = extractKeyIdentifiers('process.env.SITECORE_API_KEY');
+    expect(ids.has('SITECORE_API_KEY')).toBe(true);
+  });
+
+  it('ignores short identifiers (< 3 chars)', () => {
+    const ids = extractKeyIdentifiers('const AB = 1; const ABC_DEF = 2;');
+    expect(ids.has('AB')).toBe(false);
+    expect(ids.has('ABC_DEF')).toBe(true);
+  });
+
+  it('returns empty set for no matches', () => {
+    const ids = extractKeyIdentifiers('const x = 1;');
+    expect(ids.size).toBe(0);
+  });
+});
+
+describe('findSnippetLine', () => {
+  const content = [
+    "import { NextResponse } from 'next/server';",
+    '',
+    'export function middleware(request) {',
+    '  const apiKey = process.env.SITECORE_API_KEY;',
+    '  return NextResponse.next();',
+    '}',
+  ].join('\n');
+
+  it('finds single-line snippet at correct line', () => {
+    expect(findSnippetLine('const apiKey = process.env.SITECORE_API_KEY;', content)).toBe(4);
+  });
+
+  it('finds multi-line snippet at correct start line', () => {
+    const snippet = 'export function middleware(request) {\n  const apiKey = process.env.SITECORE_API_KEY;';
+    expect(findSnippetLine(snippet, content)).toBe(3);
+  });
+
+  it('returns undefined when snippet not found', () => {
+    expect(findSnippetLine('const x = nonexistent();', content)).toBeUndefined();
   });
 });
 
@@ -100,6 +189,34 @@ describe('verifyAndCorrectEvidence', () => {
     expect(result.evidence.originalSnippet).toBe("const API_KEY = '[REDACTED]';");
     expect(result.evidence.snippet).toContain('process.env.SITECORE_API_KEY');
     expect(result.evidence.verificationStatus).toBe('corrected');
+  });
+
+  it('auto-corrects line number when snippet is found at different location', async () => {
+    const ev: Evidence = {
+      filePath: 'src/middleware.ts',
+      lineNumber: 1, // wrong — actual line is 5
+      snippet: 'const apiKey = process.env.SITECORE_API_KEY;',
+      description: 'Reads API key from env',
+    };
+    const result = await verifyAndCorrectEvidence(FIXTURE_ROOT, ev);
+    expect(result.status).toBe('verified');
+    expect(result.evidence.lineNumber).toBe(5);
+    expect(result.note).toContain('line corrected from 1');
+  });
+
+  it('rejects snippet with hallucinated env var name', async () => {
+    // Agent claims SITECORE_EDITING_SECRET but file has SITECORE_API_KEY
+    const ev: Evidence = {
+      filePath: 'src/middleware.ts',
+      lineNumber: 5,
+      snippet: 'const secret = process.env.SITECORE_EDITING_SECRET;',
+      description: 'Validates editing secret',
+    };
+    const result = await verifyAndCorrectEvidence(FIXTURE_ROOT, ev);
+    // Should be corrected (not verified), because the env var name is wrong
+    expect(result.status).toBe('corrected');
+    expect(result.evidence.verificationStatus).toBe('corrected');
+    expect(result.evidence.snippet).toContain('SITECORE_API_KEY');
   });
 
   it('returns rejected when file does not exist', async () => {

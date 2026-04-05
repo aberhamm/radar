@@ -52,12 +52,25 @@ function normalize(code: string): string {
 }
 
 /**
+ * Extract UPPER_SNAKE_CASE identifiers (env vars, constants) from code.
+ * These are the highest-signal tokens for hallucination detection —
+ * LLMs frequently invent plausible env var names.
+ */
+export function extractKeyIdentifiers(code: string): Set<string> {
+  const matches = code.match(/[A-Z][A-Z0-9_]{2,}/g);
+  return new Set(matches ?? []);
+}
+
+/**
  * Check whether a snippet matches the actual file content.
  *
  * Strategy:
  * 1. Normalized substring check (handles whitespace/indent differences)
  * 2. Line-by-line fallback: if 60%+ of non-empty snippet lines appear in the
  *    content window (in order), count it as a match.
+ * 3. Identifier guard: after line-by-line match, verify that all UPPER_SNAKE_CASE
+ *    identifiers from unmatched snippet lines exist in the file. This catches
+ *    hallucinated env var names that slip through when boilerplate lines pass.
  */
 export function snippetMatchesContent(snippet: string, actualContent: string): boolean {
   const normSnippet = normalize(snippet);
@@ -77,10 +90,13 @@ export function snippetMatchesContent(snippet: string, actualContent: string): b
 
   let matched = 0;
   let contentIdx = 0;
-  for (const sLine of snippetLines) {
+  const matchedSnippetIndices = new Set<number>();
+  for (let si = 0; si < snippetLines.length; si++) {
+    const sLine = snippetLines[si];
     while (contentIdx < contentLines.length) {
       if (contentLines[contentIdx].includes(sLine) || sLine.includes(contentLines[contentIdx])) {
         matched++;
+        matchedSnippetIndices.add(si);
         contentIdx++;
         break;
       }
@@ -88,12 +104,67 @@ export function snippetMatchesContent(snippet: string, actualContent: string): b
     }
   }
 
-  return matched / snippetLines.length >= 0.6;
+  if (matched / snippetLines.length < 0.6) return false;
+
+  // Identifier guard: extract UPPER_SNAKE identifiers from UNMATCHED snippet lines
+  // and verify they exist in the actual file content. This catches hallucinated
+  // env vars/constants that pass the line-match threshold via surrounding boilerplate.
+  const fileIdentifiers = extractKeyIdentifiers(actualContent);
+  for (let si = 0; si < snippetLines.length; si++) {
+    if (matchedSnippetIndices.has(si)) continue; // matched line — already verified
+    const lineIds = extractKeyIdentifiers(snippetLines[si]);
+    for (const id of lineIds) {
+      if (!fileIdentifiers.has(id)) {
+        return false; // hallucinated identifier
+      }
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Find the actual 1-based line number where a snippet starts in file content.
+ * Returns undefined if no match found. Uses normalized comparison.
+ */
+export function findSnippetLine(snippet: string, fileContent: string): number | undefined {
+  const snippetLines = snippet.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  if (snippetLines.length === 0) return undefined;
+
+  const contentLines = fileContent.split('\n');
+  const firstSnippetLine = snippetLines[0];
+
+  for (let i = 0; i < contentLines.length; i++) {
+    const contentTrimmed = contentLines[i].trim();
+    // Skip empty content lines — they'd match anything via includes('')
+    if (contentTrimmed.length === 0) continue;
+    if (contentTrimmed.includes(firstSnippetLine) ||
+        firstSnippetLine.includes(contentTrimmed)) {
+      // Verify subsequent lines also match (if multi-line snippet)
+      if (snippetLines.length === 1) return i + 1;
+      let allMatch = true;
+      let ci = i + 1;
+      for (let j = 1; j < snippetLines.length; j++) {
+        // Skip empty content lines between matches
+        while (ci < contentLines.length && contentLines[ci].trim().length === 0) ci++;
+        if (ci >= contentLines.length) { allMatch = false; break; }
+        const nextTrimmed = contentLines[ci].trim();
+        if (!nextTrimmed.includes(snippetLines[j]) && !snippetLines[j].includes(nextTrimmed)) {
+          allMatch = false;
+          break;
+        }
+        ci++;
+      }
+      if (allMatch) return i + 1;
+    }
+  }
+  return undefined;
 }
 
 /**
  * Verify a single evidence item against the actual file on disk.
  * Auto-corrects the snippet if the file exists but content differs.
+ * Also corrects lineNumber if the snippet is found at a different location.
  */
 export async function verifyAndCorrectEvidence(
   repoRoot: string,
@@ -115,18 +186,23 @@ export async function verifyAndCorrectEvidence(
   // Check snippet against the relevant window first, then full file
   if (snippetMatchesContent(evidence.snippet, window) ||
       snippetMatchesContent(evidence.snippet, fileContent)) {
+    // Auto-correct line number if snippet is found at a different location
+    const actualLine = findSnippetLine(evidence.snippet, fileContent);
+    const correctedLine = actualLine ?? evidence.lineNumber;
+    const lineChanged = correctedLine !== evidence.lineNumber;
     return {
       evidence: {
         ...evidence,
+        ...(correctedLine ? { lineNumber: correctedLine } : {}),
         verified: true,
         verificationStatus: 'verified',
       },
       status: 'verified',
-      note: `Snippet verified against ${evidence.filePath}${evidence.lineNumber ? `:${evidence.lineNumber}` : ''}`,
+      note: `Snippet verified against ${evidence.filePath}${correctedLine ? `:${correctedLine}` : ''}${lineChanged ? ` (line corrected from ${evidence.lineNumber})` : ''}`,
     };
   }
 
-  // Snippet doesn't match — auto-correct with actual code
+  // Snippet doesn't match — auto-correct with actual code at claimed line
   const actualSnippet = extractCodeWindow(fileContent, evidence.lineNumber, 2);
   return {
     evidence: {
@@ -173,8 +249,12 @@ export async function verifyFindingEvidence(
 
     if (ev.snippet && (snippetMatchesContent(ev.snippet, window) ||
         snippetMatchesContent(ev.snippet, fileContent))) {
+      // Auto-correct line number if snippet is found at a different location
+      const actualLine = findSnippetLine(ev.snippet, fileContent);
+      const correctedLine = actualLine ?? ev.lineNumber;
       verifiedEvidence.push({
         ...ev,
+        ...(correctedLine ? { lineNumber: correctedLine } : {}),
         verified: true,
         verificationStatus: 'verified',
       });

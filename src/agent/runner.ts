@@ -19,6 +19,7 @@ import { withRetry } from './retry.js';
 import { renderInvestigationHtml } from '../output/investigationHtml.js';
 import { buildPiTools, type AssembledSections, cleanupSpillDir } from '../tools/piToolAdapter.js';
 import { verifyFindingEvidence } from '../tools/analysis/verifyEvidence.js';
+import { deduplicateFindings } from '../tools/analysis/deduplicateFindings.js';
 import { buildPiModel } from '../config/piModel.js';
 import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
@@ -665,6 +666,20 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       result: removedFindingIds.length > 0
         ? `Verification: removed ${removedFindingIds.length} finding(s) with all-unverifiable evidence [${removedFindingIds.join(', ')}]. ${state.findings.length} findings retained.`
         : `Verification: all ${state.findings.length} findings verified.`,
+    });
+  }
+
+  // Deduplicate findings with overlapping evidence and similar content.
+  // Merges near-duplicate findings (same category + severity + overlapping file paths)
+  // into one finding with combined evidence — prevents inflated risk counts.
+  const dedupResult = deduplicateFindings(state.findings);
+  state.findings = dedupResult.findings;
+  if (dedupResult.mergedCount > 0) {
+    config.onStep?.({
+      step: ++stepCount,
+      action: 'deduplication',
+      type: 'verification',
+      result: `Deduplication: merged ${dedupResult.mergedCount} duplicate finding(s). ${state.findings.length} findings retained.`,
     });
   }
 
