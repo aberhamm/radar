@@ -431,8 +431,8 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                       </div>
                     )}
 
-                    {findings.map((f) => (
-                      <FindingCard key={f.id} finding={f} />
+                    {findings.map((f, i) => (
+                      <FindingCard key={`${f.id}-${i}`} finding={f} />
                     ))}
                   </div>
                 )}
