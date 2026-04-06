@@ -113,7 +113,7 @@ interface AgentState {
   investigationLog: InvestigationEntry[];
 }
 
-type GoalType = 'onboarding' | 'audit' | 'migration' | 'component-map';
+type GoalType = 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review';
 
 interface InvestigationEntry {
   step: number;
@@ -704,6 +704,63 @@ Migration scout rules
 - Dependency chain risks: packages that pin other packages
 - Recommended migration order
 - For each breaking change cited: link to the documentation source
+```
+
+CI health check rules
+
+```markdown
+# CI health check rules
+
+## Purpose
+
+Quick, shallow health check for CI integration. Produces a pass/fail result, not a narrative brief.
+
+## Categories (3 only)
+
+- Dependencies — critical version gaps (2+ major versions behind), deprecated packages, known vulnerable versions
+- Security — exposed secrets (hardcoded API keys, tokens in source), missing .gitignore entries, NEXT_PUBLIC_ leaks
+- Configuration — missing required config files, incomplete .env.example, build scripts missing from package.json
+
+## Investigation approach
+
+- Stay shallow. Read package.json, check .gitignore, scan for secrets patterns, verify config files exist.
+- Do not investigate architecture, CMS integration, preview/editing, or deployment patterns.
+- Stay under 15 tool calls.
+
+## Scoring
+
+- Red: any critical or high finding = FAIL
+- Yellow: only medium findings = PASS
+- Green: only low or info findings = PASS
+
+## Output
+
+- No narrative sections. Only scorecard + findings.
+- Compact PR comment format via `renderCiComment()` for GitHub integration.
+```
+
+Security review rules
+
+```markdown
+# Security review rules
+
+## Purpose
+
+Security-focused code review. Investigates all six security scorecard categories.
+
+## Required categories
+
+- Secrets & environment — hardcoded secrets, committed .env files, NEXT_PUBLIC_ leaks
+- Authentication & authorization — session handling, token validation, route protection
+- Security headers — CSP, CORS, X-Frame-Options, HSTS
+- Dependency security — known CVEs, outdated packages with security patches
+- Input validation — SQL injection, XSS, command injection, path traversal
+- Data exposure — API response leaks, debug endpoints, source map exposure
+
+## Output
+
+- Minimum 6 findings (one per category)
+- Severity calibrated to actual exploitability, not theoretical risk
 ```
 
 5.4 How rules are loaded

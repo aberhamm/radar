@@ -42,6 +42,7 @@ program
   .option('--dry-run', 'Show configuration without running')
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .option('--json', 'Output summary as JSON (for CI integration)')
+  .option('--export', 'Output full JSON export to stdout')
   .option('--github-output', 'Post results to GitHub (issue or PR comment)')
   .option('--pr <number>', 'PR number for ci-check goal comments', parseInt)
   .action(async (opts) => {

@@ -7,6 +7,7 @@ import { buildGoalPrompt } from '../agent/goalPrompts.js';
 import { cloneRepo } from '../tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from '../tools/dependency/queryNpmVersions.js';
 import { checkGhAuth, postOnboardingIssue, postCiCheckComment } from '../output/githubHook.js';
+import { renderCiComment } from '../output/ciComment.js';
 import { formatVerboseStep } from '../output/verboseFormatter.js';
 import type { GoalType } from '../types/state.js';
 
@@ -22,6 +23,7 @@ export async function handleAnalyze(opts: {
   dryRun?: boolean;
   verbose?: boolean;
   json?: boolean;
+  export?: boolean;
   githubOutput?: boolean;
   pr?: number;
 }): Promise<number> {
@@ -31,7 +33,7 @@ export async function handleAnalyze(opts: {
   }
 
   const goal = (opts.goal ?? 'onboarding') as GoalType;
-  const validGoals = ['onboarding', 'audit', 'migration', 'component-map', 'ci-check'];
+  const validGoals = ['onboarding', 'audit', 'migration', 'component-map', 'ci-check', 'security-review'];
   if (!validGoals.includes(goal)) {
     throw new Error(`Invalid goal: ${goal}. Valid: ${validGoals.join(', ')}`);
   }
@@ -131,6 +133,14 @@ export async function handleAnalyze(opts: {
     },
   });
 
+  // Full export mode — output complete JSON export to stdout
+  if (opts.export) {
+    console.log(result.exportJson);
+    if (result.terminationReason === 'error') return 2;
+    if (result.scorecard.overallScore === 'red') return 1;
+    return 0;
+  }
+
   // JSON output mode — CI-friendly
   if (opts.json) {
     const summary = {
@@ -214,7 +224,8 @@ export async function handleAnalyze(opts: {
         console.error('[github-output] Skipping: no PR number (use --pr or set GITHUB_PR_NUMBER)');
       } else {
         console.log(`[github-output] Commenting on PR #${prNumber}...`);
-        const commentResult = postCiCheckComment(prNumber, result.briefMarkdown);
+        const ciBody = renderCiComment(result.scorecard, result.metrics);
+        const commentResult = postCiCheckComment(prNumber, ciBody);
         if (commentResult.error) {
           console.error(`[github-output] ${commentResult.error}`);
         } else {

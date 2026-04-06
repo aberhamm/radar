@@ -56,7 +56,8 @@ describe('listRuleFiles', () => {
     expect(files).toContain('goal-audit.md');
     expect(files).toContain('goal-migration.md');
     expect(files).toContain('goal-security-review.md');
-    expect(files.length).toBe(7);
+    expect(files).toContain('goal-ci-check.md');
+    expect(files.length).toBe(8);
   });
 });
 

@@ -51,6 +51,10 @@ PROVIDER_TYPE=portkey
 
 AGENT_MODEL=us.anthropic.claude-sonnet-4-6
 FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+
+# Optional: enable web search (Brave Search API)
+# SEARCH_ENGINE=brave
+# SEARCH_API_KEY=your-brave-search-api-key
 ```
 
 Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles the investigation phase (reasoning, tool selection, evidence gathering). `FAST_MODEL` handles finding recording and brief assembly. Both models are built by `src/config/piModel.ts`. Swap to any provider's model IDs without code changes.
@@ -74,6 +78,38 @@ Verified in Chunk 0 spike (`docs/pi-api-notes.md`):
 - Both models connect and respond via Portkey gateway
 - Tool calling works (finish reason: `tool_use`)
 - Cache tokens not surfaced by Portkey (defaults to 0 in RunMetrics)
+
+## Goal types
+
+Six analysis goals, each with its own rules file and prompt:
+
+| Goal | Rule file | Use case | Output |
+|------|-----------|----------|--------|
+| `onboarding` | `goal-onboarding.md` | New developer joining project | Full brief with 12 sections |
+| `audit` | `goal-audit.md` | Architecture assessment | Scored scorecard + findings |
+| `migration` | `goal-migration.md` | Upgrade readiness | Migration hotspots + complexity |
+| `component-map` | — | Component inventory | Structured component map |
+| `ci-check` | `goal-ci-check.md` | CI health check (fast) | Pass/fail + compact PR comment |
+| `security-review` | `goal-security-review.md` | Security audit | 6-category security scorecard |
+
+`ci-check` is designed for CI pipelines: 15 tool calls max, 3 categories (deps/security/config), compact output via `renderCiComment()` for PR comments.
+
+## CLI
+
+```
+radar analyze --repo <path> [--goal <type>] [--platform <name>] [--budget <n>]
+              [--output <dir>] [--verbose] [--json] [--export]
+              [--github-output] [--pr <number>] [--dry-run]
+radar compare --repos <path1> <path2> [--goal <type>] [--budget <n>]
+radar tools [--list]
+radar rules [--validate]
+radar dashboard [--port <port>]
+```
+
+Key flags:
+- `--json` — Compact CI summary to stdout (status, score, findings count, top risks)
+- `--export` — Full `FullExport` JSON to stdout (all findings, investigation log, metrics, sections)
+- `--github-output --pr <n>` — Post compact CI comment to PR (ci-check goal) or create issue (onboarding goal)
 
 ## Testing
 

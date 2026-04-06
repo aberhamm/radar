@@ -33,6 +33,8 @@ export function buildFullExport(
   scorecard: Scorecard,
   sections: Record<string, string>,
   metrics: RunMetrics,
+  terminationReason?: string,
+  toolCallBudget?: number,
 ): FullExport {
   return {
     metadata: {
@@ -41,6 +43,9 @@ export function buildFullExport(
       goalType: state.goal,
       repoName: state.repo.name,
       repoSource: state.repo.source,
+      terminationReason,
+      toolCallsUsed: state.toolCallCount,
+      toolCallBudget,
     },
     scorecard,
     findings: state.findings,
