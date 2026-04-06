@@ -66,4 +66,74 @@ describe('redactSecrets', () => {
     const result = redactSecrets(input);
     expect(result).toBe('client_secret=<your-client-secret>');
   });
+
+  // --- Expanded patterns ---
+
+  it('redacts AWS access key IDs (AKIA...)', () => {
+    const input = 'aws_key = AKIAIOSFODNN7EXAMPLE';
+    const result = redactSecrets(input);
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('AKIAIOSFODNN7EXAMPLE');
+  });
+
+  it('redacts ASIA temporary credentials', () => {
+    const input = 'key: ASIAJEXAMPLEXEG2JICEA';
+    const result = redactSecrets(input);
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('ASIAJEXAMPLEXEG2JICEA');
+  });
+
+  it('redacts MongoDB connection strings', () => {
+    const input = 'MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/db';
+    const result = redactSecrets(input);
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('user:pass');
+  });
+
+  it('redacts PostgreSQL connection strings', () => {
+    const input = 'DATABASE_URL=postgres://admin:secret@db.host:5432/mydb';
+    const result = redactSecrets(input);
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('admin:secret');
+  });
+
+  it('redacts Redis connection strings', () => {
+    const input = 'REDIS_URL=redis://default:mypassword@redis.example.com:6379';
+    const result = redactSecrets(input);
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('mypassword');
+  });
+
+  it('redacts JDBC connection strings', () => {
+    const input = 'jdbc:mysql://user:password@localhost:3306/mydb';
+    const result = redactSecrets(input);
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('user:password');
+  });
+
+  it('redacts Bearer tokens', () => {
+    const input = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0';
+    const result = redactSecrets(input);
+    expect(result).toContain('Bearer [REDACTED]');
+    expect(result).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
+  });
+
+  it('redacts PEM private keys', () => {
+    const input = '-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBALRiMLAH\n-----END RSA PRIVATE KEY-----';
+    const result = redactSecrets(input);
+    expect(result).toBe('[REDACTED]');
+  });
+
+  it('redacts OPENSSH private keys', () => {
+    const input = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEA\n-----END OPENSSH PRIVATE KEY-----';
+    const result = redactSecrets(input);
+    expect(result).toBe('[REDACTED]');
+  });
+
+  it('does NOT redact short strings that happen to start with AKIA', () => {
+    // AKIA + less than 12 chars should not match
+    const input = 'AKIA1234';
+    const result = redactSecrets(input);
+    expect(result).toBe('AKIA1234');
+  });
 });

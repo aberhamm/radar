@@ -113,6 +113,7 @@ describe('GET /api/rules', () => {
     const allowedGoals = [
       'onboarding', 'audit', 'migration',
       'component-map', 'ci-check', 'security-review',
+      'nextjs', 'accessibility',
     ];
 
     mockExistsSync.mockReturnValue(false);

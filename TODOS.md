@@ -32,10 +32,10 @@ Demo talking points: 11 findings in ~8 min, ~$0.74/run (dual-model, 37% on Haiku
 ## Post-Demo (not blocking)
 
 - [x] **Secret redaction** — Implemented in `src/agent/redaction.ts`. Regex-based redaction for KEY, SECRET, TOKEN, PASSWORD patterns applied in runner.ts afterToolCall before results enter LLM context or investigation log.
-- [ ] **Expanded secret redaction patterns** — Current regex covers KEY, SECRET, TOKEN, PASSWORD. Add: connection strings (jdbc://, mongodb://), bearer tokens in curl output, base64-encoded secrets, AWS access keys (AKIA...), private keys (BEGIN RSA). (P3, S effort)
-- [ ] **Optimizely rules** — `platform-optimizely.md` is a stub. Flesh out with real Optimizely SaaS patterns when needed.
+- [x] **Expanded secret redaction patterns** — Added: AWS access keys (AKIA/ASIA/AROA/AIDA), connection strings (jdbc/mongodb/postgres/mysql/redis/amqp), Bearer tokens, PEM private keys. 20 tests passing.
+- [x] **Optimizely rules** — Expanded `platform-optimizely.md` with Visual Builder, Content Graph, @remkoj ecosystem, env vars, package reference table, 16 issue patterns.
 - [ ] **Web search / fetch_url** — Currently stubbed. Implement with a real search API when needed for production use.
-- [ ] **analyze_middleware** — Lower priority tool. Implement if time permits, skip for demo.
+- [x] **analyze_middleware** — Implemented in `src/tools/analysis/analyzeMiddleware.ts`, registered in piToolAdapter, classified in concurrency.ts, 2 tests passing.
 - [x] **E2e tests** — Full agent loop against fixture repo in `test/e2e/`. Asserts sections populated, scored scorecard, evidence-backed findings, output files written.
 - [x] **CLI polish** — Renamed to `radar`, added descriptive help text with examples, all flags documented.
 - [x] **HTML investigation log** — `src/output/investigationHtml.ts` renders collapsible HTML with scorecard, stats, and per-step details. Wired into runner.ts writeOutputFiles.
@@ -95,7 +95,7 @@ Sourced from `C:/_projects/claude-code-main` analysis on 2026-04-02. Patterns th
 
 ### Low Value (Park for Later)
 
-- [ ] **Session cost persistence** — Persist per-session costs and restore on resume. Useful when we add session resume capability. Not urgent now.
+- [x] **Session cost persistence** — `src/output/sessionCosts.ts` with JSONL append, load, and aggregate. Wired into runner.ts post-run. 6 tests passing.
 - [ ] **Generator-based agent loop wrapper** — Wrap Pi's callback events in an async generator for cleaner streaming, checkpointing, and composable middleware. Big refactor, defer until Pi's event model becomes a bottleneck.
 
 ## Eng Review (2026-04-02)

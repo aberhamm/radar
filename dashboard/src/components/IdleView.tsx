@@ -84,6 +84,8 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
               <option value="security-review">Security Review — focus on vulnerabilities</option>
               <option value="audit">Audit — deep quality analysis</option>
               <option value="migration">Migration — upgrade path assessment</option>
+              <option value="nextjs">Next.js Audit — framework health &amp; patterns</option>
+              <option value="accessibility">Accessibility — WCAG 2.1 AA compliance</option>
             </select>
           </div>
 

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const RULES_DIR = path.join(process.cwd(), '..', 'src', 'rules');
 
-const ALLOWED_GOALS = ['onboarding', 'audit', 'migration', 'component-map', 'ci-check', 'security-review'];
+const ALLOWED_GOALS = ['onboarding', 'audit', 'migration', 'component-map', 'ci-check', 'security-review', 'nextjs', 'accessibility'];
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);

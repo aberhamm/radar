@@ -24,6 +24,7 @@ import { buildPiModel } from '../config/piModel.js';
 import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
 import { buildFullExport, serializeExport } from '../output/json.js';
+import { saveSessionCost, buildSessionCostEntry } from '../output/sessionCosts.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -709,6 +710,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     exportJson,
     state,
   );
+
+  // Persist session cost for cross-run tracking
+  try {
+    const costEntry = buildSessionCostEntry(config.repoName, config.goal, metrics);
+    saveSessionCost(outputDir, costEntry);
+  } catch { /* best-effort — don't fail the run for cost tracking */ }
 
   // Write debug log on error/stuck for diagnostics
   if (terminationReason === 'error' || terminationReason === 'stuck') {

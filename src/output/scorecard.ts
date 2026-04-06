@@ -25,8 +25,29 @@ const SECURITY_CATEGORY_MAP: Record<string, FindingCategory[]> = {
   'Data Exposure': ['security'],
 };
 
+const NEXTJS_CATEGORY_MAP: Record<string, FindingCategory[]> = {
+  'Router Architecture': ['routing', 'architecture'],
+  'Data Fetching': ['data-fetching'],
+  'Rendering Strategy': ['nextjs', 'stack'],
+  Performance: ['performance'],
+  Configuration: ['configuration', 'security'],
+  Dependencies: ['dependencies'],
+  'TypeScript & DX': ['stack'],
+};
+
+const ACCESSIBILITY_CATEGORY_MAP: Record<string, FindingCategory[]> = {
+  'Images & Media': ['accessibility'],
+  'Semantic Structure': ['architecture', 'accessibility'],
+  'Keyboard & Focus': ['accessibility'],
+  'Forms & Inputs': ['forms', 'accessibility'],
+  'Color & Contrast': ['accessibility'],
+  'Dynamic Content': ['aria', 'accessibility'],
+};
+
 function getCategoryMap(goal: GoalType): Record<string, FindingCategory[]> {
   if (goal === 'security-review') return SECURITY_CATEGORY_MAP;
+  if (goal === 'nextjs') return NEXTJS_CATEGORY_MAP;
+  if (goal === 'accessibility') return ACCESSIBILITY_CATEGORY_MAP;
   return ONBOARDING_CATEGORY_MAP;
 }
 

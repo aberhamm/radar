@@ -74,6 +74,53 @@ describe('computeScorecard', () => {
     expect(sc.topRisks).toEqual([]);
   });
 
+  it('nextjs scorecard has 7 categories', () => {
+    const sc = computeScorecard('test-repo', 'nextjs', []);
+    expect(sc.overallScore).toBe('green');
+    expect(sc.categories.length).toBe(7);
+  });
+
+  it('nextjs scorecard has framework-specific category names', () => {
+    const sc = computeScorecard('test-repo', 'nextjs', []);
+    const primaryCategories = sc.categories.map((c) => c.category);
+    expect(primaryCategories).toContain('routing');
+    expect(primaryCategories).toContain('data-fetching');
+    expect(primaryCategories).toContain('performance');
+    expect(primaryCategories).toContain('configuration');
+    expect(primaryCategories).toContain('dependencies');
+  });
+
+  it('nextjs scorecard scores findings in performance category', () => {
+    const findings = [makeFinding({ severity: 'high', category: 'performance' })];
+    const sc = computeScorecard('test-repo', 'nextjs', findings);
+    const perfCat = sc.categories.find((c) => c.category === 'performance');
+    expect(perfCat?.score).toBe('yellow');
+  });
+
+  it('accessibility scorecard has 6 categories', () => {
+    const sc = computeScorecard('test-repo', 'accessibility', []);
+    expect(sc.overallScore).toBe('green');
+    expect(sc.categories.length).toBe(6);
+  });
+
+  it('accessibility scorecard scores findings in a11y categories', () => {
+    const findings = [
+      makeFinding({ severity: 'critical', category: 'accessibility' }),
+      makeFinding({ id: 'F-002', severity: 'high', category: 'forms' }),
+    ];
+    const sc = computeScorecard('test-repo', 'accessibility', findings);
+    expect(sc.overallScore).toBe('red');
+  });
+
+  it('accessibility scorecard maps aria findings to Dynamic Content', () => {
+    const findings = [makeFinding({ severity: 'medium', category: 'aria' })];
+    const sc = computeScorecard('test-repo', 'accessibility', findings);
+    // Dynamic Content maps to ['aria', 'accessibility']
+    const dynamicCat = sc.categories.find((c) => c.category === 'aria');
+    expect(dynamicCat).toBeDefined();
+    expect(dynamicCat?.findings.length).toBe(1);
+  });
+
   it('security-review scorecard has security-specific category names', () => {
     const sc = computeScorecard('test-repo', 'security-review', []);
     const primaryCategories = sc.categories.map((c) => c.category);

@@ -91,6 +91,8 @@ Six analysis goals, each with its own rules file and prompt:
 | `component-map` | — | Component inventory | Structured component map |
 | `ci-check` | `goal-ci-check.md` | CI health check (fast) | Pass/fail + compact PR comment |
 | `security-review` | `goal-security-review.md` | Security audit | 6-category security scorecard |
+| `nextjs` | `goal-nextjs.md` | Next.js framework health | 7-category framework scorecard |
+| `accessibility` | `goal-accessibility.md` | WCAG 2.1 AA compliance | 6-category a11y scorecard |
 
 `ci-check` is designed for CI pipelines: 15 tool calls max, 3 categories (deps/security/config), compact output via `renderCiComment()` for PR comments.
 

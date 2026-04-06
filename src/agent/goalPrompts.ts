@@ -76,7 +76,50 @@ input validation, and data exposure. Follow your security review rules.
 IMPORTANT: Record findings throughout your investigation.
 You must record at least 6 findings — one per security category minimum.
 Every scorecard category must have at least one finding.`,
+
+  nextjs: (localPath) => `You have access to a repository at ${localPath}.
+Conduct a Next.js-focused architecture audit of this project.
+
+You are a Next.js specialist, not a generic linter. Your audit should assess
+framework usage patterns, rendering strategy, data fetching architecture,
+and performance readiness — with evidence from the code.
+
+This audit is framework-focused, not CMS-focused. Investigate router architecture,
+data fetching patterns, rendering strategy, performance optimization, configuration
+quality, dependency currency, and TypeScript/DX patterns. Follow your Next.js audit rules.
+
+IMPORTANT: Record findings throughout your investigation.
+You must record at least 8 findings across all scorecard categories.
+Every scorecard category must have at least one finding.`,
+
+  accessibility: (localPath) => `You have access to a repository at ${localPath}.
+Conduct a WCAG 2.1 AA accessibility audit of this project's codebase.
+
+You are an accessibility specialist reviewing code for patterns that will produce
+accessibility failures at runtime. This is a code audit — you are looking at component
+patterns, ARIA usage, semantic HTML, keyboard handling, and form accessibility.
+
+Investigate all six scorecard categories: images & media, semantic structure,
+keyboard & focus, forms & inputs, color & contrast, and dynamic content.
+Follow your accessibility audit rules.
+
+Frame findings in terms of WCAG criteria and compliance risk, not just best practice.
+Accessibility is a legal requirement in many jurisdictions.
+
+IMPORTANT: Record findings throughout your investigation.
+You must record at least 8 findings across all scorecard categories.
+Every scorecard category must have at least one finding.`,
 };
+
+const CATEGORY_COVERAGE: Partial<Record<GoalType, string>> = {
+  'security-review': 'security, architecture, configuration, dependencies',
+  nextjs: 'routing, architecture, data-fetching, nextjs, stack, performance, configuration, dependencies',
+  accessibility: 'accessibility, architecture, forms, aria',
+};
+
+function getCategoryCoverageList(goal: GoalType): string {
+  return CATEGORY_COVERAGE[goal] ?? 'stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, routing';
+}
 
 /**
  * Build the goal-specific user prompt for the agent.
@@ -113,7 +156,7 @@ MODEL SWITCHING:
 - Do not call it too early — finish all investigation first. Do not skip it — it saves cost.
 
 CATEGORY COVERAGE — you MUST record at least one finding in each of these scorecard categories:
-  stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, routing
+  ${getCategoryCoverageList(goal)}
 Even if a category is healthy, record an info-level finding documenting what you verified.
 Before calling assemble_output, check that every category above has at least one finding.
 

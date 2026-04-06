@@ -13,7 +13,11 @@ export type FindingCategory =
   | 'deployment'
   | 'routing'
   | 'data-fetching'
-  | 'nextjs';
+  | 'nextjs'
+  | 'performance'
+  | 'accessibility'
+  | 'forms'
+  | 'aria';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 

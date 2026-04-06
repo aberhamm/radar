@@ -32,6 +32,43 @@ describe('buildGoalPrompt', () => {
     expect(prompt).toContain('assemble_output');
   });
 
+  it('builds nextjs prompt', () => {
+    const prompt = buildGoalPrompt('nextjs', '/tmp/repo', 50, 5);
+    expect(prompt).toContain('/tmp/repo');
+    expect(prompt).toContain('Next.js');
+    expect(prompt).toContain('record_finding');
+    expect(prompt).toContain('assemble_output');
+  });
+
+  it('nextjs prompt includes nextjs-specific category coverage', () => {
+    const prompt = buildGoalPrompt('nextjs', '/tmp/repo', 50, 5);
+    expect(prompt).toContain('routing');
+    expect(prompt).toContain('data-fetching');
+    expect(prompt).toContain('performance');
+    // Should NOT include CMS-specific categories
+    expect(prompt).not.toContain('cms-integration');
+    expect(prompt).not.toContain('preview-editing');
+  });
+
+  it('builds accessibility prompt', () => {
+    const prompt = buildGoalPrompt('accessibility', '/tmp/repo', 50, 5);
+    expect(prompt).toContain('/tmp/repo');
+    expect(prompt).toContain('WCAG');
+    expect(prompt).toContain('accessibility');
+    expect(prompt).toContain('record_finding');
+    expect(prompt).toContain('assemble_output');
+  });
+
+  it('accessibility prompt includes a11y-specific category coverage', () => {
+    const prompt = buildGoalPrompt('accessibility', '/tmp/repo', 50, 5);
+    expect(prompt).toContain('accessibility');
+    expect(prompt).toContain('forms');
+    expect(prompt).toContain('aria');
+    // Should NOT include CMS-specific categories
+    expect(prompt).not.toContain('cms-integration');
+    expect(prompt).not.toContain('deployment');
+  });
+
   it('throws on unknown goal', () => {
     expect(() =>
       buildGoalPrompt('nonsense' as any, '/tmp', 50, 5),

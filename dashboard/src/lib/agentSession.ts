@@ -7,7 +7,8 @@
 export type FindingCategory =
   | 'stack' | 'cms-integration' | 'preview-editing' | 'configuration'
   | 'security' | 'architecture' | 'dependencies' | 'deployment'
-  | 'routing' | 'data-fetching' | 'nextjs';
+  | 'routing' | 'data-fetching' | 'nextjs'
+  | 'performance' | 'accessibility' | 'forms' | 'aria';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 

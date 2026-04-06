@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
         repoPath: resolvedRepoPath,
         repoName,
         repoSource: 'local',
-        goal: goal as 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review',
+        goal: goal as 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility',
         verbose: true,
         onStep: (event) => {
           const run = session.currentRun;

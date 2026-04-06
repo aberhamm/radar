@@ -57,7 +57,9 @@ describe('listRuleFiles', () => {
     expect(files).toContain('goal-migration.md');
     expect(files).toContain('goal-security-review.md');
     expect(files).toContain('goal-ci-check.md');
-    expect(files.length).toBe(8);
+    expect(files).toContain('goal-nextjs.md');
+    expect(files).toContain('goal-accessibility.md');
+    expect(files.length).toBe(10);
   });
 });
 
@@ -76,6 +78,42 @@ describe('security-review goal', () => {
 
   it('validateRules passes for security-review with unknown platform', () => {
     expect(validateRules('security-review', 'unknown')).toEqual([]);
+  });
+});
+
+describe('nextjs goal', () => {
+  it('goal-nextjs.md loads without error', () => {
+    const content = loadRule('goal-nextjs.md');
+    expect(content).not.toBeNull();
+    expect(content).toContain('Next.js Audit Rules');
+  });
+
+  it('buildSystemPrompt includes nextjs rules', () => {
+    const prompt = buildSystemPrompt('nextjs', 'unknown');
+    expect(prompt).toContain('Core investigation rules');
+    expect(prompt).toContain('Next.js Audit Rules');
+  });
+
+  it('validateRules passes for nextjs with unknown platform', () => {
+    expect(validateRules('nextjs', 'unknown')).toEqual([]);
+  });
+});
+
+describe('accessibility goal', () => {
+  it('goal-accessibility.md loads without error', () => {
+    const content = loadRule('goal-accessibility.md');
+    expect(content).not.toBeNull();
+    expect(content).toContain('WCAG Accessibility Audit Rules');
+  });
+
+  it('buildSystemPrompt includes accessibility rules', () => {
+    const prompt = buildSystemPrompt('accessibility', 'unknown');
+    expect(prompt).toContain('Core investigation rules');
+    expect(prompt).toContain('WCAG Accessibility Audit Rules');
+  });
+
+  it('validateRules passes for accessibility with unknown platform', () => {
+    expect(validateRules('accessibility', 'unknown')).toEqual([]);
   });
 });
 

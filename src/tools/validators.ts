@@ -13,6 +13,7 @@ export type ToolValidator = (params: Record<string, unknown>) => string | null;
 const FINDING_CATEGORIES = new Set([
   'stack', 'cms-integration', 'preview-editing', 'configuration', 'security',
   'architecture', 'dependencies', 'deployment', 'routing', 'data-fetching', 'nextjs',
+  'performance', 'accessibility', 'forms', 'aria',
 ]);
 
 const SEVERITIES = new Set(['critical', 'high', 'medium', 'low', 'info']);
