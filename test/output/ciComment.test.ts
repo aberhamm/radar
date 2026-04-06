@@ -142,6 +142,34 @@ describe('renderCiComment', () => {
     expect(output).toContain('🟢 green');
   });
 
+  it('excludes low-confidence findings from blocking issues', () => {
+    const lowConfFinding = makeFinding({
+      id: 'SEC-LOW',
+      severity: 'critical',
+      title: 'Speculative secret leak',
+      confidence: 5,
+      evidence: [{ filePath: 'src/config.ts', lineNumber: 1, snippet: 'x', description: 'desc' }],
+    });
+    const highConfFinding = makeFinding({
+      id: 'SEC-HIGH',
+      severity: 'high',
+      title: 'Confirmed secret leak',
+      confidence: 9,
+      evidence: [{ filePath: 'src/env.ts', lineNumber: 2, snippet: 'y', description: 'desc' }],
+    });
+
+    const scorecard = makeScorecard({
+      overallScore: 'red',
+      topRisks: [lowConfFinding, highConfFinding],
+    });
+
+    const output = renderCiComment(scorecard, makeMetrics());
+    // Low confidence critical should NOT appear as blocking
+    expect(output).not.toContain('Speculative secret leak');
+    // High confidence high should appear
+    expect(output).toContain('Confirmed secret leak');
+  });
+
   it('includes footer with metrics', () => {
     const output = renderCiComment(makeScorecard(), makeMetrics({ toolCalls: 12, durationMs: 45000, totalEstimatedCostUsd: 0.38 }));
 

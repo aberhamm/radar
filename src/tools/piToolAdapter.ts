@@ -601,6 +601,11 @@ export function buildPiTools(
             Type.Literal('critical'), Type.Literal('high'), Type.Literal('medium'),
             Type.Literal('low'), Type.Literal('info'),
           ]),
+          confidence: Type.Optional(Type.Number({
+            description: 'Confidence 1-10. 9-10: verified in code. 7-8: strong pattern match. 5-6: likely, needs manual check. 3-4: speculative.',
+            minimum: 1,
+            maximum: 10,
+          })),
           title: Type.String({ description: 'Short, factual title' }),
           description: Type.String({ description: 'What you found and why it matters' }),
           evidence: Type.Array(Type.Object({

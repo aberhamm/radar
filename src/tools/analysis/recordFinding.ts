@@ -94,10 +94,15 @@ function buildFinding(obj: Record<string, unknown>): Finding {
     ? obj.documentationRefs.map(toDocRef).filter((d): d is DocRef => d !== null)
     : undefined;
 
+  const confidence = typeof obj.confidence === 'number' && obj.confidence >= 1 && obj.confidence <= 10
+    ? Math.round(obj.confidence)
+    : undefined;
+
   return {
     id: obj.id as string,
     category: obj.category as FindingCategory,
     severity: obj.severity as Severity,
+    ...(confidence !== undefined ? { confidence } : {}),
     title: typeof obj.description === 'string' ? obj.title as string : '',
     description: typeof obj.description === 'string' ? obj.description : '',
     evidence,

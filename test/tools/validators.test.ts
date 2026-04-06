@@ -131,6 +131,39 @@ describe('VALIDATORS', () => {
     it('rejects missing finding object', () => {
       expect(v({ category: 'security' })).toContain('finding');
     });
+
+    it('accepts valid confidence values', () => {
+      expect(v({
+        finding: { category: 'security', severity: 'high', title: 'x', description: 'x', confidence: 1 },
+      })).toBeNull();
+      expect(v({
+        finding: { category: 'security', severity: 'high', title: 'x', description: 'x', confidence: 10 },
+      })).toBeNull();
+      expect(v({
+        finding: { category: 'security', severity: 'high', title: 'x', description: 'x', confidence: 7 },
+      })).toBeNull();
+    });
+
+    it('accepts missing confidence (optional)', () => {
+      expect(v({
+        finding: { category: 'security', severity: 'high', title: 'x', description: 'x' },
+      })).toBeNull();
+    });
+
+    it('rejects confidence out of range', () => {
+      expect(v({
+        finding: { category: 'security', severity: 'high', title: 'x', description: 'x', confidence: 0 },
+      })).toContain('confidence');
+      expect(v({
+        finding: { category: 'security', severity: 'high', title: 'x', description: 'x', confidence: 11 },
+      })).toContain('confidence');
+    });
+
+    it('rejects non-integer confidence', () => {
+      expect(v({
+        finding: { category: 'security', severity: 'high', title: 'x', description: 'x', confidence: 7.5 },
+      })).toContain('confidence');
+    });
   });
 
   describe('list_directory', () => {

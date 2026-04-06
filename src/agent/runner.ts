@@ -25,6 +25,10 @@ import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
 import { buildFullExport, serializeExport } from '../output/json.js';
 import { saveSessionCost, buildSessionCostEntry } from '../output/sessionCosts.js';
+import {
+  saveCheckpoint, buildCheckpointEntry, buildSessionId,
+  loadLatestCheckpoint, hydrateState, buildResumeSummary,
+} from '../output/sessionCheckpoint.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +82,10 @@ export interface RunnerConfig {
   model?: Model<any>;
   /** Override Pi fast model (e.g. faux provider for testing). If omitted, builds from env vars. */
   fastModel?: Model<any>;
+  /** Path to checkpoint JSONL file to resume from. */
+  resumeFrom?: string;
+  /** Save checkpoints every N tool calls (default: 5). Set 0 to disable. */
+  checkpointInterval?: number;
 }
 
 export interface StepEvent {
@@ -165,12 +173,51 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     fileReadCache: new Map(),
   };
 
+  // Session checkpoint tracking
+  let sessionId = buildSessionId(config.repoName, config.goal);
+  let checkpointSeq = 0;
+  const checkpointInterval = config.checkpointInterval ?? 5;
+  const repoSlug = config.repoName.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+  // Resume from checkpoint if provided
+  if (config.resumeFrom) {
+    const checkpoint = loadLatestCheckpoint(config.resumeFrom);
+    if (checkpoint) {
+      const hydrated = hydrateState(checkpoint.state);
+      // Merge hydrated state into the fresh state object
+      Object.assign(state, hydrated);
+      // Restore budgets to allow extending beyond the original
+      state.toolCallBudget = Math.max(state.toolCallBudget, toolCallBudget);
+      sessionId = checkpoint.sessionId;
+      checkpointSeq = checkpoint.seq;
+      config.onStep?.({
+        step: 0,
+        action: 'resume',
+        type: 'budget_warning',
+        result: `Resumed from checkpoint seq=${checkpoint.seq} (${state.findings.length} findings, ${state.toolCallCount}/${state.toolCallBudget} tool calls used).`,
+      });
+    } else {
+      config.onStep?.({
+        step: 0,
+        action: 'resume_failed',
+        type: 'budget_warning',
+        result: `No valid checkpoint found at ${config.resumeFrom}. Starting fresh.`,
+      });
+    }
+  }
+
   // Detect platform if not provided
   const platform = config.platform ?? 'unknown';
 
   // Build prompts
   const systemPrompt = buildSystemPrompt(config.goal, platform) + '\n\n---\n\n' + BOUNDARY_SYSTEM_INSTRUCTION;
-  const goalPrompt = buildGoalPrompt(config.goal, config.repoPath, toolCallBudget, webSearchBudget);
+  let goalPrompt = buildGoalPrompt(config.goal, config.repoPath, toolCallBudget, webSearchBudget);
+
+  // If resuming with prior findings, prepend context summary
+  if (config.resumeFrom && state.findings.length > 0) {
+    const summary = buildResumeSummary(state);
+    goalPrompt = `RESUME CONTEXT — This is a resumed investigation. Here is what was found before the interruption:\n\n${summary}\n\nContinue the investigation from where it left off. Do not re-investigate files already read. Focus on uncovered categories and assembling the final output.\n\n---\n\n${goalPrompt}`;
+  }
 
   // Build Pi tools from registry
   const { tools, assembledRef } = buildPiTools(state);
@@ -268,7 +315,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           return undefined;
         }
       }
-      // Decline or no callback — block
+      // Decline or no callback — save checkpoint before blocking
+      if (checkpointInterval > 0) {
+        try {
+          saveCheckpoint(outputDir, repoSlug,
+            buildCheckpointEntry(sessionId, ++checkpointSeq, 'budget_exhausted', state));
+        } catch { /* best-effort */ }
+      }
       return { block: true, reason: `Tool call budget exhausted (${currentBudget} calls used). Call assemble_output now.` };
     }
 
@@ -325,6 +378,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         args: JSON.stringify(ctx.args),
       } : {}),
     });
+
+    // Periodic checkpoint (best-effort, never blocks the loop)
+    if (checkpointInterval > 0 && state.toolCallCount % checkpointInterval === 0) {
+      try {
+        saveCheckpoint(outputDir, repoSlug,
+          buildCheckpointEntry(sessionId, ++checkpointSeq, 'periodic', state));
+      } catch { /* best-effort */ }
+    }
 
     // Intent-based model switch: agent signals it's done investigating
     if (toolName === 'switch_to_fast_model' && !modelSwitched) {
@@ -630,6 +691,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     } else {
       terminationReason = 'error';
       errorDetail = (err as Error).message;
+      // Save error checkpoint before handling
+      if (checkpointInterval > 0) {
+        try {
+          saveCheckpoint(outputDir, repoSlug,
+            buildCheckpointEntry(sessionId, ++checkpointSeq, 'error', state));
+        } catch { /* best-effort */ }
+      }
       config.onStep?.({
         step: stepCount,
         action: 'error',

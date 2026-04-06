@@ -121,6 +121,42 @@ describe('computeScorecard', () => {
     expect(dynamicCat?.findings.length).toBe(1);
   });
 
+  it('excludes very low confidence findings (1-2) from scoring', () => {
+    const findings = [
+      makeFinding({ id: 'LOW-CONF', severity: 'critical', category: 'security', confidence: 2 }),
+    ];
+    const sc = computeScorecard('test-repo', 'audit', findings);
+    // Critical finding with confidence 2 should be excluded → still green
+    expect(sc.overallScore).toBe('green');
+    expect(sc.topRisks).toHaveLength(0);
+  });
+
+  it('includes findings with confidence 3+ in scoring', () => {
+    const findings = [
+      makeFinding({ id: 'MED-CONF', severity: 'critical', category: 'security', confidence: 3 }),
+    ];
+    const sc = computeScorecard('test-repo', 'audit', findings);
+    expect(sc.overallScore).toBe('red');
+  });
+
+  it('treats missing confidence as 7 (included in scoring)', () => {
+    const findings = [
+      makeFinding({ id: 'NO-CONF', severity: 'high', category: 'security' }),
+    ];
+    const sc = computeScorecard('test-repo', 'audit', findings);
+    expect(sc.overallScore).toBe('yellow');
+  });
+
+  it('uses confidence as tiebreaker in topRisks', () => {
+    const findings = [
+      makeFinding({ id: 'LOW-CONF', severity: 'high', category: 'security', confidence: 5 }),
+      makeFinding({ id: 'HIGH-CONF', severity: 'high', category: 'dependencies', confidence: 9 }),
+    ];
+    const sc = computeScorecard('test-repo', 'audit', findings);
+    expect(sc.topRisks[0].id).toBe('HIGH-CONF');
+    expect(sc.topRisks[1].id).toBe('LOW-CONF');
+  });
+
   it('security-review scorecard has security-specific category names', () => {
     const sc = computeScorecard('test-repo', 'security-review', []);
     const primaryCategories = sc.categories.map((c) => c.category);

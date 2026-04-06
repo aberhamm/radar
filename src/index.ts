@@ -45,6 +45,8 @@ program
   .option('--export', 'Output full JSON export to stdout')
   .option('--github-output', 'Post results to GitHub (issue or PR comment)')
   .option('--pr <number>', 'PR number for ci-check goal comments', parseInt)
+  .option('--resume <path>', 'Resume from a checkpoint file (path to .jsonl)')
+  .option('--checkpoint-interval <n>', 'Save checkpoint every N tool calls (0 to disable)', '5')
   .action(async (opts) => {
     try {
       const exitCode = await handleAnalyze(opts);

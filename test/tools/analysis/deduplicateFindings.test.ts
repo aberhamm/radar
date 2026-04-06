@@ -128,4 +128,53 @@ describe('deduplicateFindings', () => {
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].tags).toEqual(expect.arrayContaining(['jss', 'nextjs', 'react']));
   });
+
+  it('keeps max confidence when merging', () => {
+    const f1 = makeFinding({
+      id: 'DEP-001',
+      confidence: 6,
+      evidence: [{ filePath: 'package.json', lineNumber: 1, snippet: 'code', description: 'desc' }],
+    });
+    const f2 = makeFinding({
+      id: 'DEP-002',
+      confidence: 9,
+      evidence: [{ filePath: 'package.json', lineNumber: 2, snippet: 'code2', description: 'desc2' }],
+    });
+
+    const result = deduplicateFindings([f1, f2]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].confidence).toBe(9);
+  });
+
+  it('defaults to 7 for undefined confidence when merging', () => {
+    const f1 = makeFinding({
+      id: 'DEP-001',
+      confidence: 5,
+      evidence: [{ filePath: 'package.json', lineNumber: 1, snippet: 'code', description: 'desc' }],
+    });
+    const f2 = makeFinding({
+      id: 'DEP-002',
+      // no confidence set
+      evidence: [{ filePath: 'package.json', lineNumber: 2, snippet: 'code2', description: 'desc2' }],
+    });
+
+    const result = deduplicateFindings([f1, f2]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].confidence).toBe(7); // max(5, default 7)
+  });
+
+  it('preserves undefined confidence when both findings lack it', () => {
+    const f1 = makeFinding({
+      id: 'DEP-001',
+      evidence: [{ filePath: 'package.json', lineNumber: 1, snippet: 'code', description: 'desc' }],
+    });
+    const f2 = makeFinding({
+      id: 'DEP-002',
+      evidence: [{ filePath: 'package.json', lineNumber: 2, snippet: 'code2', description: 'desc2' }],
+    });
+
+    const result = deduplicateFindings([f1, f2]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].confidence).toBeUndefined();
+  });
 });

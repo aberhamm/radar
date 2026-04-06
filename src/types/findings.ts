@@ -44,6 +44,8 @@ export interface Finding {
   id: string;
   category: FindingCategory;
   severity: Severity;
+  /** Confidence 1-10. 9-10: verified in code. 7-8: pattern match. 5-6: needs confirmation. 3-4: speculative. */
+  confidence?: number;
   title: string;
   description: string;
   evidence: Evidence[];

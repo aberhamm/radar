@@ -263,4 +263,53 @@ describe('recordFinding', () => {
     expect(Array.isArray(result.warnings)).toBe(true);
     expect(result.warnings!.length).toBeGreaterThan(0);
   });
+
+  // --- Confidence tests ---
+
+  it('preserves confidence field when provided', async () => {
+    const state = makeState();
+    const finding: Finding = {
+      id: 'CONF-001',
+      category: 'security',
+      severity: 'high',
+      confidence: 9,
+      title: 'Verified finding',
+      description: 'High confidence',
+      evidence: [],
+      tags: [],
+    };
+    await recordFinding(state, { finding });
+    expect(state.findings[0].confidence).toBe(9);
+  });
+
+  it('omits confidence when not provided', async () => {
+    const state = makeState();
+    const finding: Finding = {
+      id: 'CONF-002',
+      category: 'security',
+      severity: 'high',
+      title: 'No confidence set',
+      description: 'Default behavior',
+      evidence: [],
+      tags: [],
+    };
+    await recordFinding(state, { finding });
+    expect(state.findings[0].confidence).toBeUndefined();
+  });
+
+  it('rounds non-integer confidence', async () => {
+    const state = makeState();
+    const finding = {
+      id: 'CONF-003',
+      category: 'security',
+      severity: 'high',
+      confidence: 7.6,
+      title: 'Float confidence',
+      description: 'Should round',
+      evidence: [],
+      tags: [],
+    };
+    await recordFinding(state, { finding } as unknown as { finding: Finding });
+    expect(state.findings[0].confidence).toBe(8);
+  });
 });

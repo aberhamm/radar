@@ -136,6 +136,12 @@ export const VALIDATORS: Record<string, ToolValidator> = {
     if (typeof sev !== 'string' || !SEVERITIES.has(sev)) {
       return `severity must be one of: ${[...SEVERITIES].join(', ')}`;
     }
+    const conf = finding.confidence;
+    if (conf !== undefined && conf !== null) {
+      if (typeof conf !== 'number' || !Number.isInteger(conf) || conf < 1 || conf > 10) {
+        return 'confidence must be an integer between 1 and 10';
+      }
+    }
     return requireString(finding as Record<string, unknown>, 'title')
       ?? requireString(finding as Record<string, unknown>, 'description');
   },

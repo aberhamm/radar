@@ -73,9 +73,12 @@ export function computeScorecard(
 ): Scorecard {
   const categories: CategoryScore[] = [];
 
+  // Filter out very low confidence findings (1-2) — not enough evidence to score
+  const scorableFindings = findings.filter((f) => (f.confidence ?? 7) > 2);
+
   const categoryMap = getCategoryMap(goalType);
   for (const [displayName, findingCategories] of Object.entries(categoryMap)) {
-    const categoryFindings = findings.filter((f) =>
+    const categoryFindings = scorableFindings.filter((f) =>
       findingCategories.includes(f.category),
     );
 
@@ -92,10 +95,14 @@ export function computeScorecard(
 
   const overallScore = computeOverallScore(categories);
 
-  // Top risks: highest severity findings, up to 5
-  const topRisks = [...findings]
+  // Top risks: highest severity findings, up to 5 (confidence as tiebreaker)
+  const topRisks = [...scorableFindings]
     .filter((f) => f.severity !== 'info')
-    .sort((a, b) => SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity])
+    .sort((a, b) => {
+      const sevDiff = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
+      if (sevDiff !== 0) return sevDiff;
+      return (b.confidence ?? 7) - (a.confidence ?? 7);
+    })
     .slice(0, 5);
 
   return {

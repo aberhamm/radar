@@ -89,8 +89,13 @@ export function renderBrief(
     lines.push('');
     for (let i = 0; i < scorecard.topRisks.length; i++) {
       const risk = scorecard.topRisks[i];
-      lines.push(`### ${i + 1}. ${risk.title}`);
-      lines.push(`**Severity:** ${risk.severity} | **Category:** ${risk.category}`);
+      const conf = risk.confidence ?? 7;
+      const confBadge = conf >= 9 ? ' [verified]'
+        : conf >= 7 ? ''
+        : conf >= 5 ? ' [needs confirmation]'
+        : ' [speculative]';
+      lines.push(`### ${i + 1}. ${risk.title}${confBadge}`);
+      lines.push(`**Severity:** ${risk.severity} | **Category:** ${risk.category} | **Confidence:** ${conf}/10`);
       lines.push('');
       lines.push(risk.description);
       if (risk.evidence.length > 0) {
@@ -105,6 +110,24 @@ export function renderBrief(
       }
       lines.push('');
     }
+  }
+
+  // Low-confidence appendix (confidence 3-4, already excluded from topRisks by scorecard)
+  const allFindings = scorecard.categories.flatMap((c) => c.findings);
+  const lowConfFindings = allFindings.filter((f) => {
+    const c = f.confidence ?? 7;
+    return c >= 3 && c <= 4;
+  });
+  if (lowConfFindings.length > 0) {
+    lines.push('## Appendix: Low-Confidence Observations');
+    lines.push('');
+    lines.push('*These findings have lower confidence and may require manual verification.*');
+    lines.push('');
+    for (const f of lowConfFindings) {
+      const desc = f.description.length > 150 ? f.description.slice(0, 150) + '...' : f.description;
+      lines.push(`- **${f.title}** (${f.severity}, confidence ${f.confidence}/10): ${desc}`);
+    }
+    lines.push('');
   }
 
   // Documentation sources

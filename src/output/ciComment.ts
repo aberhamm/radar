@@ -26,9 +26,11 @@ export function renderCiComment(scorecard: Scorecard, metrics: RunMetrics): stri
   }
   lines.push('');
 
-  // Blocking issues: critical or high severity from topRisks
+  // Blocking issues: critical or high severity AND high confidence (>= 7)
   const blockingSeverities: Set<Severity> = new Set(['critical', 'high']);
-  const blocking = scorecard.topRisks.filter((r) => blockingSeverities.has(r.severity));
+  const blocking = scorecard.topRisks.filter((r) =>
+    blockingSeverities.has(r.severity) && (r.confidence ?? 7) >= 7
+  );
 
   if (blocking.length > 0) {
     lines.push('### Blocking Issues');

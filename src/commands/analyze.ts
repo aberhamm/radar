@@ -26,6 +26,8 @@ export async function handleAnalyze(opts: {
   export?: boolean;
   githubOutput?: boolean;
   pr?: number;
+  resume?: string;
+  checkpointInterval?: string;
 }): Promise<number> {
   const repoInput = opts.repo;
   if (!repoInput) {
@@ -123,6 +125,8 @@ export async function handleAnalyze(opts: {
     outputDir,
     verbose,
     onBudgetExhausted,
+    resumeFrom: opts.resume,
+    checkpointInterval: opts.checkpointInterval ? parseInt(opts.checkpointInterval, 10) : undefined,
     onStep: (step) => {
       if (verbose) {
         formatVerboseStep(step);
@@ -202,6 +206,11 @@ export async function handleAnalyze(opts: {
 
   for (const p of result.outputPaths) {
     console.log(`  ✓ ${p}`);
+  }
+  // Show checkpoint path if one was written
+  const checkpointFile = path.join(outputDir, `${repoName.replace(/[^a-zA-Z0-9_-]/g, '-')}-checkpoint.jsonl`);
+  if (fs.existsSync(checkpointFile)) {
+    console.log(`  📎 Checkpoint: ${checkpointFile} (use --resume to continue)`);
   }
   console.log('');
 

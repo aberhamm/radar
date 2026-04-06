@@ -155,6 +155,16 @@ MODEL SWITCHING:
 - Call it AFTER your last investigation tool call and BEFORE your first record_finding call.
 - Do not call it too early — finish all investigation first. Do not skip it — it saves cost.
 
+CONFIDENCE CALIBRATION:
+When recording findings, set the confidence field (1-10):
+- 9-10: You read the code directly and confirmed the issue exists.
+- 7-8: Strong pattern match — multiple indicators point to this, but you didn't verify every code path.
+- 5-6: Likely based on indirect evidence — flag it, but note it needs manual confirmation.
+- 3-4: Speculative — you suspect this based on limited evidence. These go to an appendix.
+- 1-2: Not enough evidence — don't record these.
+Set confidence based on how much evidence you actually gathered, not how severe the issue is.
+A critical security issue you haven't confirmed in code should be confidence 5-6, not 9-10.
+
 CATEGORY COVERAGE — you MUST record at least one finding in each of these scorecard categories:
   ${getCategoryCoverageList(goal)}
 Even if a category is healthy, record an info-level finding documenting what you verified.

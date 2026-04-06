@@ -52,8 +52,16 @@ function mergeEvidence(a: Evidence[], b: Evidence[]): Evidence[] {
  * Merge two findings into one. Keeps the longer description, combines evidence and tags.
  */
 function mergeFindings(primary: Finding, secondary: Finding): Finding {
+  // Keep the higher confidence on merge (default to 7 for unset)
+  const pConf = primary.confidence;
+  const sConf = secondary.confidence;
+  const mergedConfidence = pConf !== undefined || sConf !== undefined
+    ? Math.max(pConf ?? 7, sConf ?? 7)
+    : undefined;
+
   return {
     ...primary,
+    ...(mergedConfidence !== undefined ? { confidence: mergedConfidence } : {}),
     description: primary.description.length >= secondary.description.length
       ? primary.description
       : secondary.description,
