@@ -565,13 +565,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   try {
     // Run the agent with retry on transient API errors (429, 529, connection)
     await withRetry(() => agent.prompt(goalPrompt), {
-      maxRetries: 3,
-      onRetry: (attempt, error, delayMs) => {
+      onRetry: (attempt, error, delayMs, classification) => {
+        const status = classification.statusCode ? ` [${classification.statusCode}]` : '';
+        const stale = classification.staleConnection ? ' (stale connection)' : '';
         config.onStep?.({
           step: stepCount,
           action: 'retry',
           type: 'budget_warning',
-          result: `Transient API error (attempt ${attempt}): ${error.message}. Retrying in ${Math.round(delayMs / 1000)}s...`,
+          result: `API error${status}${stale} (attempt ${attempt}/${classification.maxRetries}): ${error.message}. Retrying in ${Math.round(delayMs / 1000)}s...`,
         });
       },
     });
@@ -595,12 +596,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         });
         await withRetry(() => agent.continue(), {
           maxRetries: 2,
-          onRetry: (attempt, error) => {
+          onRetry: (attempt, error, _delayMs, classification) => {
+            const status = classification.statusCode ? ` [${classification.statusCode}]` : '';
             config.onStep?.({
               step: stepCount,
               action: 'retry',
               type: 'budget_warning',
-              result: `Retry nudge attempt ${attempt}: ${error.message}`,
+              result: `Retry nudge${status} attempt ${attempt}: ${error.message}`,
             });
           },
         });

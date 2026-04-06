@@ -118,6 +118,20 @@ describe('handleAnalyze', () => {
     await expect(handleAnalyze({ ...baseOpts, goal: 'invalid-goal' })).rejects.toThrow('Invalid goal');
   });
 
+  it('accepts nextjs goal', async () => {
+    vi.mocked(runAgent).mockResolvedValueOnce(makeResult() as any);
+    const code = await handleAnalyze({ ...baseOpts, goal: 'nextjs' });
+    expect(code).toBe(0);
+    expect(runAgent).toHaveBeenCalledWith(expect.objectContaining({ goal: 'nextjs' }));
+  });
+
+  it('accepts accessibility goal', async () => {
+    vi.mocked(runAgent).mockResolvedValueOnce(makeResult() as any);
+    const code = await handleAnalyze({ ...baseOpts, goal: 'accessibility' });
+    expect(code).toBe(0);
+    expect(runAgent).toHaveBeenCalledWith(expect.objectContaining({ goal: 'accessibility' }));
+  });
+
   it('throws when local repo path does not exist', async () => {
     await expect(handleAnalyze({ ...baseOpts, repo: '/nonexistent/repo/path' })).rejects.toThrow('not found');
   });

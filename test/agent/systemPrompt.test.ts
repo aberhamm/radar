@@ -31,13 +31,13 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt('audit', 'sitecore');
     expect(prompt).toContain('Core investigation rules');
     expect(prompt).toContain('Sitecore-specific investigation rules');
-    expect(prompt).toContain('Architecture audit rules');
+    expect(prompt).toContain('Architecture Audit Rules');
   });
 
   it('includes platform rules for optimizely', () => {
     const prompt = buildSystemPrompt('migration', 'optimizely');
     expect(prompt).toContain('Optimizely-specific investigation rules');
-    expect(prompt).toContain('Migration scout rules');
+    expect(prompt).toContain('Migration Scout Rules');
   });
 
   it('joins sections with markdown separator', () => {
@@ -59,7 +59,26 @@ describe('listRuleFiles', () => {
     expect(files).toContain('goal-ci-check.md');
     expect(files).toContain('goal-nextjs.md');
     expect(files).toContain('goal-accessibility.md');
-    expect(files.length).toBe(10);
+    expect(files).toContain('goal-component-map.md');
+    expect(files.length).toBe(11);
+  });
+});
+
+describe('component-map goal', () => {
+  it('goal-component-map.md loads without error', () => {
+    const content = loadRule('goal-component-map.md');
+    expect(content).not.toBeNull();
+    expect(content).toContain('Component Map Rules');
+  });
+
+  it('buildSystemPrompt includes component-map rules', () => {
+    const prompt = buildSystemPrompt('component-map', 'unknown');
+    expect(prompt).toContain('Core investigation rules');
+    expect(prompt).toContain('Component Map Rules');
+  });
+
+  it('validateRules passes for component-map with unknown platform', () => {
+    expect(validateRules('component-map', 'unknown')).toEqual([]);
   });
 });
 

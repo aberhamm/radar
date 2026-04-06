@@ -34,7 +34,7 @@ Demo talking points: 11 findings in ~8 min, ~$0.74/run (dual-model, 37% on Haiku
 - [x] **Secret redaction** — Implemented in `src/agent/redaction.ts`. Regex-based redaction for KEY, SECRET, TOKEN, PASSWORD patterns applied in runner.ts afterToolCall before results enter LLM context or investigation log.
 - [x] **Expanded secret redaction patterns** — Added: AWS access keys (AKIA/ASIA/AROA/AIDA), connection strings (jdbc/mongodb/postgres/mysql/redis/amqp), Bearer tokens, PEM private keys. 20 tests passing.
 - [x] **Optimizely rules** — Expanded `platform-optimizely.md` with Visual Builder, Content Graph, @remkoj ecosystem, env vars, package reference table, 16 issue patterns.
-- [ ] **Web search / fetch_url** — Currently stubbed. Implement with a real search API when needed for production use.
+- [ ] **Web search / fetch_url** — Currently stubbed. Implement with a real search API when needed for production use. **Deferred** — not blocking any current goal.
 - [x] **analyze_middleware** — Implemented in `src/tools/analysis/analyzeMiddleware.ts`, registered in piToolAdapter, classified in concurrency.ts, 2 tests passing.
 - [x] **E2e tests** — Full agent loop against fixture repo in `test/e2e/`. Asserts sections populated, scored scorecard, evidence-backed findings, output files written.
 - [x] **CLI polish** — Renamed to `radar`, added descriptive help text with examples, all flags documented.
@@ -84,7 +84,7 @@ Sourced from `C:/_projects/claude-code-main` analysis on 2026-04-02. Patterns th
 
 - [x] **Read deduplication** — `fileReadCache` in AgentState with mtime + SHA-256 hash of first 1KB. Returns `unchanged: true` stub on cache hit. Works for `read_file` and `read_files_batch`.
 - [x] **Line-range reads (offset + limit)** — `startLine` (1-based) in `resolveAndRead.ts`. Shows `(showing lines X-Y of Z total)` annotation.
-- [ ] **TODO: Shared htmlToMarkdown utility** — If a second Turndown consumer appears, extract lazy-loaded Turndown into a shared utility.
+- [ ] **Shared htmlToMarkdown utility** — If a second Turndown consumer appears, extract lazy-loaded Turndown into a shared utility. **Parked** — only one consumer exists.
 - [x] **Binary file detection** — Extension check + null-byte scan of first 8KB in `src/tools/utils/resolveAndRead.ts`.
 
 #### Cross-cutting tool patterns
@@ -93,10 +93,42 @@ Sourced from `C:/_projects/claude-code-main` analysis on 2026-04-02. Patterns th
 - [x] **Per-tool result size limits** — Done as part of tool result disk overflow (see above).
 - [x] **Relative paths in all output** — Audited all 12 tools. All use `path.relative(repoRoot, ...)` for output paths. No absolute path leaks found.
 
+### Medium Value (Round 2)
+
+Sourced from deeper Claude Code CLI analysis on 2026-04-06. Focus: reliability, cost savings, extensibility.
+
+- [x] **Sophisticated retry with per-error tiers** — Rewrote `src/agent/retry.ts` with per-status retry limits (429→8, 529→3, 502/503→5, connection→5), `Retry-After` header parsing, stale connection detection (ECONNRESET/EPIPE → `onStaleConnection` callback), exponential backoff (500ms base, 32s cap, 0-25% jitter), and `classifyError()` + `computeDelay()` exports. 29 tests. Runner call sites updated with richer error context in step events.
+- [ ] **Session resume / checkpointing** — No session resume today. A 45-call run that fails at call 40 loses everything. Port: append-only JSONL transcript per session, `restoreSessionStateFromLog()` to hydrate cost + findings + file history, resume from any message boundary. Add `--resume <session-id>` flag to CLI. Ref: `claude-code-main/src/utils/sessionRestore.ts`, `sessionStorage.ts`. **P1** — protects expensive runs.
+- [ ] **Snip boundary at model switch** — When agent calls `switch_to_fast_model`, mark a compaction boundary. GC all raw tool outputs from investigation phase — the writing phase doesn't need them. Reduces context size for Haiku by ~60%. Ref: `claude-code-main/src/services/compact/compact.ts` snip boundary pattern. **P2** — direct token cost savings.
+- [ ] **Running cost counter in verbose mode** — Show per-turn cost accumulation, cache hit ratio, and cost projection ("at current rate ~$X") during `--verbose` runs. Currently cost only appears at end. Ref: `claude-code-main/src/cost-tracker.ts`. **P3** — visibility, not blocking.
+- [ ] **Hook system for extensibility** — Event-driven hooks (`PreAnalysis`, `PostAnalysis`, `OnFinding`, `PostAssembly`) configured in settings file, executed as shell subprocesses. Enables CI integration, real-time Slack/Teams notifications, custom renderers without code changes. Ref: `claude-code-main/src/utils/hooks.ts`. **P3** — strategic for multi-team adoption.
+- [ ] **MCP server mode** — Expose our 23 tools as MCP tools via stdio transport. Lets other agents, IDE extensions, or CI systems call individual tools without running a full analysis. ~200 lines based on Claude Code's implementation. Ref: `claude-code-main/src/entrypoints/mcp.ts`. **P3** — strategic, not blocking.
+- [ ] **Read-only assertion guard** — Assert at startup that no tool can write to the target repo. Currently implicit; make it explicit with a guard that rejects any write path inside `repoRoot`. Ref: `claude-code-main/src/utils/permissions/permissions.ts`. **P3** — defense in depth.
+
+## gstack Port (2026-04-06)
+
+Sourced from `github.com/garrytan/gstack` analysis. Domain knowledge, scoring rubrics, and FP filtering worth porting as rules/references.
+
+### High Value
+
+- [ ] **CSO false-positive exclusion rules** — Port 22 battle-tested FP hard exclusion rules from `cso/SKILL.md` Phase 12 into `src/rules/goal-security-review.md`. Dramatically reduces noise in security findings. **P1**
+- [ ] **Confidence calibration dimension** — Add 1-10 confidence score to finding schema (separate from severity). 9-10=verified, 7-8=pattern match, 5-6=show with caveat, 3-4=suppress to appendix. Display rules in output assembler. Source: CSO confidence table. **P1**
+- [ ] **Health weighted scoring rubric** — Port composite scoring model (type check 25%, lint 20%, tests 30%, dead code 15%, shell lint 10%) with 4-level breakpoints into `src/rules/goal-audit.md` as reference. Includes smart weight redistribution when categories are skipped. Source: `health/SKILL.md`. **P1**
+- [ ] **Review checklist categories + suppressions** — Port two-pass review system (CRITICAL: SQL safety, race conditions, LLM trust boundary, shell injection, enum completeness; INFORMATIONAL: async mixing, dead code, completeness gaps, type coercion, CI/CD) and "DO NOT flag" suppressions list into audit rules. Source: `review/checklist.md`. **P2**
+- [ ] **CSO findings JSON schema with fingerprints** — Add `sha256(category + file + normalized_title)` fingerprinting to findings for cross-run trend tracking (Resolved/Persistent/New/Trend). Source: CSO Phase 13. **P2**
+
+### Medium Value
+
+- [ ] **Secrets archaeology patterns** — Port known credential prefix patterns (AKIA, ASIA, AROA, AIDA, sk-, ghp_, xoxb-) and git history scanning commands into security-review rules. Source: CSO Phase 2. **P2**
+- [ ] **QA issue taxonomy severity definitions** — Port 7-category taxonomy (Visual/UI, Functional, UX, Content, Performance, Console/Errors, Accessibility) with 4-level severity scale as calibration reference for finding severity. Source: `qa/references/issue-taxonomy.md`. **P3**
+- [ ] **Stack/framework auto-detection patterns** — Port Phase 0 detection patterns (package.json, Gemfile, go.mod, etc.) to enhance `detect_app_roots` tool. Source: CSO Phase 0. **P3**
+- [ ] **Scope drift detection** — Cross-reference actual code against stated intent (README, docs, PR descriptions) to find discrepancies. Useful for audit goal. Source: `review/SKILL.md` Step 1.5. **P3**
+- [ ] **Parallel specialist dispatch with adaptive gating** — After initial analysis, spawn focused sub-analyses based on detected codebase characteristics. Auto-disable specialists that produce 0 findings after 10+ dispatches. Source: `review/SKILL.md` Step 4.5. **P3**
+
 ### Low Value (Park for Later)
 
 - [x] **Session cost persistence** — `src/output/sessionCosts.ts` with JSONL append, load, and aggregate. Wired into runner.ts post-run. 6 tests passing.
-- [ ] **Generator-based agent loop wrapper** — Wrap Pi's callback events in an async generator for cleaner streaming, checkpointing, and composable middleware. Big refactor, defer until Pi's event model becomes a bottleneck.
+- [ ] **Generator-based agent loop wrapper** — Wrap Pi's callback events in an async generator for cleaner streaming, checkpointing, and composable middleware. **Parked** — big refactor, defer until Pi's event model becomes a bottleneck.
 
 ## Eng Review (2026-04-02)
 
