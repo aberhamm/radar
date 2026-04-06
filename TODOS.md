@@ -111,10 +111,10 @@ Sourced from `github.com/garrytan/gstack` analysis. Domain knowledge, scoring ru
 
 ### High Value
 
-- [ ] **CSO false-positive exclusion rules** — Port 22 battle-tested FP hard exclusion rules from `cso/SKILL.md` Phase 12 into `src/rules/goal-security-review.md`. Dramatically reduces noise in security findings. **P1**
+- [x] **CSO false-positive exclusion rules** — Port 22 battle-tested FP hard exclusion rules from `cso/SKILL.md` Phase 12 into `src/rules/goal-security-review.md`. Dramatically reduces noise in security findings. **P1**
 - [ ] **Confidence calibration dimension** — Add 1-10 confidence score to finding schema (separate from severity). 9-10=verified, 7-8=pattern match, 5-6=show with caveat, 3-4=suppress to appendix. Display rules in output assembler. Source: CSO confidence table. **P1**
-- [ ] **Health weighted scoring rubric** — Port composite scoring model (type check 25%, lint 20%, tests 30%, dead code 15%, shell lint 10%) with 4-level breakpoints into `src/rules/goal-audit.md` as reference. Includes smart weight redistribution when categories are skipped. Source: `health/SKILL.md`. **P1**
-- [ ] **Review checklist categories + suppressions** — Port two-pass review system (CRITICAL: SQL safety, race conditions, LLM trust boundary, shell injection, enum completeness; INFORMATIONAL: async mixing, dead code, completeness gaps, type coercion, CI/CD) and "DO NOT flag" suppressions list into audit rules. Source: `review/checklist.md`. **P2**
+- [x] **Health weighted scoring rubric** — Port composite scoring model (type check 25%, lint 20%, tests 30%, dead code 15%, shell lint 10%) with 4-level breakpoints into `src/rules/goal-audit.md` as reference. Includes smart weight redistribution when categories are skipped. Source: `health/SKILL.md`. **P1**
+- [x] **Review checklist categories + suppressions** — Port two-pass review system (CRITICAL: SQL safety, race conditions, LLM trust boundary, shell injection, enum completeness; INFORMATIONAL: async mixing, dead code, completeness gaps, type coercion, CI/CD) and "DO NOT flag" suppressions list into audit rules. Source: `review/checklist.md`. **P2**
 - [ ] **CSO findings JSON schema with fingerprints** — Add `sha256(category + file + normalized_title)` fingerprinting to findings for cross-run trend tracking (Resolved/Persistent/New/Trend). Source: CSO Phase 13. **P2**
 
 ### Medium Value
