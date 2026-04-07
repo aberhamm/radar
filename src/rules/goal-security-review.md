@@ -22,6 +22,58 @@ Start with the highest-risk areas:
 4. Scan dependencies — run check against known vulnerability patterns
 5. Check next.config.js — are security headers configured?
 6. Look for hardcoded credentials or API keys in source files
+7. Check git history for credential archaeology (see below)
+
+## Secrets Archaeology
+
+Hardcoded credentials are often committed and later removed, but remain in git history. Use `grep_pattern` to search for these known credential prefixes in the current codebase. If found, record as critical.
+
+### Known Credential Prefix Patterns
+
+Search for these prefixes — each indicates a specific credential type:
+
+| Prefix | Credential Type | Severity |
+|--------|----------------|----------|
+| `AKIA` | AWS access key ID (long-term) | critical |
+| `ASIA` | AWS temporary access key (STS) | critical |
+| `AROA` | AWS role ID | high |
+| `AIDA` | AWS IAM user ID | medium |
+| `sk-` (followed by 20+ chars) | OpenAI / Stripe secret key | critical |
+| `sk_live_` | Stripe live secret key | critical |
+| `sk_test_` | Stripe test secret key | medium |
+| `pk_live_` | Stripe live publishable key | low |
+| `ghp_` | GitHub personal access token | critical |
+| `gho_` | GitHub OAuth access token | critical |
+| `ghu_` | GitHub user-to-server token | critical |
+| `ghs_` | GitHub server-to-server token | critical |
+| `github_pat_` | GitHub fine-grained PAT | critical |
+| `xoxb-` | Slack bot token | high |
+| `xoxp-` | Slack user token | high |
+| `xoxa-` | Slack app-level token | high |
+| `xoxr-` | Slack refresh token | high |
+| `SG.` (followed by base64) | SendGrid API key | high |
+| `sq0atp-` | Square access token | critical |
+| `EAACEdEose0cBA` | Facebook access token | high |
+| `ya29.` | Google OAuth access token | high |
+| `AIza` | Google API key | high |
+
+### Grep Patterns for Credential Scanning
+
+Use `grep_pattern` with these regex patterns:
+- `AKIA[A-Z0-9]{16}` — AWS long-term access key
+- `ASIA[A-Z0-9]{16}` — AWS temporary access key
+- `sk-[a-zA-Z0-9]{20,}` — OpenAI/generic secret key (exclude known SDK package references)
+- `sk_live_[a-zA-Z0-9]+` — Stripe live secret
+- `ghp_[a-zA-Z0-9]{36}` — GitHub PAT
+- `xox[bpars]-[a-zA-Z0-9-]+` — Slack tokens
+- `SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}` — SendGrid API key
+
+### Git History Scanning Guidance
+
+If you find `.env.example` or removed `.env` references, note in findings that git history may contain previously committed secrets. Recommend:
+1. Run `git log --diff-filter=D -- '*.env'` to check for deleted env files
+2. Run `git log -p --all -S 'AKIA'` (or other prefixes) to search git history
+3. If secrets were ever committed, recommend rotating them immediately regardless of removal
 
 ## Required Investigation Tools
 

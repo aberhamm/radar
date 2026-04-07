@@ -312,4 +312,75 @@ describe('recordFinding', () => {
     await recordFinding(state, { finding } as unknown as { finding: Finding });
     expect(state.findings[0].confidence).toBe(8);
   });
+
+  // --- Fingerprint tests ---
+
+  it('generates a fingerprint on every finding', async () => {
+    const state = makeState();
+    const finding: Finding = {
+      id: 'FP-001',
+      category: 'security',
+      severity: 'high',
+      title: 'Exposed API key',
+      description: 'Key found in config',
+      evidence: [],
+      tags: [],
+    };
+    await recordFinding(state, { finding });
+    expect(state.findings[0].fingerprint).toBeDefined();
+    expect(typeof state.findings[0].fingerprint).toBe('string');
+    expect(state.findings[0].fingerprint!.length).toBe(64); // SHA-256 hex
+  });
+
+  it('produces stable fingerprints for same category + title + evidence file', async () => {
+    const state = makeState();
+    state.filesRead.add('src/middleware.ts');
+    const finding1: Finding = {
+      id: 'FP-002',
+      category: 'security',
+      severity: 'high',
+      title: 'Missing auth middleware',
+      description: 'First run description',
+      evidence: [{ filePath: 'src/middleware.ts', lineNumber: 5, snippet: 'const apiKey = process.env.SITECORE_API_KEY;', description: 'No auth' }],
+      tags: [],
+    };
+    const finding2: Finding = {
+      id: 'FP-003',
+      category: 'security',
+      severity: 'medium', // different severity
+      title: 'Missing auth middleware', // same title
+      description: 'Second run different description',
+      evidence: [{ filePath: 'src/middleware.ts', lineNumber: 10, snippet: 'const apiKey = process.env.SITECORE_API_KEY;', description: 'Still no auth' }],
+      tags: ['auth'],
+    };
+    await recordFinding(state, { finding: finding1 });
+    await recordFinding(state, { finding: finding2 });
+    // Same category + title + first evidence file → same fingerprint
+    expect(state.findings[0].fingerprint).toBe(state.findings[1].fingerprint);
+  });
+
+  it('produces different fingerprints for different categories', async () => {
+    const state = makeState();
+    const finding1: Finding = {
+      id: 'FP-004',
+      category: 'security',
+      severity: 'high',
+      title: 'Same title',
+      description: 'Desc',
+      evidence: [],
+      tags: [],
+    };
+    const finding2: Finding = {
+      id: 'FP-005',
+      category: 'dependencies',
+      severity: 'high',
+      title: 'Same title',
+      description: 'Desc',
+      evidence: [],
+      tags: [],
+    };
+    await recordFinding(state, { finding: finding1 });
+    await recordFinding(state, { finding: finding2 });
+    expect(state.findings[0].fingerprint).not.toBe(state.findings[1].fingerprint);
+  });
 });

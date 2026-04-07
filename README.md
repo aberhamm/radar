@@ -49,7 +49,20 @@ npx tsx src/index.ts analyze [options]
 | `--output <dir>` | Output directory | `./output` |
 | `--verbose` | Show real-time agent reasoning and tool calls | off |
 | `--json` | Output summary as JSON (for CI integration) | off |
+| `--export` | Output full JSON export to stdout (all findings, log, metrics, sections) | off |
+| `--github-output` | Post results to GitHub (issue for onboarding, PR comment for ci-check) | off |
+| `--pr <number>` | PR number for ci-check goal comments (or set `GITHUB_PR_NUMBER`) | -- |
+| `--resume <path>` | Resume from a checkpoint file (path to `.jsonl`) | -- |
+| `--checkpoint-interval <n>` | Save checkpoint every N tool calls (0 to disable) | `5` |
 | `--dry-run` | Show configuration without running the agent | off |
+
+### `compare`
+
+Run side-by-side comparison of two repositories. Produces individual briefs and a comparative summary highlighting relative strengths and gaps.
+
+```
+npx tsx src/index.ts compare --repos <path1> <path2> [--goal <type>] [--budget <n>]
+```
 
 ### `tools`
 
@@ -72,10 +85,13 @@ npx tsx src/index.ts rules --validate
 | Goal | Description |
 |------|-------------|
 | `onboarding` | Full 12-section consultant onboarding brief with scorecard, risks, and recommendations |
-| `audit` | Scored architecture audit with findings across all scorecard categories |
+| `audit` | Scored architecture audit with weighted scoring rubric (type check 25%, lint 20%, tests 30%, dead code 15%, shell lint 10%) |
 | `migration` | Migration readiness assessment with prioritized hotspots and complexity estimates |
 | `component-map` | Structured component inventory showing CMS bindings, directives, and data fetching |
 | `ci-check` | Fast CI health check (under 15 tool calls) producing pass/fail with blocking issues |
+| `security-review` | Security audit across 6 categories with 22 false-positive exclusion rules and secrets archaeology (22 known credential prefixes) |
+| `nextjs` | Next.js framework health audit across 7 categories (routing, data fetching, caching, etc.) |
+| `accessibility` | WCAG 2.1 AA compliance audit across 6 categories with severity-mapped violations |
 
 ## Architecture
 
@@ -90,7 +106,7 @@ Goal Prompt
 |                                                   |
 |  System instructions (consulting rules from .md)  |
 |  Reference knowledge (platform-specific .md)      |
-|  Pi AgentTools (22 deterministic functions)       |
+|  Pi AgentTools (23 deterministic functions)       |
 |  Working state (findings, file cache, log)        |
 +--------------------------------------------------+
     |
@@ -98,20 +114,41 @@ Goal Prompt
 Output Assembler -> scorecard + brief + JSON export
 ```
 
-- **Tools** -- Pure functions that return facts (file contents, parsed configs, grep results, npm versions). They never call an LLM. Wrapped as Pi `AgentTool[]` with TypeBox schemas.
+- **Tools** -- Pure functions that return facts (file contents, parsed configs, grep results, npm versions). They never call an LLM. Wrapped as Pi `AgentTool[]` with TypeBox schemas. 23 tools total; 3 infrequently-used tools are deferred-loaded via the `tool_search` meta-tool to save context tokens.
 - **Rules** -- Plain English markdown files in `src/rules/` that shape the agent's priorities and quality standards. Editable by senior consultants without code changes.
 - **References** -- Static knowledge files in `src/references/` (platform best practices, known antipatterns, compatibility matrices) loaded selectively by the agent.
 - **Agent loop** -- Pi's `Agent` class handles tool dispatch, message threading, and loop control. `beforeToolCall`/`afterToolCall` hooks enforce budgets. The loop runs until `assemble_output` is called or the budget is spent.
 - **Dual-model** -- Investigation phase uses `AGENT_MODEL` (Sonnet, heavy reasoning). The agent calls `switch_to_fast_model` when it decides investigation is complete, switching to `FAST_MODEL` (Haiku, cheaper) for finding assembly and brief writing. Fallback: force-switch at 5 calls remaining.
-- **Tool concurrency** -- Pi's `toolExecution: 'parallel'` fires all tool calls from a single turn concurrently. Read-only tools (16 of 22) run fully parallel. Stateful tools (`record_finding`, `assemble_output`, `switch_to_fast_model`) self-serialize via an async mutex (`StatefulToolMutex`) so they never corrupt shared state, even when Pi fires them in the same batch.
-- **Cost controls** -- Per-tool result size limits (grep: 20K, read_file: 65K, fetch_url: 100K, default: 4K) with disk spill to tmpdir for oversized results. 3-tier context compression (recent 10 messages full, mid-age 15 at 600 chars, older at 120 chars, cached by tool call ID). `onPayload` injects prompt cache breakpoints. Default budget is 45 calls.
-- **Retry** -- Transient API errors (429, 529, 502, 503, connection resets) are retried with exponential backoff and jitter, up to 3 attempts. Wired into both `agent.prompt()` and nudge `agent.continue()` calls.
+- **Tool concurrency** -- Pi's `toolExecution: 'parallel'` fires all tool calls from a single turn concurrently. Read-only tools (20 of 23) run fully parallel. Stateful tools (`record_finding`, `assemble_output`, `switch_to_fast_model`) self-serialize via an async mutex (`StatefulToolMutex`) so they never corrupt shared state, even when Pi fires them in the same batch.
+- **Cost controls** -- Per-tool result size limits (grep: 20K, read_file: 65K, fetch_url: 100K, default: 4K) with disk spill to tmpdir for oversized results. 3-tier context compression (recent 10 messages full, mid-age 15 at 600 chars, older at 120 chars, cached by tool call ID). **Snip boundary**: when the model switches to Haiku, compression thresholds drop aggressively (mid-age to 80 chars, old to 40 chars), reducing context size by ~60% since the writing phase doesn't need raw investigation data. `onPayload` injects prompt cache breakpoints. Default budget is 45 calls. Session cost tracking persists per-run costs to JSONL for cross-run analysis.
+- **Retry with per-error tiers** -- Each error class has its own retry limit: 429 rate-limit gets 8 attempts, 529 overload gets 3, 502/503 gets 5, connection errors (ECONNRESET/EPIPE/ETIMEDOUT) get 5. Respects `Retry-After` headers up to 2 minutes. Exponential backoff with 500ms base, 32s cap, 0-25% jitter. Stale connection detection triggers an `onStaleConnection` callback for diagnostics.
 - **Ripgrep integration** -- `grep_pattern` tries `rg` first with JSON output parsing for structured results, then falls back to an optimized Node.js walker using `readdir({ withFileTypes: true })` when ripgrep isn't available. Either path respects the same ignore rules and result limits.
 - **Defensive file handling** -- Binary files are detected via extension check + null-byte scan of the first 8KB and rejected before they waste tokens. When a file path doesn't exist, Levenshtein-based suggestions surface the top 3 similar filenames (distance ≤ 3) so the agent can self-correct typos without another exploratory tool call.
 - **Monorepo detection** -- `detect_app_roots` scans for `package.json` files, classifies each by framework (Next.js, React, Angular, etc.), and detects monorepo tooling (workspaces, Turborepo, Nx, Lerna). The agent uses this early in investigation to scope its search to the right app root.
-- **Security** -- Prompt injection defense wraps all tool outputs in context boundary delimiters and sanitizes instruction-like patterns (12 patterns including "ignore previous instructions", delimiter injection, boundary escape). Secret redaction strips KEY/SECRET/TOKEN/PASSWORD patterns from tool results before they enter LLM context or logs.
+- **Confidence calibration** -- Every finding carries a 1-10 confidence score. 9-10 = verified in code, 7-8 = pattern match, 5-6 = needs confirmation, 3-4 = speculative. Findings with confidence ≤ 2 are excluded from scoring. The brief renders badges (`[verified]`, `[needs confirmation]`, `[speculative]`) and moves low-confidence findings to an appendix. CI comments only block on findings with confidence ≥ 7. During deduplication, the higher confidence wins.
+- **Finding fingerprints** -- Each finding gets a SHA-256 fingerprint computed from `category + first evidence file path + normalized title`. The same logical finding produces the same fingerprint across runs regardless of description or severity changes. This enables cross-run trend tracking: compare two run exports to classify findings as Resolved (disappeared), Persistent (same fingerprint), or New (new fingerprint).
+- **Session resume** -- Checkpoints are saved as JSONL every N tool calls (default 5), on error, and on budget exhaustion. `--resume <path>` hydrates prior state (findings, file cache, investigation log, model usage) and injects a natural-language summary of prior findings into the goal prompt so the agent picks up where it left off without re-investigating.
+- **Security** -- Prompt injection defense wraps all tool outputs in context boundary delimiters and sanitizes instruction-like patterns (12 patterns including "ignore previous instructions", delimiter injection, boundary escape). Secret redaction strips KEY/SECRET/TOKEN/PASSWORD patterns plus AWS access keys (AKIA/ASIA/AROA/AIDA), connection strings, Bearer tokens, and PEM private keys from tool results before they enter LLM context or logs. The security-review goal includes 22 false-positive exclusion rules and secrets archaeology with 22 known credential prefix patterns.
 - **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
-- **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, and full JSON export.
+- **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, full JSON export, and GitHub integration (issue creation for onboarding, PR comment posting for ci-check).
+
+### Key Design Decisions
+
+**Why confidence calibration matters for consulting delivery**
+
+LLMs generate findings with varying certainty but traditionally present them all at the same confidence level. This creates noise -- a speculative "might have an XSS vector" sits next to a verified "hardcoded AWS key at line 47." Confidence calibration (1-10) solves this at every layer: scoring excludes speculation (≤ 2), CI only blocks on high-confidence issues (≥ 7), the brief visually distinguishes verified findings from speculative ones, and low-confidence observations go to an appendix instead of polluting the main report. The result is a report that reads like it came from a senior consultant who knows the difference between "I saw this" and "I think this."
+
+**Why fingerprints enable trend tracking without a database**
+
+Each finding gets a SHA-256 fingerprint from `category + first evidence file + normalized title`. The same logical issue (e.g., "outdated Next.js in package.json") produces the same hash across runs even if the description or severity changes. To track trends, diff two JSON exports by fingerprint: fingerprints in both = Persistent, only in old = Resolved, only in new = New. No database, no finding IDs to coordinate, no state server -- just two JSON files and a set intersection.
+
+**Why the snip boundary saves real money**
+
+The dual-model pattern (Sonnet investigates, Haiku writes) already saves ~37% vs running Sonnet for the full budget. But Haiku still receives the full conversation history including thousands of tokens of raw tool output from the investigation phase it will never reference. The snip boundary marks the model switch point and compresses all prior tool results to 40-80 characters. The writing phase context shrinks by ~60%, which directly reduces Haiku input token cost. Combined with prompt caching on the static system prompt, a typical 45-call run costs under $0.75.
+
+**Why session resume uses prompt injection, not conversation replay**
+
+When a run is interrupted (API error, budget exhaustion, network drop), the checkpoint saves the full agent state: findings, file cache, investigation log, model usage. But the LLM conversation history is gone -- Pi Agent doesn't persist it, and replaying 30+ turns would be expensive and fragile. Instead, resume injects a natural-language summary of prior findings into the goal prompt: "You previously found 7 findings across 3 categories. Here are the key ones..." The agent picks up investigation from context, not replay. This is cheaper, more robust, and avoids the "stale conversation" problem where replayed tool results no longer match disk state.
 
 ### Engineering Notes
 
@@ -141,7 +178,7 @@ serialize<T>(fn: () => Promise<T>): Promise<T> {
 
 **Deferred tool loading**
 
-23 tools is a lot of schema text to put in the system prompt. Frequently unused tools (`web_search`, `fetch_url`, `compare_versions`) have stub descriptions — enough for the agent to know they exist, not enough to waste context tokens on their full parameter lists. A `tool_search` meta-tool lets the agent discover full descriptions and schemas on demand by keyword. The agent only pays the token cost for tools it actually needs, and it self-discovers when it hits a task that needs them.
+23 tools is a lot of schema text in the system prompt. Frequently unused tools (`web_search`, `fetch_url`, `compare_versions`) have stub descriptions — enough for the agent to know they exist, not enough to waste context tokens on their full parameter lists. A `tool_search` meta-tool lets the agent discover full descriptions and schemas on demand by keyword. The agent only pays the token cost for tools it actually needs, and it self-discovers when it hits a task that needs them.
 
 **Mid-loop model mutation**
 
@@ -196,6 +233,7 @@ All verification is deterministic -- no LLM calls, no cost increase. Evidence in
 | `fetch_url` | Fetch and extract text content from a documentation URL |
 | `switch_to_fast_model` | Signal that investigation is complete, switch to cheaper model for writing |
 | `assemble_output` | Signal the agent to assemble the final deliverable from accumulated findings |
+| `tool_search` | Meta-tool: discover full schemas for deferred tools by keyword search |
 
 ## Dashboard
 
@@ -251,6 +289,9 @@ Each run writes to `output/<timestamp>/`:
 | `investigation.md` | Step-by-step log of agent reasoning and tool calls |
 | `investigation.html` | Browsable HTML investigation log with collapsible steps and inline scorecard |
 
+| `*-checkpoint.jsonl` | Session checkpoints (append-only, for `--resume`) |
+| `session-costs.jsonl` | Cross-run cost tracking (append-only) |
+
 The onboarding brief includes these sections: Project Overview, Stack & Architecture, Key Files, CMS Integration, Preview & Editing, Configuration & Environment, Local Development Setup, Architecture Scorecard, Top Risks, First Week Reading List, Questions for the Client, and Suggested Next Actions.
 
 ## CI Integration
@@ -303,23 +344,28 @@ src/
     runner.ts           Pi Agent runner -- creates Agent, hooks, post-loop output
     goalPrompts.ts      Goal-specific prompt templates
     systemPrompt.ts     Rule loader and system prompt assembler
-    retry.ts            Retry with exponential backoff for transient API errors
+    retry.ts            Per-error-type retry tiers with Retry-After, stale connection detection
     contextBoundary.ts  Prompt injection defense (boundary wrapping, pattern detection, sanitization)
     redaction.ts        Secret redaction (KEY/SECRET/TOKEN/PASSWORD patterns)
   tools/
-    piToolAdapter.ts    All 22 tools as Pi AgentTool[] with TypeBox schemas + per-tool result limits + disk spill
+    piToolAdapter.ts    All 23 tools as Pi AgentTool[] with TypeBox schemas + per-tool result limits + disk spill
     repo/               list_directory, read_file, read_files_batch
     search/             grep_pattern (ripgrep + Node.js fallback), find_files
     config/             parse_package_json, parse_next_config, parse_tsconfig, parse_env_file, check_gitignore
     dependency/         compare_versions, query_npm_versions
-    analysis/           analyze_route_structure, analyze_component_directives, analyze_env_usage, analyze_middleware, detect_app_roots, record_finding, verify_evidence
+    analysis/           analyze_route_structure, analyze_component_directives, analyze_env_usage, analyze_middleware, detect_app_roots, record_finding (with fingerprinting), verify_evidence, deduplicate_findings
     utils/              resolveAndRead (binary detection, ENOENT suggestions, path traversal guard)
     web/                web_search, fetch_url (10MB response size cap)
-  rules/                Consulting rules (markdown)
-    core.md             Shared investigation rules
+  rules/                Consulting rules (markdown), 11 files
+    core.md             Shared investigation rules + confidence calibration scale
     goal-onboarding.md  Onboarding brief requirements
-    goal-audit.md       Audit scoring criteria
+    goal-audit.md       Audit scoring criteria + weighted rubric
     goal-migration.md   Migration assessment rules
+    goal-ci-check.md    CI health check (3 categories, compact output)
+    goal-security-review.md  Security audit + 22 FP exclusions + secrets archaeology
+    goal-nextjs.md      Next.js framework health (7 categories)
+    goal-accessibility.md   WCAG 2.1 AA compliance (6 categories)
+    goal-component-map.md   Component inventory rules
     platform-sitecore.md    Sitecore-specific investigation rules
     platform-optimizely.md  Optimizely-specific investigation rules
   references/           Static knowledge base (markdown)
@@ -328,27 +374,33 @@ src/
     optimizely/         Content Graph setup, Visual Builder, SDK compatibility, antipatterns
     nextjs/             App Router migration, caching, server components, security headers
   output/
-    scorecard.ts        Scorecard computation from findings
-    brief.ts            Markdown brief renderer
+    scorecard.ts        Scorecard computation from findings (confidence-gated)
+    brief.ts            Markdown brief renderer (confidence badges, low-confidence appendix)
     json.ts             Full JSON export builder
+    ciComment.ts        Compact CI PR comment renderer (confidence-gated blocking)
     investigationHtml.ts  Static HTML investigation log with collapsible steps
+    sessionCosts.ts     Cross-run cost persistence (JSONL append)
+    sessionCheckpoint.ts  Checkpoint save/load with Set/Map serialization
   config/
     piModel.ts          Pi Model builder (env vars -> agent + fast Model<'openai-completions'>)
     model-pricing.json  Per-model token pricing for cost estimates
   types/
     state.ts            AgentState, Finding, GoalType, StackProfile
+    findings.ts         Finding, Evidence, Severity, Confidence, Fingerprint
+    checkpoint.ts       CheckpointEntry, SerializedAgentState
     output.ts           Scorecard, RunMetrics
 docs/
   spec.md               Full implementation spec
   designs/              Design documents and plans
 test/
   fixtures/             Test fixture repos (sitecore-minimal)
-  tools/                Unit tests per tool (118 tests)
-  agent/                Retry, step events (12 tests)
-  security/             Context boundary, redaction (25 tests)
-  output/               Investigation HTML, scorecard (10 tests)
-  commands/             CLI command handlers (23 tests)
-  e2e/                  End-to-end agent loop tests (10 tests)
+  tools/                Unit tests per tool
+  agent/                Retry (29 tests), system prompt, goal prompts, step events
+  security/             Context boundary, redaction
+  output/               Scorecard, brief, CI comment, session costs, checkpoints
+  commands/             CLI command handlers (analyze + compare)
+  dashboard/            Agent session, run transforms, rules route
+  e2e/                  End-to-end agent loop tests (onboarding, nextjs, accessibility)
 ```
 
 ## License

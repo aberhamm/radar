@@ -244,6 +244,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let budgetWarningHalfSent = false;
   let budgetWarning5Sent = false;
   let modelSwitched = false; // true once agent calls switch_to_fast_model
+  let snipBoundaryActive = false; // true after model switch — aggressive context compression
   const canSwitchModel = piFastModel.id !== piModel.id;
 
   /**
@@ -390,6 +391,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // Intent-based model switch: agent signals it's done investigating
     if (toolName === 'switch_to_fast_model' && !modelSwitched) {
       modelSwitched = true;
+      snipBoundaryActive = true; // Activate aggressive context compression for writing phase
+      // Clear summary cache so old entries get re-compressed at tighter limits
+      summaryCache.clear();
       if (canSwitchModel) {
         const fastId = piFastModel.id;
         switchModelInPlace();
@@ -397,7 +401,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           step: stepCount,
           action: 'model_switch',
           type: 'model_switch',
-          result: `Switched to fast model (${fastId}) for writing phase. Agent signaled investigation complete.`,
+          result: `Switched to fast model (${fastId}) for writing phase. Agent signaled investigation complete. Snip boundary active — context compressed.`,
         });
       }
     }
@@ -438,13 +442,15 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       // Force switch to fast model if agent hasn't done it yet
       if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
+        snipBoundaryActive = true;
+        summaryCache.clear();
         const fastId = piFastModel.id;
         switchModelInPlace();
         config.onStep?.({
           step: stepCount,
           action: 'model_switch',
           type: 'model_switch',
-          result: `Switched to fast model (${fastId}) — budget critical.`,
+          result: `Switched to fast model (${fastId}) — budget critical. Snip boundary active.`,
         });
       }
       agent.steer({
@@ -478,6 +484,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const MID_AGE_WINDOW = 15;
   const MID_SUMMARY_MAX = 600;
   const OLD_SUMMARY_MAX = 120;
+  // After model switch, aggressive compression — writing phase doesn't need investigation detail
+  const SNIP_MID_MAX = 80;
+  const SNIP_OLD_MAX = 40;
   const summaryCache = new Map<string, string>();
 
   function compressToolResult(text: string, maxChars: number): string {
@@ -491,6 +500,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     const tier2Start = Math.max(0, messages.length - KEEP_RECENT - MID_AGE_WINDOW);
     const tier1Start = messages.length - KEEP_RECENT;
 
+    // When snip boundary is active (post model switch), use much tighter limits
+    const effectiveMidMax = snipBoundaryActive ? SNIP_MID_MAX : MID_SUMMARY_MAX;
+    const effectiveOldMax = snipBoundaryActive ? SNIP_OLD_MAX : OLD_SUMMARY_MAX;
+
     return messages.map((msg, i) => {
       // Tier 1: recent — keep intact
       if (i >= tier1Start) return msg;
@@ -498,7 +511,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       if ((msg as { role: string }).role !== 'toolResult') return msg;
 
       const tr = msg as unknown as { role: string; toolCallId?: string; content: { type: string; text?: string }[]; [k: string]: unknown };
-      const maxChars = i >= tier2Start ? MID_SUMMARY_MAX : OLD_SUMMARY_MAX;
+      const maxChars = i >= tier2Start ? effectiveMidMax : effectiveOldMax;
 
       return {
         ...tr,

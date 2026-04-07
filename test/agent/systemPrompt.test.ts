@@ -98,6 +98,16 @@ describe('security-review goal', () => {
   it('validateRules passes for security-review with unknown platform', () => {
     expect(validateRules('security-review', 'unknown')).toEqual([]);
   });
+
+  it('includes secrets archaeology patterns', () => {
+    const content = loadRule('goal-security-review.md');
+    expect(content).toContain('Secrets Archaeology');
+    expect(content).toContain('AKIA');
+    expect(content).toContain('ghp_');
+    expect(content).toContain('xoxb-');
+    expect(content).toContain('sk-');
+    expect(content).toContain('Git History Scanning');
+  });
 });
 
 describe('nextjs goal', () => {

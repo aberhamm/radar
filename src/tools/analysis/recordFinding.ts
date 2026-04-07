@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Finding, FindingCategory, Severity, Evidence, DocRef } from '../../types/findings.js';
 import type { AgentState } from '../../types/state.js';
 import { verifyAndCorrectEvidence } from './verifyEvidence.js';
@@ -78,6 +79,19 @@ function toDocRef(obj: unknown): DocRef | null {
 }
 
 /**
+ * Compute a stable SHA-256 fingerprint for cross-run trend tracking.
+ * Uses category + first evidence file path + normalized title so the same
+ * logical finding produces the same fingerprint across runs even if
+ * the description or severity changes.
+ */
+function buildFingerprint(category: string, title: string, evidence: Evidence[]): string {
+  const normalizedTitle = title.toLowerCase().replace(/\s+/g, ' ').trim();
+  const firstFile = evidence.length > 0 ? evidence[0].filePath.replace(/\\/g, '/') : '';
+  const input = `${category}:${firstFile}:${normalizedTitle}`;
+  return createHash('sha256').update(input).digest('hex');
+}
+
+/**
  * Build a type-safe Finding from a validated object (must have passed isFindingLike).
  * Provides defaults for optional/missing fields instead of casting.
  */
@@ -98,17 +112,22 @@ function buildFinding(obj: Record<string, unknown>): Finding {
     ? Math.round(obj.confidence)
     : undefined;
 
+  const title = typeof obj.title === 'string' ? obj.title : '';
+  const description = typeof obj.description === 'string' ? obj.description : '';
+  const fingerprint = buildFingerprint(obj.category as string, title, evidence);
+
   return {
     id: obj.id as string,
     category: obj.category as FindingCategory,
     severity: obj.severity as Severity,
     ...(confidence !== undefined ? { confidence } : {}),
-    title: typeof obj.description === 'string' ? obj.title as string : '',
-    description: typeof obj.description === 'string' ? obj.description : '',
+    title,
+    description,
     evidence,
     tags,
     ...(typeof obj.investigationNote === 'string' ? { investigationNote: obj.investigationNote } : {}),
     ...(documentationRefs && documentationRefs.length > 0 ? { documentationRefs } : {}),
+    fingerprint,
   };
 }
 

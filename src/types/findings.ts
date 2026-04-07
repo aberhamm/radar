@@ -54,4 +54,6 @@ export interface Finding {
   documentationRefs?: DocRef[];
   /** Notes from post-investigation verification pass */
   verificationNotes?: string[];
+  /** SHA-256 fingerprint for cross-run trend tracking: sha256(category + filePath + normalizedTitle) */
+  fingerprint?: string;
 }
