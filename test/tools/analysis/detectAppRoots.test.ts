@@ -80,4 +80,78 @@ describe('detectAppRoots', () => {
 
     rmSync(tmpTurbo, { recursive: true, force: true });
   });
+
+  it('detects config-based frameworks (Svelte)', async () => {
+    const tmp = path.join(tmpdir(), `svelte-test-${Date.now()}`);
+    mkdirSync(tmp, { recursive: true });
+    writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({
+      dependencies: { svelte: '4.2.0' },
+    }));
+    writeFileSync(path.join(tmp, 'svelte.config.js'), 'export default {};');
+
+    const result = await detectAppRoots(tmp, {});
+    expect(result.roots[0].type).toBe('svelte');
+    expect(result.roots[0].framework).toBe('svelte');
+    expect(result.roots[0].frameworkVersion).toBe('4.2.0');
+
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('detects non-JS ecosystem roots (Go)', async () => {
+    const tmp = path.join(tmpdir(), `go-test-${Date.now()}`);
+    mkdirSync(tmp, { recursive: true });
+    writeFileSync(path.join(tmp, 'go.mod'), 'module example.com/app\n\ngo 1.21\n');
+
+    const result = await detectAppRoots(tmp, {});
+    expect(result.roots.length).toBe(1);
+    expect(result.roots[0].type).toBe('go');
+    expect(result.roots[0].hasPackageJson).toBe(false);
+    expect(result.roots[0].framework).toBe('go');
+
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('extracts framework version from deps', async () => {
+    const tmp = path.join(tmpdir(), `version-test-${Date.now()}`);
+    mkdirSync(tmp, { recursive: true });
+    writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({
+      dependencies: { next: '^14.2.3', react: '18.2.0' },
+    }));
+
+    const result = await detectAppRoots(tmp, {});
+    expect(result.roots[0].type).toBe('nextjs');
+    expect(result.roots[0].frameworkVersion).toBe('^14.2.3');
+
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('detects plugins (Prisma, Tailwind, GraphQL)', async () => {
+    const tmp = path.join(tmpdir(), `plugins-test-${Date.now()}`);
+    mkdirSync(tmp, { recursive: true });
+    writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({
+      dependencies: { next: '14.0.0', react: '18.0.0', '@prisma/client': '5.0.0', graphql: '16.0.0' },
+      devDependencies: { tailwindcss: '3.4.0', prisma: '5.0.0' },
+    }));
+
+    const result = await detectAppRoots(tmp, {});
+    expect(result.roots[0].plugins).toBeDefined();
+    expect(result.roots[0].plugins).toContain('prisma');
+    expect(result.roots[0].plugins).toContain('tailwind');
+    expect(result.roots[0].plugins).toContain('graphql');
+
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('detects .NET projects via .csproj', async () => {
+    const tmp = path.join(tmpdir(), `dotnet-test-${Date.now()}`);
+    mkdirSync(tmp, { recursive: true });
+    writeFileSync(path.join(tmp, 'MyApp.csproj'), '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>');
+
+    const result = await detectAppRoots(tmp, {});
+    expect(result.roots.length).toBe(1);
+    expect(result.roots[0].type).toBe('dotnet');
+    expect(result.roots[0].hasPackageJson).toBe(false);
+
+    rmSync(tmp, { recursive: true, force: true });
+  });
 });

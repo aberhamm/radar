@@ -323,13 +323,55 @@ export interface DetectAppRootsInput {
 
 export interface AppRoot {
   path: string;           // relative path from repo root
-  type: 'nextjs' | 'react' | 'node' | 'unknown';
+  type: 'nextjs' | 'react' | 'remix' | 'svelte' | 'nuxt' | 'astro' | 'angular' | 'vue'
+      | 'ruby' | 'go' | 'python' | 'rust' | 'php' | 'dotnet' | 'node' | 'unknown';
   hasPackageJson: boolean;
   framework?: string;
+  frameworkVersion?: string;  // version string from deps (e.g. "^14.2.3")
+  plugins?: string[];         // detected ecosystem plugins (prisma, tailwind, etc.)
 }
 
 export interface DetectAppRootsOutput {
   roots: AppRoot[];
   isMonorepo: boolean;
   monorepoTool?: string;
+}
+
+// --- Detect Scope Drift ---
+
+export interface DetectScopeDriftInput {
+  repoPath?: string;  // subdirectory to scan (default: repo root)
+}
+
+export interface DriftClaim {
+  source: string;        // e.g. "README.md", "package.json description"
+  claim: string;         // extracted claim text
+  verification: 'verified' | 'unverified' | 'contradicted';
+  evidence?: string;     // what was actually found
+  filePath?: string;     // file that contradicts or verifies
+}
+
+export interface DetectScopeDriftOutput {
+  claims: DriftClaim[];
+  summary: string;
+}
+
+// --- Get Specialist Prompts ---
+
+export interface GetSpecialistPromptsInput {
+  roots: AppRoot[];
+  isMonorepo: boolean;
+  monorepoTool?: string;
+}
+
+export interface SpecialistPrompt {
+  id: string;            // e.g. "nextjs", "graphql"
+  name: string;          // display name
+  relevance: 'high' | 'medium' | 'low';
+  checklist: string;     // markdown content from the specialist file
+}
+
+export interface GetSpecialistPromptsOutput {
+  specialists: SpecialistPrompt[];
+  summary: string;
 }

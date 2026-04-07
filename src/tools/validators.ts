@@ -123,6 +123,13 @@ export const VALIDATORS: Record<string, ToolValidator> = {
 
   detect_app_roots: () => null,
 
+  detect_scope_drift: () => null,
+
+  get_specialist_prompts: (p) => {
+    if (!Array.isArray(p.roots)) return 'roots must be an array';
+    return null;
+  },
+
   record_finding: (p) => {
     const finding = p.finding as Record<string, unknown> | undefined;
     if (!finding || typeof finding !== 'object') {

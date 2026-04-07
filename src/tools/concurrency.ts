@@ -39,6 +39,8 @@ const READ_ONLY_TOOLS = new Set([
   'analyze_env_usage',
   'analyze_middleware',
   'detect_app_roots',
+  'detect_scope_drift',
+  'get_specialist_prompts',
   'web_search',
   'fetch_url',
   'tool_search',

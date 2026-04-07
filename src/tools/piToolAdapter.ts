@@ -42,6 +42,8 @@ import { recordFinding } from './analysis/recordFinding.js';
 import { webSearch } from './web/webSearch.js';
 import { fetchUrl } from './web/fetchUrl.js';
 import { detectAppRoots } from './analysis/detectAppRoots.js';
+import { detectScopeDrift } from './analysis/detectScopeDrift.js';
+import { getSpecialistPrompts } from './analysis/getSpecialistPrompts.js';
 
 import { isReadOnly, isStateful, StatefulToolMutex } from './concurrency.js';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -574,7 +576,7 @@ export function buildPiTools(
     ),
 
     makeTool('detect_app_roots', 'Detect App Roots',
-      'Scan for multiple app entry points in a repo (monorepo detection). Finds package.json files, classifies each app by framework (Next.js, React, Node), and detects monorepo tooling (lerna, nx, turborepo, pnpm workspaces).',
+      'Scan for app entry points in a repo. Detects JS frameworks (Next.js, React, Remix, Svelte, Nuxt, Astro, Angular, Vue) via config files and deps, non-JS ecosystems (Ruby, Go, Python, Rust, PHP, .NET) via manifest files, framework versions, plugins (Prisma, Tailwind, GraphQL, Storybook), and monorepo tooling.',
       Type.Object({
         repoPath: Type.Optional(Type.String({ description: 'Subdirectory to scan (default: repo root)' })),
         maxDepth: Type.Optional(Type.Number({ description: 'Max scan depth (default 4)' })),
@@ -582,6 +584,37 @@ export function buildPiTools(
       async (_id, params) => {
         try { return ok('detect_app_roots', await detectAppRoots(repoRoot(), norm(params))); }
         catch (e) { return err('detect_app_roots', e as Error); }
+      },
+    ),
+
+    makeTool('detect_scope_drift', 'Detect Scope Drift',
+      'Cross-reference README and docs claims against actual code. Finds contradictions between what the repo documents say and what the code does (e.g., README claims TypeScript strict mode but tsconfig has strict: false).',
+      Type.Object({
+        repoPath: Type.Optional(Type.String({ description: 'Subdirectory to scan (default: repo root)' })),
+      }),
+      async (_id, params) => {
+        try { return ok('detect_scope_drift', await detectScopeDrift(repoRoot(), norm(params))); }
+        catch (e) { return err('detect_scope_drift', e as Error); }
+      },
+    ),
+
+    makeTool('get_specialist_prompts', 'Get Specialist Prompts',
+      'Given detect_app_roots output, returns targeted investigation checklists for the detected stack (Next.js, GraphQL, Prisma, Tailwind, Sitecore, Optimizely). Call this early after detect_app_roots.',
+      Type.Object({
+        roots: Type.Array(Type.Object({
+          path: Type.String(),
+          type: Type.String(),
+          hasPackageJson: Type.Boolean(),
+          framework: Type.Optional(Type.String()),
+          frameworkVersion: Type.Optional(Type.String()),
+          plugins: Type.Optional(Type.Array(Type.String())),
+        })),
+        isMonorepo: Type.Boolean(),
+        monorepoTool: Type.Optional(Type.String()),
+      }),
+      async (_id, params) => {
+        try { return ok('get_specialist_prompts', await getSpecialistPrompts(norm(params))); }
+        catch (e) { return err('get_specialist_prompts', e as Error); }
       },
     ),
 

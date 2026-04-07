@@ -29,10 +29,10 @@ function makeState(): AgentState {
 }
 
 describe('buildPiTools', () => {
-  it('returns 23 tools (19 + web_search + switch_to_fast_model + assemble_output + tool_search)', () => {
+  it('returns 25 tools (21 + web_search + switch_to_fast_model + assemble_output + tool_search)', () => {
     const state = makeState();
     const { tools } = buildPiTools(state);
-    expect(tools.length).toBe(23);
+    expect(tools.length).toBe(25);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_directory');
     expect(names).toContain('record_finding');

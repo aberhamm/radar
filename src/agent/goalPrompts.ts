@@ -139,6 +139,9 @@ export function buildGoalPrompt(
   const preamble = `${goalPrompt(localPath)}
 
 Begin by understanding the project structure and stack.
+Call detect_app_roots early to identify frameworks, versions, and plugins.
+Then call get_specialist_prompts with those results to get targeted investigation checklists for the detected stack.
+Follow the specialist checklists alongside your standard consulting rules — they ensure deep, framework-specific coverage.
 Then investigate according to your consulting rules — check every category.
 Record findings as you go using the record_finding tool. Call it once per finding — you can pass multiple findings in one call if needed, but do not batch all findings at the end.
 
