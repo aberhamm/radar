@@ -10,6 +10,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { IdleView } from '@/components/IdleView';
 import { CompleteView } from '@/components/CompleteView';
+import { CompareView, type CompareData } from '@/components/CompareView';
 import { AnalysisView } from '@/components/AnalysisView';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
@@ -29,7 +30,7 @@ const SAMPLE_HISTORY_ITEM = {
 
 // ─── Types ──────────────────────────────────────────────────────
 
-type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying';
+type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing';
 
 interface CurrentRun {
   repoPath: string;
@@ -89,6 +90,10 @@ export default function DashboardPage() {
   });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newRunModal, setNewRunModal] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSelections, setCompareSelections] = useState<string[]>([]);
+  const [compareData, setCompareData] = useState<CompareData | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
 
   // Prepend sample run to history
@@ -139,12 +144,12 @@ export default function DashboardPage() {
       });
   }, []);
 
-  const handleStart = useCallback((repoPath: string, goal: string) => {
-    const repoName = repoPath.split(/[/\\]/).pop() ?? repoPath;
+  const handleStart = useCallback((repoPath: string, goal: string, repoName?: string) => {
+    const resolvedName = repoName ?? (repoPath.split(/[/\\]/).pop() || repoPath);
     setLastRepoPath(repoPath);
     setCurrentRun({
       repoPath,
-      repoName,
+      repoName: resolvedName,
       goal,
       startedAt: new Date(),
       events: [],
@@ -277,9 +282,58 @@ export default function DashboardPage() {
 
   const handleNewRun = useCallback(() => {
     setNewRunModal(true);
+    setCompareMode(false);
+    setCompareSelections([]);
+  }, []);
+
+  const handleToggleCompareMode = useCallback(() => {
+    setCompareMode(prev => !prev);
+    setCompareSelections([]);
+  }, []);
+
+  const handleCompareSelect = useCallback((id: string) => {
+    setCompareSelections(prev => {
+      if (prev.includes(id)) return prev.filter(s => s !== id);
+      if (prev.length >= 2) return prev;
+      return [...prev, id];
+    });
+  }, []);
+
+  const handleCompare = useCallback(async () => {
+    if (compareSelections.length !== 2) return;
+    setCompareLoading(true);
+    try {
+      const res = await fetch(`/api/compare?a=${encodeURIComponent(compareSelections[0])}&b=${encodeURIComponent(compareSelections[1])}`);
+      const data = await res.json();
+      if (!res.ok) {
+        console.error('[compare] API error:', data.error);
+        setCompareLoading(false);
+        return;
+      }
+      setCompareData(data as CompareData);
+      setStatus('comparing');
+      setCompareMode(false);
+    } catch (err) {
+      console.error('[compare] Fetch error:', err);
+    } finally {
+      setCompareLoading(false);
+    }
+  }, [compareSelections]);
+
+  const handleExitCompare = useCallback(() => {
+    setStatus('idle');
+    setCompareData(null);
+    setCompareSelections([]);
+    setCompareMode(false);
   }, []);
 
   const handleSelectHistory = useCallback(async (id: string) => {
+    // In compare mode, delegate to compare select
+    if (compareMode) {
+      handleCompareSelect(id);
+      return;
+    }
+
     // Sample run uses built-in data, no fetch needed
     if (id === SAMPLE_RUN_ID) {
       setReplayData(null);
@@ -337,7 +391,7 @@ export default function DashboardPage() {
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [compareMode, handleCompareSelect]);
 
   const handleViewReport = useCallback(() => {
     setStatus('complete');
@@ -366,8 +420,12 @@ export default function DashboardPage() {
       { id: 'new-run', label: 'New Analysis', shortcut: '\u2318N', action: handleNewRun },
       { id: 'toggle-sidebar', label: 'Toggle Sidebar', action: () => setSidebarOpen((p) => !p) },
     ];
+    cmds.push({ id: 'compare', label: 'Compare Runs', action: handleToggleCompareMode });
     if (isRunningOrPaused) {
       cmds.push({ id: 'stop', label: 'Stop Run', shortcut: '\u2318.', action: handleStop });
+    }
+    if (status === 'comparing') {
+      cmds.push({ id: 'exit-compare', label: 'Exit Compare', action: handleExitCompare });
     }
     cmds.push(
       { id: 'theme-light', label: 'Theme: Light', action: () => setThemeMode('light') },
@@ -382,7 +440,7 @@ export default function DashboardPage() {
       });
     }
     return cmds;
-  }, [isRunningOrPaused, fullHistory, handleNewRun, handleStop, handleSelectHistory, setThemeMode]);
+  }, [isRunningOrPaused, status, fullHistory, handleNewRun, handleStop, handleSelectHistory, handleToggleCompareMode, handleExitCompare, setThemeMode]);
 
   useKeyboardShortcuts({
     onNewRun: handleNewRun,
@@ -471,7 +529,18 @@ export default function DashboardPage() {
       </header>
 
       {/* Context bar: shows run info (hidden when idle) */}
-      {status !== 'idle' && currentRun?.repoName && (
+      {status === 'comparing' && compareData && (
+        <ContextBar
+          status="comparing"
+          repoName=""
+          onStop={handleExitCompare}
+          onNewRun={handleNewRun}
+          compareRunNames={[compareData.runA.repoName, compareData.runB.repoName]}
+          compareSummary={compareData.diff.summary}
+          onExitCompare={handleExitCompare}
+        />
+      )}
+      {status !== 'idle' && status !== 'comparing' && currentRun?.repoName && (
         <ContextBar
           status={
             status === 'replaying'
@@ -501,6 +570,11 @@ export default function DashboardPage() {
           onSelectHistory={handleSelectHistory}
           onNewRun={handleNewRun}
           onClose={() => setSidebarOpen(false)}
+          compareMode={compareMode}
+          compareSelections={compareSelections}
+          onToggleCompare={handleToggleCompareMode}
+          onCompareSelect={handleCompareSelect}
+          onCompare={handleCompare}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -534,6 +608,12 @@ export default function DashboardPage() {
           {status === 'replaying' && !isSampleReplay && replayData && (
             <div key="replaying" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <AnalysisView runData={transformRunData(replayData.events, replayData.result)} />
+            </div>
+          )}
+
+          {status === 'comparing' && compareData && (
+            <div key="comparing" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              <CompareView data={compareData} />
             </div>
           )}
 
@@ -591,14 +671,16 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {historyLoading && (
+      {(historyLoading || compareLoading) && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-canvas/60 backdrop-blur-sm">
           <div className="flex items-center gap-3 bg-surface rounded-lg border border-separator shadow-sm px-5 py-3">
             <div
               className="w-4 h-4 border-2 border-tint border-t-transparent rounded-full"
               style={{ animation: 'spin 0.6s linear infinite' }}
             />
-            <span className="text-sm text-secondary-label font-medium">Loading run...</span>
+            <span className="text-sm text-secondary-label font-medium">
+              {compareLoading ? 'Comparing runs...' : 'Loading run...'}
+            </span>
           </div>
         </div>
       )}

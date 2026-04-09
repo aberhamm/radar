@@ -40,7 +40,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
   // Pick state source: live events or animation replay
   const {
     phase, turns, typingText, activeTurnIndex, coveredTopics,
-    examinedFiles, findings, scoreVisible, progressPercent,
+    examinedFiles, findings, scoreVisible, progressPercent, pendingActions,
   } = isLive && liveState ? liveState : animState;
 
   // Findings for score panel: live findings grow over time, replay uses full set
@@ -53,6 +53,25 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
   const filesScrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const isAutoScrolling = useRef(false);
+
+  // Run timer
+  const [elapsed, setElapsed] = useState(0);
+  const timerStart = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isLive || phase === 'idle') {
+      timerStart.current = null;
+      return;
+    }
+    if (!timerStart.current) timerStart.current = Date.now();
+    if (phase === 'done') {
+      setElapsed(Math.floor((Date.now() - timerStart.current) / 1000));
+      return;
+    }
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - timerStart.current!) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isLive, phase]);
 
   // Auto-scroll the files list when new files appear
   useEffect(() => {
@@ -140,6 +159,11 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 <span className="text-[11px] font-semibold text-label">
                   {phase === 'idle' ? (isLive ? 'Starting' : 'Ready') : phase === 'analyzing' ? 'Analyzing' : phase === 'switching' ? 'Switching' : phase === 'recording' ? 'Recording' : phase === 'assembling' ? 'Assembling' : 'Complete'}
                 </span>
+                {isLive && elapsed > 0 && (
+                  <span className="text-[10px] font-mono text-tertiary-label">
+                    {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+                  </span>
+                )}
               </div>
 
               {/* Unified progress bar */}
@@ -219,7 +243,13 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                       style={{ animation: 'spin 0.6s linear infinite' }}
                     />
                     <div>
-                      <div className="text-sm font-medium text-secondary-label">Agent is starting up</div>
+                      <div className="text-sm font-medium text-secondary-label">
+                        {pendingActions.length > 0
+                          ? pendingActions.length === 1
+                            ? pendingActions[0].replace(/_/g, ' ')
+                            : `Running ${pendingActions.length} tools in parallel`
+                          : 'Agent is starting up'}
+                      </div>
                       <div className="text-xs text-tertiary-label mt-0.5">Events will stream in real-time</div>
                     </div>
                   </div>
@@ -281,18 +311,27 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
 
                 {/* Thinking indicator: shows between turns when no typing text yet */}
                 {isLive && !typingText && turns.length > 0 && phase !== 'done' && (
-                  <div className="py-2 flex items-center gap-1" style={{ animation: 'fadeIn 0.4s ease 0.6s both' }}>
-                    {[0, 1, 2].map(i => (
-                      <div
-                        key={i}
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{
-                          background: accentColor,
-                          opacity: 0.4,
-                          animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
-                        }}
-                      />
-                    ))}
+                  <div className="py-2 flex items-center gap-2" style={{ animation: 'fadeIn 0.4s ease 0.6s both' }}>
+                    <div className="flex items-center gap-1">
+                      {[0, 1, 2].map(i => (
+                        <div
+                          key={i}
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{
+                            background: accentColor,
+                            opacity: 0.4,
+                            animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    {pendingActions.length > 0 && (
+                      <span className="text-[11px] text-tertiary-label" style={{ animation: 'fadeIn 0.2s ease both' }}>
+                        {pendingActions.length === 1
+                          ? pendingActions[0].replace(/_/g, ' ')
+                          : `${pendingActions.length} tools in parallel`}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -381,7 +420,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                       <div
                         key={`${fi}-${file}`}
                         title={file}
-                        className="text-[9px] font-mono text-secondary-label bg-elevated px-1.5 py-0.5 rounded truncate"
+                        className="text-[9px] font-mono text-secondary-label bg-elevated px-1.5 py-1 rounded truncate leading-tight"
                         style={{ animation: 'chip-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                       >
                         {file}

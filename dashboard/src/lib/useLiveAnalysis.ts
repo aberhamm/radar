@@ -16,6 +16,8 @@ export interface LiveAnalysisState {
   findings: Finding[];
   scoreVisible: boolean;
   progressPercent: number;
+  /** Tool names currently executing (tool_start received, tool_call not yet) */
+  pendingActions: string[];
 }
 
 /**
@@ -124,6 +126,7 @@ export function useLiveAnalysis(
           if (args.filePath) files = [args.filePath];
           if (args.pattern) detail = args.pattern;
         } catch { /* parse error */ }
+        files = files.filter(f => f && f !== '.');
 
         const existing = currentActivities.find(a => a.label === ev.action);
         if (existing) {
@@ -151,6 +154,7 @@ export function useLiveAnalysis(
           if (args.pattern) detail = args.pattern;
           if (args.packages) detail = Object.keys(args.packages).join(', ');
         } catch { /* parse error */ }
+        files = files.filter(f => f && f !== '.');
 
         const existing = currentActivities.find(a => a.label === ev.action);
         if (existing) {
@@ -210,6 +214,11 @@ export function useLiveAnalysis(
 
     const scoreVisible = phase === 'done' && findings.length > 0;
 
+    // Collect currently-executing tool names (pending = tool_start without tool_call yet)
+    const pendingActions = currentActivities
+      .filter(a => a.pending)
+      .map(a => a.label);
+
     return {
       phase,
       turns,
@@ -220,6 +229,7 @@ export function useLiveAnalysis(
       findings,
       scoreVisible,
       progressPercent,
+      pendingActions,
     };
   }, [events, runStatus, toolCalls, budget]);
 }

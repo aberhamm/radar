@@ -9,65 +9,67 @@ No hardcoded pipeline. The LLM agent decides what to investigate and in what ord
 ## System Diagram
 
 ```
-                         ┌─────────────────┐
-                         │   CLI (index.ts) │
-                         │   Commander.js   │
-                         └────────┬────────┘
-                                  │
-                    ┌─────────────┼─────────────┐
-                    │             │             │
-               ┌────┴────┐  ┌────┴────┐  ┌────┴────┐
-               │ analyze │  │ compare │  │  diff   │
-               └────┬────┘  └────┬────┘  └─────────┘
-                    │             │
-                    ▼             ▼
-           ┌────────────────────────────┐
-           │     Agent Runner           │
-           │  (src/agent/runner.ts)     │
-           │                            │
-           │  Pi Agent loop:            │
-           │   observe → reason → act   │
-           │                            │
-           │  ┌──────────────────────┐  │
-           │  │ System Prompt        │  │
-           │  │  (rules/*.md)        │  │
-           │  │  (references/*.md)   │  │
-           │  └──────────────────────┘  │
-           │                            │
-           │  ┌──────────────────────┐  │
-           │  │ 23 AgentTools        │  │
-           │  │  repo/search/config  │  │
-           │  │  dependency/analysis │  │
-           │  │  web/meta            │  │
-           │  └──────────────────────┘  │
-           │                            │
-           │  ┌──────────────────────┐  │
-           │  │ AgentState           │  │
-           │  │  findings, fileCache │  │
-           │  │  investigationLog    │  │
-           │  │  modelUsage          │  │
-           │  └──────────────────────┘  │
-           └────────────┬───────────────┘
-                        │
-           ┌────────────┼────────────┐
-           │            │            │
-      ┌────┴────┐  ┌────┴────┐  ┌───┴───┐
-      │Scorecard│  │  Brief  │  │  JSON │
-      │  .json  │  │  .md    │  │Export │
-      └─────────┘  └─────────┘  └───┬───┘
-                                    │
-                         ┌──────────┴──────────┐
-                         │  CI Orchestrator    │
-                         │  (src/ci/)          │
-                         │                     │
-                         │  PR comment         │
-                         │  Annotations        │
-                         │  SARIF upload       │
-                         │  Labels             │
-                         │  Artifact upload    │
-                         │  Webhook            │
-                         │  Quality gate       │
-                         └─────────────────────┘
+  ┌─────────────────┐                ┌────────────────────────┐
+  │   CLI (index.ts) │                │  Dashboard (Next.js)   │
+  │   Commander.js   │                │  dashboard/            │
+  └────────┬────────┘                └───────────┬────────────┘
+           │                                     │
+  ┌────────┼────────┐            ┌───────────────┼───────────────┐
+  │        │        │            │               │               │
+┌─┴──────┐┌┴──────┐┌┴─────┐  ┌──┴─────┐  ┌──────┴─────┐  ┌─────┴──────┐
+│analyze ││compare││ diff │  │POST    │  │GET /api/   │  │GET /api/   │
+│        ││       ││      │  │/api/run│  │events (SSE)│  │compare     │
+└───┬────┘└───┬───┘└──────┘  └───┬────┘  └──────┬─────┘  └────────────┘
+    │         │                  │               │
+    └─────────┼──────────────────┘               │
+              ▼                                  │
+     ┌────────────────────────────┐              │
+     │     Agent Runner           │◄─────────────┘
+     │  (src/agent/runner.ts)     │    SSE streams events
+     │                            │    back to browser
+     │  Pi Agent loop:            │
+     │   observe → reason → act   │
+     │                            │
+     │  ┌──────────────────────┐  │
+     │  │ System Prompt        │  │
+     │  │  (rules/*.md)        │  │
+     │  │  (references/*.md)   │  │
+     │  └──────────────────────┘  │
+     │                            │
+     │  ┌──────────────────────┐  │
+     │  │ 23 AgentTools        │  │
+     │  │  repo/search/config  │  │
+     │  │  dependency/analysis │  │
+     │  │  web/meta            │  │
+     │  └──────────────────────┘  │
+     │                            │
+     │  ┌──────────────────────┐  │
+     │  │ AgentState           │  │
+     │  │  findings, fileCache │  │
+     │  │  investigationLog    │  │
+     │  │  modelUsage          │  │
+     │  └──────────────────────┘  │
+     └────────────┬───────────────┘
+                  │
+     ┌────────────┼────────────┐
+     │            │            │
+┌────┴────┐  ┌────┴────┐  ┌───┴───┐
+│Scorecard│  │  Brief  │  │  JSON │
+│  .json  │  │  .md    │  │Export │
+└─────────┘  └─────────┘  └───┬───┘
+                               │
+                    ┌──────────┴──────────┐
+                    │  CI Orchestrator    │
+                    │  (src/ci/)          │
+                    │                     │
+                    │  PR comment         │
+                    │  Annotations        │
+                    │  SARIF upload       │
+                    │  Labels             │
+                    │  Artifact upload    │
+                    │  Webhook            │
+                    │  Quality gate       │
+                    └─────────────────────┘
 ```
 
 ## Component Map
@@ -143,9 +145,57 @@ CI platform integration. Auto-detects environment, runs post-analysis.
 | `sessionCosts.ts` | Cross-run cost persistence (JSONL append) |
 | `sessionCheckpoint.ts` | Checkpoint save/load with Set/Map serialization |
 
+### Dashboard (`dashboard/`) — Optional
+
+Web UI for running analyses, viewing results, and comparing runs. Built with Next.js (App Router). Not required — the CLI is the primary interface. The agent runner is loaded at runtime via `tsx` to bypass webpack (the agent source tree is too heavy for bundling).
+
+#### API Routes
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/run` | POST | Starts an analysis. Loads `src/agent/runner.ts` via tsx, runs async, streams events via SSE |
+| `/api/events` | GET | SSE endpoint. Replays accumulated events on reconnect, then streams new ones |
+| `/api/session` | GET | Returns session state (status, history, current run, result) |
+| `/api/session` | DELETE | Aborts current run, closes SSE stream, resets session |
+| `/api/clone` | POST | Shallow-clones a GitHub repo to `.repos/` (or pulls if cached) |
+| `/api/compare` | GET | Diffs two completed runs by fingerprint (new/resolved/persistent findings) |
+| `/api/history/[id]` | GET | Loads a specific historical run with events and result |
+| `/api/extend-budget` | POST | Resolves the budget-pause promise (extend or wrap up) |
+| `/api/rules` | GET | Returns available rules for the UI |
+
+#### Key UI Components
+
+| Component | Purpose |
+|-----------|---------|
+| `IdleView` | Repo input form (local path or GitHub URL), goal selector |
+| `AnalysisView` | Live tool-call stream, findings counter, phase indicator |
+| `CompleteView` | Scorecard, brief markdown, findings list, export options |
+| `CompareView` | Side-by-side run comparison with finding diff |
+| `Sidebar` | Run history, compare mode selection |
+| `ContextBar` | Status bar with budget controls, run info |
+| `CommandPalette` | Keyboard-driven command palette (Cmd+K) |
+
+#### Session & Persistence
+
+- **In-memory session** via `globalThis.__agentSession` (survives Next.js hot reloads in dev)
+- **Disk persistence** to `output/runs/*.json` — completed runs saved as JSON, in-progress runs checkpointed every 10 events
+- **Lazy event loading** — history list loads metadata only; events loaded on demand from disk
+
+#### SSE Streaming Architecture
+
+The dashboard streams agent progress to the browser in real-time:
+
+1. `POST /api/run` starts the agent async and returns immediately
+2. Browser connects to `GET /api/events` (SSE)
+3. Agent runner calls `onStep()` callback for each event
+4. Callback pushes events to the SSE `ReadableStream` controller
+5. Transient events (`text_delta`, `tool_start`) are streamed but not persisted
+6. On reconnect, accumulated events are replayed before streaming new ones
+7. Budget exhaustion pauses the agent via a `Promise` — UI shows extend/wrap-up controls
+
 ## Data Flow
 
-### Investigation Phase
+### Investigation Phase (CLI)
 
 1. CLI parses args, resolves repo path (local or clone)
 2. `buildSystemPrompt()` loads rules + references for the goal/platform
@@ -156,14 +206,24 @@ CI platform integration. Auto-detects environment, runs post-analysis.
 7. Snip boundary activates: context compression drops to 40-80 chars
 8. `FAST_MODEL` (Haiku) records findings and calls `assemble_output`
 
+### Investigation Phase (Dashboard)
+
+1. User submits repo path or GitHub URL via `IdleView`
+2. For GitHub URLs: `POST /api/clone` shallow-clones to `.repos/`
+3. `POST /api/run` claims the session, loads `runner.ts` via tsx, starts agent async
+4. Browser opens `GET /api/events` SSE connection
+5. Each tool call, text delta, and finding fires `onStep()` → SSE stream → browser
+6. `useLiveAnalysis()` hook derives UI state (phases, findings, progress) from events
+7. Budget exhaustion pauses the agent; UI shows extend/wrap-up; `POST /api/extend-budget` resolves
+8. On completion, run is persisted to `output/runs/` and added to session history
+
 ### Post-Analysis
 
 1. Evidence verification pass (deterministic, no LLM cost)
 2. Scorecard computation from verified findings
 3. Brief, JSON export, SARIF, HTML log written to disk
-4. `detectCiPlatform()` checks environment variables
-5. `orchestrateCi()` runs: artifact download, diff, comment, annotations, labels, SARIF upload, artifact upload, webhook, quality gate
-6. Exit code from quality gate evaluation (0 = pass, 1 = fail, 2 = error)
+4. **CLI path:** `detectCiPlatform()` checks environment variables; `orchestrateCi()` runs: artifact download, diff, comment, annotations, labels, SARIF upload, artifact upload, webhook, quality gate; exit code from quality gate evaluation (0 = pass, 1 = fail, 2 = error)
+5. **Dashboard path:** `CompleteView` renders scorecard, brief, and findings; users can export, compare runs, or start a new analysis
 
 ## Key Design Decisions
 
@@ -191,3 +251,4 @@ Native `fetch()` everywhere, no CLI dependencies. Each platform adapter implemen
 | Commander | CLI parsing | Standard, zero-config |
 | Turndown | HTML-to-Markdown conversion | Preserves structure for `fetch_url` results |
 | Portkey AI Gateway | Routes to Amazon Bedrock | Provider-agnostic routing, no AWS SDK needed |
+| Next.js (App Router) | Dashboard web UI | SSE streaming, API routes, optional — not required for CLI usage |

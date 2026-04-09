@@ -2,7 +2,7 @@
 
 import type { Scorecard } from '@/lib/agentSession';
 
-type ContextStatus = 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying';
+type ContextStatus = 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing';
 
 interface ContextBarProps {
   status: ContextStatus;
@@ -15,23 +15,33 @@ interface ContextBarProps {
   onNewRun: () => void;
   onViewReport?: () => void;
   onBudgetDecision?: (extend: boolean) => void;
+  compareRunNames?: [string, string];
+  compareSummary?: string;
+  onExitCompare?: () => void;
 }
 
 function scoreColor(score: 'red' | 'yellow' | 'green'): string {
   return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
 }
 
-export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport, onBudgetDecision }: ContextBarProps) {
+export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport, onBudgetDecision, compareRunNames, compareSummary, onExitCompare }: ContextBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
   const isReplaying = status === 'replaying';
+  const isComparing = status === 'comparing';
 
   return (
     <div className="bg-surface border-b border-separator px-4 h-10 flex items-center gap-3 shrink-0 animate-slide-down">
-      {/* Repo name — always first */}
-      <span className="bg-elevated rounded-md px-2.5 py-0.5 text-xs font-mono font-medium text-label">
-        {repoName}
-      </span>
+      {/* Repo name — always first (compare mode shows both names) */}
+      {isComparing && compareRunNames ? (
+        <span className="bg-elevated rounded-md px-2.5 py-0.5 text-xs font-mono font-medium text-label">
+          {compareRunNames[0]} <span className="text-tertiary-label">vs</span> {compareRunNames[1]}
+        </span>
+      ) : (
+        <span className="bg-elevated rounded-md px-2.5 py-0.5 text-xs font-mono font-medium text-label">
+          {repoName}
+        </span>
+      )}
 
       {/* Running: budget progress is the headline */}
       {isRunning && budget && toolCalls !== undefined && (
@@ -122,6 +132,24 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
         >
           New Run
         </button>
+      )}
+
+      {isComparing && (
+        <div className="flex items-center gap-2">
+          {compareSummary && (
+            <span className="bg-[rgb(0_113_227/0.08)] rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
+              {compareSummary}
+            </span>
+          )}
+          {onExitCompare && (
+            <button
+              onClick={onExitCompare}
+              className="bg-elevated text-label rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
+            >
+              Exit Compare
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

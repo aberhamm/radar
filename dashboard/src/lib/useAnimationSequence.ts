@@ -15,6 +15,7 @@ export interface AnimationState {
   findings: Finding[];
   scoreVisible: boolean;
   progressPercent: number;
+  pendingActions: string[];
 }
 
 export interface AnimationActions {
@@ -215,6 +216,7 @@ export function useAnimationSequence(
   return {
     phase, turns, typingText, activeTurnIndex, coveredTopics,
     examinedFiles, findings, scoreVisible, progressPercent,
+    pendingActions: [] as string[],
     run, reset,
   };
 }

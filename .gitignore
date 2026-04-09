@@ -28,6 +28,9 @@ coverage/
 # Logs
 *.log
 
+# Cloned repos
+.repos/
+
 # Agent output
 /output/
 dashboard/output/*

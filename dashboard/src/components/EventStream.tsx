@@ -289,9 +289,9 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
       {/* Tool calls */}
       {turn.toolCalls.length > 0 && (
         <div className="flex flex-wrap gap-1.5 ml-7">
-          {turn.toolCalls.map(tc => (
+          {turn.toolCalls.map((tc, i) => (
             <ToolCallChip
-              key={`${tc.step}-${tc.action}`}
+              key={`${tc.step}-${tc.action}-${i}`}
               event={tc}
               isExpanded={expandedCalls.has(tc.step)}
               onToggle={() => toggleCall(tc.step)}

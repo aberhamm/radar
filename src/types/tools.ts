@@ -248,12 +248,16 @@ export interface AnalyzeEnvUsageOutput {
 export interface CloneRepoInput {
   url: string;
   branch?: string;
+  /** If true, fetch latest from remote for cached repos */
+  pull?: boolean;
 }
 
 export interface CloneRepoOutput {
   localPath: string;
   defaultBranch: string;
   lastCommit: { hash: string; date: string };
+  /** True if the repo was already cached locally */
+  cached: boolean;
 }
 
 // --- Dependency tools (npm query) ---

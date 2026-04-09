@@ -45,7 +45,9 @@ export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: Bu
           Used {toolCalls} of {budget} tool calls.
         </p>
         <p className="text-sm text-secondary-label mb-6">
-          {findings} findings recorded so far.
+          {findings > 0
+            ? `${findings} findings recorded so far.`
+            : 'Findings are recorded after analysis completes.'}
         </p>
 
         {error && (

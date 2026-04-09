@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   // Claim session immediately (before any await) to close the TOCTOU race window
   session.status = 'running';
 
-  let body: { repoPath?: string; goal?: string };
+  let body: { repoPath?: string; goal?: string; repoSource?: string; repoUrl?: string };
   try {
     body = await req.json();
   } catch {
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { repoPath, goal = 'onboarding' } = body;
+  const { repoPath, goal = 'onboarding', repoSource, repoUrl } = body;
 
   if (!repoPath) {
     session.status = 'idle';
@@ -90,7 +90,8 @@ export async function POST(req: NextRequest) {
       const result = await runAgent({
         repoPath: resolvedRepoPath,
         repoName,
-        repoSource: 'local',
+        repoSource: (repoSource as 'github' | 'local') ?? 'local',
+        ...(repoUrl ? { repoUrl } : {}),
         goal: goal as 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility',
         verbose: true,
         onStep: (event) => {
