@@ -160,11 +160,14 @@ export function transformRunData(
 
     if (ev.type === 'tool_call' && ev.action !== 'reasoning') {
       // Parse args to extract file paths
+      // Only treat args.path as a file for tools that actually read files;
+      // tools like list_directory, grep_pattern, find_files use path for directories.
+      const DIR_TOOLS = new Set(['list_directory', 'grep_pattern', 'find_files', 'analyze_route_structure', 'analyze_component_directives', 'analyze_middleware', 'analyze_env_usage']);
       let files: string[] = [];
       let detail = '';
       try {
         const args = ev.args ? JSON.parse(ev.args) : {};
-        if (args.path) files = [args.path];
+        if (args.path && !DIR_TOOLS.has(ev.action)) files = [args.path];
         if (args.paths) files = args.paths;
         if (args.filePath) files = [args.filePath];
         if (args.pattern) detail = args.pattern;

@@ -8,6 +8,7 @@ import { useAnimationSequence } from '@/lib/useAnimationSequence';
 import type { LiveAnalysisState } from '@/lib/useLiveAnalysis';
 import { ActivityChipGroup } from '@/components/ActivityChip';
 import { FindingCard } from '@/components/FindingCard';
+import { FileTree } from '@/components/FileTree';
 import { BudgetPausedView } from '@/components/BudgetPausedView';
 
 // ─── Props ──────────────────────────────────────────────────────
@@ -413,21 +414,10 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 {!filesCollapsed && (
                   <div
                     ref={filesScrollRef}
-                    className="px-3 py-2.5 flex flex-col space-y-0.5 h-[200px] overflow-y-auto"
+                    className="px-2 py-2 h-[200px] overflow-y-auto"
                     style={{ animation: 'expand-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                   >
-                    {examinedFiles.length > 0 ? examinedFiles.map((file, fi) => (
-                      <div
-                        key={`${fi}-${file}`}
-                        title={file}
-                        className="text-[9px] font-mono text-secondary-label bg-elevated px-1.5 py-1 rounded truncate leading-tight"
-                        style={{ animation: 'chip-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
-                      >
-                        {file}
-                      </div>
-                    )) : (
-                      <div className="text-[10px] text-quaternary-label w-full text-center py-1">&mdash;</div>
-                    )}
+                    <FileTree files={examinedFiles} />
                   </div>
                 )}
               </div>
