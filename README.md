@@ -72,6 +72,16 @@ List all registered tools and their parameters.
 npx tsx src/index.ts tools --list
 ```
 
+### `diff`
+
+Compare findings between two runs. Matches by fingerprint, falls back to SHA-256 of category+filePath+title.
+
+```
+npx tsx src/index.ts diff <run-a.json> <run-b.json>
+```
+
+Output shows New, Resolved, and Persistent findings with a summary.
+
 ### `rules`
 
 Validate that all expected consulting rule files exist for each goal/platform combination.
@@ -130,7 +140,8 @@ Output Assembler -> scorecard + brief + JSON export
 - **Session resume** -- Checkpoints are saved as JSONL every N tool calls (default 5), on error, and on budget exhaustion. `--resume <path>` hydrates prior state (findings, file cache, investigation log, model usage) and injects a natural-language summary of prior findings into the goal prompt so the agent picks up where it left off without re-investigating.
 - **Security** -- Prompt injection defense wraps all tool outputs in context boundary delimiters and sanitizes instruction-like patterns (12 patterns including "ignore previous instructions", delimiter injection, boundary escape). Secret redaction strips KEY/SECRET/TOKEN/PASSWORD patterns plus AWS access keys (AKIA/ASIA/AROA/AIDA), connection strings, Bearer tokens, and PEM private keys from tool results before they enter LLM context or logs. The security-review goal includes 22 false-positive exclusion rules and secrets archaeology with 22 known credential prefix patterns.
 - **Gateway** -- Portkey AI gateway routes to Amazon Bedrock via Pi's `openai-completions` Model with custom headers.
-- **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, full JSON export, and GitHub integration (issue creation for onboarding, PR comment posting for ci-check).
+- **CI platform adapters** -- `CiPlatformAdapter` interface with GitHub Actions and Azure DevOps implementations, auto-detected from environment variables. Handles PR comments (update-in-place via marker), file-level annotations, SARIF upload, artifact management for trend tracking, auto-labels, and quality gates. Generic fallback for non-CI environments. All API calls via `ciApiFetch<T>()` with structured `{ok, status, data?, error?}` responses.
+- **Output pipeline** -- Scorecard computation from findings, markdown brief rendering, full JSON export, SARIF 2.1.0 generation, and CI integration (orchestrated post-run via `orchestrateCi()`).
 
 ### Key Design Decisions
 
@@ -296,21 +307,64 @@ The onboarding brief includes these sections: Project Overview, Stack & Architec
 
 ## CI Integration
 
-Use `--json` to get machine-readable output on stdout:
+Radar auto-detects the CI platform from environment variables and runs the full integration automatically: PR comments, annotations, SARIF, artifact upload, labels, and quality gates.
+
+### GitHub Actions
+
+```yaml
+- uses: ./.github/actions/radar
+  with:
+    portkey-api-key: ${{ secrets.PORTKEY_API_KEY }}
+    portkey-base-url: ${{ secrets.PORTKEY_BASE_URL }}
+```
+
+Or run directly:
 
 ```bash
 npx tsx src/index.ts analyze --repo . --goal ci-check --json
 ```
 
-Exit codes:
+### Azure DevOps
+
+Set `SYSTEM_ACCESSTOKEN` in your pipeline and radar detects the Azure DevOps environment automatically.
+
+### Platform Detection
+
+| Environment | Detected via | Adapter |
+|-------------|-------------|---------|
+| GitHub Actions | `GITHUB_ACTIONS=true` | `GitHubCiAdapter` — PR comments, check run annotations, SARIF upload, artifact management, labels |
+| Azure DevOps | `TF_BUILD=True` | `AzureDevOpsCiAdapter` — PR thread comments, file-anchored annotations, pipeline artifacts |
+| Other / Local | Neither set | `GenericAdapter` — exit code + stdout only |
+
+### What happens in CI
+
+1. **Trend tracking** — Downloads previous run's findings artifact, diffs against current (New/Resolved/Persistent)
+2. **PR comment** — Scorecard table with collapsible findings by category, trend column, update-in-place via `<!-- radar-ci-comment -->` marker
+3. **Annotations** — File-level annotations on the PR (capped at 30, sorted by severity)
+4. **Labels** — Auto-labels PRs based on finding categories (e.g. `radar:security-review-needed`)
+5. **SARIF** — Uploads SARIF 2.1.0 for GitHub Code Scanning (graceful fallback on 403)
+6. **Quality gates** — Configurable via `config/quality-gates.json`. `failOn` returns exit 1, `warnOn` returns exit 0 with warning
+7. **Webhook** — Fire-and-forget POST to Slack/Teams via `WEBHOOK_URL` env var
+
+### Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| `0` | All scorecard categories are green or yellow |
-| `1` | At least one scorecard category is red |
+| `0` | All scorecard categories are green or yellow (or quality gate passes) |
+| `1` | Quality gate triggered (red score or new critical findings) |
 | `2` | Agent error (partial output may be written) |
 
-The JSON output includes status, overall score, finding count, tool call count, duration, estimated cost, per-category scores, and top risks.
+### JSON Output
+
+The `--json` flag outputs a CI-friendly summary including status, overall score, finding count, tool call count, duration, estimated cost, per-category scores, top risks, and `ciOperations` array (one entry per CI adapter operation with status and error details).
+
+### Docker
+
+A multi-stage Docker image is published to GHCR on each release:
+
+```bash
+docker run ghcr.io/aberhamm/repo-audit-delivery-agent:latest analyze --repo /repo --goal ci-check --json
+```
 
 ## Development
 
@@ -373,11 +427,24 @@ src/
     sitecore/           XM Cloud architecture, JSS compatibility, editing patterns, antipatterns
     optimizely/         Content Graph setup, Visual Builder, SDK compatibility, antipatterns
     nextjs/             App Router migration, caching, server components, security headers
+  ci/
+    adapter.ts          CiPlatformAdapter interface, factory (auto-detect GitHub/Azure/Generic), GenericAdapter
+    github.ts           GitHub Actions adapter (REST API, check run annotations, SARIF, artifacts)
+    azureDevops.ts      Azure DevOps adapter (PR threads, file-anchored annotations, pipeline artifacts)
+    orchestrator.ts     orchestrateCi() — coordinates all CI ops post-run (diff, comment, annotations, labels, SARIF, artifacts, webhook)
+    qualityGate.ts      Configurable fail/warn thresholds from config/quality-gates.json
+    webhook.ts          Fire-and-forget Slack/Teams POST with SSRF protection
+    utils.ts            ciApiFetch<T>(), maskToken(), deriveLabels(), ciLog()
+  commands/
+    analyze.ts          Main analyze command handler
+    compare.ts          Side-by-side repo comparison
+    diff.ts             radar diff — compare findings between runs via fingerprint matching
   output/
     scorecard.ts        Scorecard computation from findings (confidence-gated)
     brief.ts            Markdown brief renderer (confidence badges, low-confidence appendix)
     json.ts             Full JSON export builder
-    ciComment.ts        Compact CI PR comment renderer (confidence-gated blocking)
+    ciComment.ts        CI PR comment renderer (collapsible findings, trend column, 60K truncation)
+    sarif.ts            SARIF 2.1.0 generator (severity mapping, fingerprint support)
     investigationHtml.ts  Static HTML investigation log with collapsible steps
     sessionCosts.ts     Cross-run cost persistence (JSONL append)
     sessionCheckpoint.ts  Checkpoint save/load with Set/Map serialization
@@ -389,6 +456,8 @@ src/
     findings.ts         Finding, Evidence, Severity, Confidence, Fingerprint
     checkpoint.ts       CheckpointEntry, SerializedAgentState
     output.ts           Scorecard, RunMetrics
+config/
+  quality-gates.json    Default quality gate thresholds (failOn/warnOn)
 docs/
   spec.md               Full implementation spec
   designs/              Design documents and plans
@@ -396,9 +465,10 @@ test/
   fixtures/             Test fixture repos (sitecore-minimal)
   tools/                Unit tests per tool
   agent/                Retry (29 tests), system prompt, goal prompts, step events
+  ci/                   CI adapter, GitHub, Azure DevOps, orchestrator, quality gate, webhook tests
   security/             Context boundary, redaction
-  output/               Scorecard, brief, CI comment, session costs, checkpoints
-  commands/             CLI command handlers (analyze + compare)
+  output/               Scorecard, brief, CI comment, SARIF, session costs, checkpoints
+  commands/             CLI command handlers (analyze, compare, diff)
   dashboard/            Agent session, run transforms, rules route
   e2e/                  End-to-end agent loop tests (onboarding, nextjs, accessibility)
 ```

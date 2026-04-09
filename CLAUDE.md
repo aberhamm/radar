@@ -103,15 +103,16 @@ radar analyze --repo <path> [--goal <type>] [--platform <name>] [--budget <n>]
               [--output <dir>] [--verbose] [--json] [--export]
               [--github-output] [--pr <number>] [--dry-run]
 radar compare --repos <path1> <path2> [--goal <type>] [--budget <n>]
+radar diff <run-a.json> <run-b.json>
 radar tools [--list]
 radar rules [--validate]
 radar dashboard [--port <port>]
 ```
 
 Key flags:
-- `--json` — Compact CI summary to stdout (status, score, findings count, top risks)
+- `--json` — Compact CI summary to stdout (status, score, findings count, top risks, ciOperations)
 - `--export` — Full `FullExport` JSON to stdout (all findings, investigation log, metrics, sections)
-- `--github-output --pr <n>` — Post compact CI comment to PR (ci-check goal) or create issue (onboarding goal)
+- CI integration auto-detects platform (GitHub Actions / Azure DevOps) from env vars and runs PR comments, annotations, SARIF, labels, quality gates, and trend tracking automatically
 
 ## Testing
 

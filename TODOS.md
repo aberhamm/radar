@@ -25,7 +25,7 @@ Before each demo:
 5. **Comparison** (optional): `npx tsx src/index.ts compare tmp/sitecore-xmcloud tmp/optimizely-saas`
 6. **Verify outputs**: Check `output/` for fresh brief, scorecard, findings, investigation log
 7. **Dashboard** (if built): `pnpm dashboard` — starts Next.js UI and opens browser
-8. **GitHub hook** (if demoing): `gh auth status` then add `--github-output` flag
+8. **CI integration** (if demoing): Set `GITHUB_ACTIONS=true` + `GITHUB_TOKEN` for full CI adapter demo, or run locally with `--json` for JSON output with `ciOperations`
 
 Demo talking points: 11 findings in ~8 min, ~$0.74/run (dual-model, 37% on Haiku), 45 tool calls default, zero hardcoded pipeline, Sonnet investigates then agent calls switch_to_fast_model and Haiku writes.
 
@@ -173,12 +173,35 @@ Sourced from `github.com/garrytan/gstack` analysis. Domain knowledge, scoring ru
 | 8 | Eng | Add comment for per-call mutex isolation | Mechanical | P5 | Implicit: second buildPiTools() call gets independent mutex | Skip |
 | 9 | Eng | Add 4 missing concurrency tests | Mechanical | P1 | Serialization verification, double assemble_output, budget race, enforcement | Defer |
 
+## CI/CD Platform Integration (2026-04-09)
+
+Shipped in `7a4e093`. See `docs/designs/ci-cd-integration.md` and CEO plan `2026-04-07-ci-cd-integration.md`.
+
+- [x] **CI Platform Adapter** — `src/ci/adapter.ts` interface + factory (GitHub/Azure DevOps/Generic) + `src/ci/utils.ts` (ciApiFetch, maskToken, deriveLabels)
+- [x] **GitHub Adapter** — `src/ci/github.ts` (REST API, PR comments, check run annotations, SARIF upload, artifact management, labels)
+- [x] **Azure DevOps Adapter** — `src/ci/azureDevops.ts` (PR threads, file-anchored annotations, capabilities probe, pipeline artifacts)
+- [x] **CI Orchestrator** — `src/ci/orchestrator.ts` — coordinates all CI ops post-run with CiOperationsLog
+- [x] **SARIF Output** — `src/output/sarif.ts` (SARIF 2.1.0, severity mapping, fingerprint support)
+- [x] **Findings Diff** — `src/commands/diff.ts` (`radar diff` command, fingerprint matching + SHA-256 fallback)
+- [x] **Quality Gates** — `src/ci/qualityGate.ts` + `config/quality-gates.json` (configurable failOn/warnOn thresholds)
+- [x] **Enhanced PR Comments** — Collapsible `<details>` by category, trend column, progressive truncation at 60K chars
+- [x] **Webhook** — `src/ci/webhook.ts` (fire-and-forget Slack/Teams, 5s timeout, SSRF protection via domainBlocklist)
+- [x] **Docker Image** — `Dockerfile` multi-stage node:20-slim for GHCR
+- [x] **GitHub Action** — `.github/actions/radar/action.yml` reusable composite action
+- [x] **Wired into analyze.ts** — Replaced `githubHook.ts` with one-line `orchestrateCi()` call
+- [x] **Deleted src/output/githubHook.ts** — Replaced by native fetch() adapters
+- [x] **Tests** — 9 new test files (adapter, github, azureDevops, orchestrator, qualityGate, webhook, sarif, diff, ciComment)
+
+### Deferred
+- [ ] **Score badge generation** — Needs hosting story. Not blocking consulting delivery. **P3**
+- [ ] **GitLab CI native template** — Docker image works as fallback for any CI platform. **P3**
+
 ## Production Consulting Tool (2026-04-07)
 
 Deferred from CEO plan `/plan-ceo-review` on 2026-04-07. See `docs/designs/production-consulting-tool.md`.
 
 - [ ] **Comparative Benchmarking** — Cross-repo ranking (percentiles, category averages, outlier detection). Needs 20+ gauntlet runs for meaningful data. **P2** — deferred until Phase 1 gauntlet produces enough runs.
-- [ ] **Findings Trend Dashboard** — Visualize findings over time per repo in the Next.js dashboard. Charts: new/resolved/persistent per run, severity distribution over time, confidence calibration drift. Depends on findings diff + gauntlet tracker shipping first. **P3** — Phase 2+ feature.
+- [ ] **Findings Trend Dashboard** — Visualize findings over time per repo in the Next.js dashboard. Charts: new/resolved/persistent per run, severity distribution over time, confidence calibration drift. Findings diff is now shipped (`radar diff`). **P3** — Phase 2+ feature.
 
 ## GSTACK REVIEW REPORT
 
