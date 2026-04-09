@@ -11,6 +11,7 @@ import { listRuleFiles, validateRules } from './agent/systemPrompt.js';
 import type { GoalType } from './types/state.js';
 import { handleAnalyze } from './commands/analyze.js';
 import { handleCompare } from './commands/compare.js';
+import { handleDiff } from './commands/diff.js';
 
 // Load .env
 import 'dotenv/config';
@@ -128,6 +129,16 @@ program
       console.error(`\nError: ${(err as Error).message}`);
       process.exit(2);
     }
+  });
+
+program
+  .command('diff')
+  .description('Compare findings between two runs')
+  .argument('<run-a>', 'Path to previous findings JSON file')
+  .argument('<run-b>', 'Path to current findings JSON file')
+  .action((runA: string, runB: string) => {
+    const exitCode = handleDiff({ runA, runB });
+    if (exitCode !== 0) process.exit(exitCode);
   });
 
 program

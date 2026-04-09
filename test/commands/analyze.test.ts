@@ -12,13 +12,28 @@ vi.mock('../../src/tools/dependency/queryNpmVersions.js', () => ({
   queryNpmVersions: vi.fn().mockResolvedValue({ versions: { next: '14.0.0' }, fromCache: true, cacheAge: '5m' }),
   TRACKED_PACKAGES: ['next'],
 }));
-vi.mock('../../src/output/githubHook.js', () => ({
-  checkGhAuth: vi.fn().mockReturnValue({ authenticated: true, repoAccess: true }),
-  postOnboardingIssue: vi.fn().mockReturnValue({ url: 'https://github.com/test/issue/1' }),
-  postCiCheckComment: vi.fn().mockReturnValue({ url: 'https://github.com/test/pr/1#comment' }),
-}));
 vi.mock('../../src/output/verboseFormatter.js', () => ({
   formatVerboseStep: vi.fn(),
+}));
+vi.mock('../../src/ci/adapter.js', () => ({
+  detectCiPlatform: vi.fn().mockResolvedValue({
+    platform: 'generic',
+    getCapabilities: () => ({
+      canComment: false, canAnnotate: false, canLabel: false,
+      canUploadSarif: false, canSetStatus: false, canManageArtifacts: false,
+    }),
+    postComment: vi.fn().mockResolvedValue(null),
+    updateComment: vi.fn().mockResolvedValue(null),
+    postAnnotations: vi.fn().mockResolvedValue(0),
+    addLabels: vi.fn().mockResolvedValue(undefined),
+    uploadSarif: vi.fn().mockResolvedValue(undefined),
+    setStatus: vi.fn().mockResolvedValue(undefined),
+    downloadPreviousArtifact: vi.fn().mockResolvedValue(null),
+    uploadArtifact: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+vi.mock('../../src/ci/orchestrator.js', () => ({
+  orchestrateCi: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('../../src/agent/systemPrompt.js', () => ({
   buildSystemPrompt: vi.fn().mockReturnValue('system prompt'),
@@ -32,7 +47,7 @@ vi.mock('../../src/agent/goalPrompts.js', () => ({
 import { handleAnalyze } from '../../src/commands/analyze.js';
 import { runAgent } from '../../src/agent/runner.js';
 import { queryNpmVersions } from '../../src/tools/dependency/queryNpmVersions.js';
-import { checkGhAuth, postOnboardingIssue, postCiCheckComment } from '../../src/output/githubHook.js';
+import { detectCiPlatform } from '../../src/ci/adapter.js';
 import { buildSystemPrompt, listRuleFiles, validateRules } from '../../src/agent/systemPrompt.js';
 import { buildGoalPrompt } from '../../src/agent/goalPrompts.js';
 
@@ -92,9 +107,21 @@ describe('handleAnalyze', () => {
     vi.clearAllMocks();
     // Re-apply mocks cleared by vi.clearAllMocks
     vi.mocked(queryNpmVersions).mockResolvedValue({ versions: { next: '14.0.0' }, fromCache: true, cacheAge: '5m' });
-    vi.mocked(checkGhAuth).mockReturnValue({ authenticated: true, repoAccess: true } as any);
-    vi.mocked(postOnboardingIssue).mockReturnValue({ url: 'https://github.com/test/issue/1' } as any);
-    vi.mocked(postCiCheckComment).mockReturnValue({ url: 'https://github.com/test/pr/1#comment' } as any);
+    vi.mocked(detectCiPlatform).mockResolvedValue({
+      platform: 'generic',
+      getCapabilities: () => ({
+        canComment: false, canAnnotate: false, canLabel: false,
+        canUploadSarif: false, canSetStatus: false, canManageArtifacts: false,
+      }),
+      postComment: vi.fn().mockResolvedValue(null),
+      updateComment: vi.fn().mockResolvedValue(null),
+      postAnnotations: vi.fn().mockResolvedValue(0),
+      addLabels: vi.fn().mockResolvedValue(undefined),
+      uploadSarif: vi.fn().mockResolvedValue(undefined),
+      setStatus: vi.fn().mockResolvedValue(undefined),
+      downloadPreviousArtifact: vi.fn().mockResolvedValue(null),
+      uploadArtifact: vi.fn().mockResolvedValue(undefined),
+    } as any);
     vi.mocked(buildSystemPrompt).mockReturnValue('system prompt');
     vi.mocked(listRuleFiles).mockReturnValue(['rule1.md', 'rule2.md']);
     vi.mocked(validateRules).mockReturnValue([]);
@@ -211,28 +238,6 @@ describe('handleAnalyze', () => {
     const jsonOutput = logs.find(l => { try { JSON.parse(l); return true; } catch { return false; } });
     const parsed = JSON.parse(jsonOutput!);
     expect(parsed.error).toBe('Something broke');
-  });
-
-  // --- GitHub output ---
-
-  it('calls postOnboardingIssue for onboarding goal with --githubOutput', async () => {
-    vi.mocked(runAgent).mockResolvedValueOnce(makeResult() as any);
-    await handleAnalyze({ ...baseOpts, goal: 'onboarding', githubOutput: true });
-    expect(postOnboardingIssue).toHaveBeenCalledWith('sitecore-minimal', expect.any(String));
-  });
-
-  it('calls postCiCheckComment for ci-check goal with --githubOutput and --pr', async () => {
-    vi.mocked(runAgent).mockResolvedValueOnce(makeResult() as any);
-    await handleAnalyze({ ...baseOpts, goal: 'ci-check', githubOutput: true, pr: 42 });
-    expect(postCiCheckComment).toHaveBeenCalledWith(42, expect.any(String));
-  });
-
-  it('skips github output when auth fails', async () => {
-    vi.mocked(checkGhAuth).mockReturnValueOnce({ authenticated: false, repoAccess: false, error: 'not logged in' } as any);
-    vi.mocked(runAgent).mockResolvedValueOnce(makeResult() as any);
-    const code = await handleAnalyze({ ...baseOpts, githubOutput: true });
-    expect(code).toBe(0);
-    expect(postOnboardingIssue).not.toHaveBeenCalled();
   });
 
   // --- runAgent receives correct config ---

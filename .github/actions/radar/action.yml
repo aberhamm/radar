@@ -1,0 +1,102 @@
+name: 'Radar CI Check'
+description: 'Run Radar agentic code analysis on a repository'
+branding:
+  icon: 'search'
+  color: 'blue'
+
+inputs:
+  goal:
+    description: 'Analysis goal: ci-check, audit, security-review, nextjs, accessibility'
+    required: false
+    default: 'ci-check'
+  budget:
+    description: 'Tool call budget'
+    required: false
+    default: '15'
+  platform:
+    description: 'Platform override: sitecore, optimizely (auto-detected if omitted)'
+    required: false
+  portkey-api-key:
+    description: 'Portkey API key for LLM access'
+    required: true
+  portkey-base-url:
+    description: 'Portkey gateway base URL'
+    required: true
+  portkey-provider:
+    description: 'Portkey provider header'
+    required: false
+    default: '@aws-bedrock-use2'
+  agent-model:
+    description: 'Model ID for investigation phase'
+    required: false
+    default: 'us.anthropic.claude-sonnet-4-6'
+  fast-model:
+    description: 'Model ID for writing phase'
+    required: false
+    default: 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
+  webhook-url:
+    description: 'Webhook URL for notifications (Slack/Teams)'
+    required: false
+
+outputs:
+  score:
+    description: 'Overall score: red, yellow, or green'
+    value: ${{ steps.radar.outputs.score }}
+  findings-count:
+    description: 'Number of findings'
+    value: ${{ steps.radar.outputs.findings-count }}
+  artifact-path:
+    description: 'Path to findings artifact'
+    value: ${{ steps.radar.outputs.artifact-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run Radar
+      id: radar
+      shell: bash
+      env:
+        PORTKEY_API_KEY: ${{ inputs.portkey-api-key }}
+        PORTKEY_BASE_URL: ${{ inputs.portkey-base-url }}
+        PORTKEY_PROVIDER: ${{ inputs.portkey-provider }}
+        PROVIDER_TYPE: portkey
+        AGENT_MODEL: ${{ inputs.agent-model }}
+        FAST_MODEL: ${{ inputs.fast-model }}
+        WEBHOOK_URL: ${{ inputs.webhook-url }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        docker run --rm \
+          -e PORTKEY_API_KEY \
+          -e PORTKEY_BASE_URL \
+          -e PORTKEY_PROVIDER \
+          -e PROVIDER_TYPE \
+          -e AGENT_MODEL \
+          -e FAST_MODEL \
+          -e WEBHOOK_URL \
+          -e GITHUB_TOKEN \
+          -e GITHUB_ACTIONS \
+          -e GITHUB_EVENT_PATH=/github/event.json \
+          -e GITHUB_REPOSITORY \
+          -e GITHUB_SHA \
+          -e GITHUB_HEAD_REF \
+          -e GITHUB_REF_NAME \
+          -e GITHUB_API_URL \
+          -e GITHUB_OUTPUT=/github/output \
+          -v "$GITHUB_EVENT_PATH:/github/event.json:ro" \
+          -v "$GITHUB_OUTPUT:/github/output" \
+          -v "${{ github.workspace }}:/repo:ro" \
+          ghcr.io/${{ github.repository }}:latest \
+          analyze \
+          --repo /repo \
+          --goal "${{ inputs.goal }}" \
+          --budget "${{ inputs.budget }}" \
+          --json \
+          ${{ inputs.platform && format('--platform {0}', inputs.platform) || '' }}
+
+    - name: Upload findings artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: radar-findings
+        path: output/radar-findings.json
+        if-no-files-found: ignore

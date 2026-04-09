@@ -1,0 +1,25 @@
+{
+  "failOn": {
+    "overallScore": "red",
+    "newCriticalFindings": true,
+    "newHighFindings": false
+  },
+  "warnOn": {
+    "overallScore": "yellow",
+    "newHighFindings": true,
+    "regressionCount": 3
+  },
+  "annotations": {
+    "maxCount": 30,
+    "minSeverity": "medium"
+  },
+  "labels": {
+    "enabled": true,
+    "prefix": "radar:",
+    "map": {
+      "security": "radar:security-review-needed",
+      "dependencies": "radar:deps-outdated",
+      "configuration": "radar:config-issue"
+    }
+  }
+}

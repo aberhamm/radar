@@ -6,9 +6,9 @@ import { buildSystemPrompt, listRuleFiles, validateRules } from '../agent/system
 import { buildGoalPrompt } from '../agent/goalPrompts.js';
 import { cloneRepo } from '../tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from '../tools/dependency/queryNpmVersions.js';
-import { checkGhAuth, postOnboardingIssue, postCiCheckComment } from '../output/githubHook.js';
-import { renderCiComment } from '../output/ciComment.js';
 import { formatVerboseStep } from '../output/verboseFormatter.js';
+import { detectCiPlatform } from '../ci/adapter.js';
+import { orchestrateCi } from '../ci/orchestrator.js';
 import type { GoalType } from '../types/state.js';
 
 /**
@@ -145,6 +145,23 @@ export async function handleAnalyze(opts: {
     return 0;
   }
 
+  // CI integration — runs after agent completes, before exit code decision
+  const ciAdapter = await detectCiPlatform();
+  let ciOperations: Array<{ operation: string; status: string; error?: string }> = [];
+
+  if (ciAdapter.platform !== 'generic') {
+    ciOperations = await orchestrateCi(
+      {
+        scorecard: result.scorecard,
+        metrics: result.metrics,
+        findings: result.state.findings,
+        outputDir,
+        repoName,
+      },
+      ciAdapter,
+    );
+  }
+
   // JSON output mode — CI-friendly
   if (opts.json) {
     const summary = {
@@ -165,6 +182,7 @@ export async function handleAnalyze(opts: {
         severity: r.severity,
         title: r.title,
       })),
+      ...(ciOperations.length > 0 ? { ciOperations } : {}),
       ...(result.errorDetail ? { error: result.errorDetail } : {}),
     };
     console.log(JSON.stringify(summary, null, 2));
@@ -212,37 +230,17 @@ export async function handleAnalyze(opts: {
   if (fs.existsSync(checkpointFile)) {
     console.log(`  📎 Checkpoint: ${checkpointFile} (use --resume to continue)`);
   }
-  console.log('');
 
-  // GitHub output hook
-  if (opts.githubOutput) {
-    const authStatus = checkGhAuth();
-    if (!authStatus.authenticated || !authStatus.repoAccess) {
-      console.error(`[github-output] Skipping: ${authStatus.error}`);
-    } else if (goal === 'onboarding') {
-      console.log('[github-output] Posting onboarding issue...');
-      const issueResult = postOnboardingIssue(repoName, result.briefMarkdown);
-      if (issueResult.error) {
-        console.error(`[github-output] ${issueResult.error}`);
-      } else {
-        console.log(`[github-output] Issue created: ${issueResult.url}`);
-      }
-    } else if (goal === 'ci-check') {
-      const prNumber = opts.pr ?? parseInt(process.env.GITHUB_PR_NUMBER ?? '', 10);
-      if (!prNumber || isNaN(prNumber)) {
-        console.error('[github-output] Skipping: no PR number (use --pr or set GITHUB_PR_NUMBER)');
-      } else {
-        console.log(`[github-output] Commenting on PR #${prNumber}...`);
-        const ciBody = renderCiComment(result.scorecard, result.metrics);
-        const commentResult = postCiCheckComment(prNumber, ciBody);
-        if (commentResult.error) {
-          console.error(`[github-output] ${commentResult.error}`);
-        } else {
-          console.log(`[github-output] Comment posted: ${commentResult.url}`);
-        }
-      }
+  // CI operations summary
+  if (ciOperations.length > 0) {
+    console.log('');
+    console.log('  CI operations:');
+    for (const op of ciOperations) {
+      const icon = op.status === 'success' ? '✓' : op.status === 'skipped' ? '○' : '✗';
+      console.log(`    ${icon} ${op.operation}${op.error ? ` (${op.error})` : ''}`);
     }
   }
+  console.log('');
 
   // Exit code: 0 = green/yellow, 1 = any red, 2 = error
   if (result.terminationReason === 'error') return 2;

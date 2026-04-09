@@ -71,7 +71,7 @@ describe('renderCiComment', () => {
 
     const output = renderCiComment(scorecard, makeMetrics());
 
-    expect(output).toContain('CI Health Check: FAIL');
+    expect(output).toContain('Radar CI Check: FAIL');
     expect(output).toContain('🔴');
     expect(output).toContain('### Blocking Issues');
     expect(output).toContain('[CRITICAL] Hardcoded API key');
@@ -93,7 +93,7 @@ describe('renderCiComment', () => {
 
     const output = renderCiComment(scorecard, makeMetrics());
 
-    expect(output).toContain('CI Health Check: PASS');
+    expect(output).toContain('Radar CI Check: PASS');
     expect(output).toContain('🟢');
     expect(output).not.toContain('### Blocking Issues');
   });
