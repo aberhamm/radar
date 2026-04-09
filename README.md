@@ -309,64 +309,298 @@ The onboarding brief includes these sections: Project Overview, Stack & Architec
 
 ## CI Integration
 
-Radar auto-detects the CI platform from environment variables and runs the full integration automatically: PR comments, annotations, SARIF, artifact upload, labels, and quality gates.
+Radar auto-detects the CI platform from environment variables. Every PR gets a scored comment, file-level annotations, trend tracking, and a quality gate. One YAML block to set up.
 
-### GitHub Actions
+### GitHub Actions Setup
+
+**Step 1: Add secrets.** Go to Settings > Secrets and variables > Actions. Add:
+
+| Secret | Value |
+|--------|-------|
+| `PORTKEY_API_KEY` | Your Portkey gateway API key |
+| `PORTKEY_BASE_URL` | Your Portkey gateway base URL (e.g. `https://portkeygateway.example.com/v1`) |
+
+**Step 2: Add the workflow.** Create `.github/workflows/radar.yml`:
+
+```yaml
+name: Radar CI Check
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install -g pnpm && pnpm install
+
+      - name: Run Radar
+        env:
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+          PORTKEY_BASE_URL: ${{ secrets.PORTKEY_BASE_URL }}
+          PORTKEY_PROVIDER: '@aws-bedrock-use2'
+          PROVIDER_TYPE: portkey
+          AGENT_MODEL: us.anthropic.claude-sonnet-4-6
+          FAST_MODEL: us.anthropic.claude-haiku-4-5-20251001-v1:0
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx tsx src/index.ts analyze --repo . --goal ci-check --json
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radar-findings
+          path: output/radar-findings.json
+          if-no-files-found: ignore
+```
+
+That's it. Every PR gets a scorecard comment like this:
+
+```
+## 🟢 Radar CI Check: PASS
+
+| Category | Score | Issues | Trend   |
+|----------|-------|--------|---------|
+| Deps     | GREEN | 2      | -1 resolved |
+| Security | YELLOW| 3      | +1 new  |
+| Config   | GREEN | 1      | unchanged |
+
+<details><summary>Security (3 findings)</summary>
+- **[HIGH] Exposed API key** — `src/config.ts:42`
+- **[MEDIUM] Missing CSP header**
+- **[MEDIUM] Outdated auth middleware**
+</details>
+```
+
+**Using the reusable action (Docker).** If you've published the Docker image to GHCR, use the composite action instead:
 
 ```yaml
 - uses: ./.github/actions/radar
   with:
     portkey-api-key: ${{ secrets.PORTKEY_API_KEY }}
     portkey-base-url: ${{ secrets.PORTKEY_BASE_URL }}
+    goal: ci-check          # default
+    budget: '15'             # default
+    webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}  # optional
 ```
 
-Or run directly:
+### Azure DevOps Setup
 
-```bash
-npx tsx src/index.ts analyze --repo . --goal ci-check --json
+**Step 1: Create a variable group** (or pipeline variables) with:
+
+| Variable | Value | Secret? |
+|----------|-------|---------|
+| `PORTKEY_API_KEY` | Your Portkey API key | Yes |
+| `PORTKEY_BASE_URL` | Your Portkey base URL | No |
+
+**Step 2: Add to your pipeline.** In `azure-pipelines.yml`:
+
+```yaml
+trigger: none
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: radar-secrets  # or inline variables
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20.x'
+
+  - script: npm install -g pnpm && pnpm install
+    displayName: 'Install dependencies'
+
+  - script: npx tsx src/index.ts analyze --repo . --goal ci-check --json
+    displayName: 'Run Radar'
+    env:
+      PORTKEY_API_KEY: $(PORTKEY_API_KEY)
+      PORTKEY_BASE_URL: $(PORTKEY_BASE_URL)
+      PORTKEY_PROVIDER: '@aws-bedrock-use2'
+      PROVIDER_TYPE: portkey
+      AGENT_MODEL: us.anthropic.claude-sonnet-4-6
+      FAST_MODEL: us.anthropic.claude-haiku-4-5-20251001-v1:0
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - task: PublishPipelineArtifact@1
+    condition: always()
+    inputs:
+      targetPath: 'output/radar-findings.json'
+      artifactName: 'radar-findings'
+    continueOnError: true
 ```
 
-### Azure DevOps
-
-Set `SYSTEM_ACCESSTOKEN` in your pipeline and radar detects the Azure DevOps environment automatically.
+Radar reads `TF_BUILD`, `SYSTEM_ACCESSTOKEN`, `SYSTEM_PULLREQUEST_PULLREQUESTID`, `SYSTEM_COLLECTIONURI`, and `SYSTEM_TEAMPROJECT` automatically. PR comments appear as thread comments anchored to specific files.
 
 ### Platform Detection
 
-| Environment | Detected via | Adapter |
-|-------------|-------------|---------|
-| GitHub Actions | `GITHUB_ACTIONS=true` | `GitHubCiAdapter` — PR comments, check run annotations, SARIF upload, artifact management, labels |
-| Azure DevOps | `TF_BUILD=True` | `AzureDevOpsCiAdapter` — PR thread comments, file-anchored annotations, pipeline artifacts |
-| Other / Local | Neither set | `GenericAdapter` — exit code + stdout only |
+| Environment | Detected via | What you get |
+|-------------|-------------|-------------|
+| GitHub Actions | `GITHUB_ACTIONS=true` | PR comments (update-in-place), check run annotations, SARIF for Code Scanning, artifact management, auto-labels |
+| Azure DevOps | `TF_BUILD=True` | PR thread comments, file-anchored annotations, capabilities probe, pipeline artifacts |
+| Other / Local | Neither set | Exit code + stdout only (`GenericAdapter`) |
 
-### What happens in CI
+### What Radar Does in CI
 
-1. **Trend tracking** — Downloads previous run's findings artifact, diffs against current (New/Resolved/Persistent)
-2. **PR comment** — Scorecard table with collapsible findings by category, trend column, update-in-place via `<!-- radar-ci-comment -->` marker
-3. **Annotations** — File-level annotations on the PR (capped at 30, sorted by severity)
-4. **Labels** — Auto-labels PRs based on finding categories (e.g. `radar:security-review-needed`)
-5. **SARIF** — Uploads SARIF 2.1.0 for GitHub Code Scanning (graceful fallback on 403)
-6. **Quality gates** — Configurable via `config/quality-gates.json`. `failOn` returns exit 1, `warnOn` returns exit 0 with warning
-7. **Webhook** — Fire-and-forget POST to Slack/Teams via `WEBHOOK_URL` env var
+On every PR:
+
+1. **Downloads previous findings** from the last run's artifact (if any)
+2. **Diffs findings** by fingerprint: classifies each as New, Resolved, or Persistent
+3. **Posts a PR comment** with scorecard table, collapsible findings by category, and trend column. Updates the same comment on re-runs (no comment spam)
+4. **Adds file annotations** on the PR diff (up to 30, sorted by severity)
+5. **Labels the PR** based on finding categories (e.g. `radar:security-review-needed`, `radar:deps-outdated`)
+6. **Uploads SARIF** for GitHub Code Scanning (graceful 403 fallback for repos without Advanced Security)
+7. **Uploads findings artifact** for the next run's trend tracking
+8. **Fires webhook** to Slack/Teams if `WEBHOOK_URL` is set
+9. **Evaluates quality gate** and sets exit code
+
+Each operation is logged to `ciOperations` in JSON output. If any operation fails (e.g. no permission to label), it logs the error and continues. Nothing crashes the pipeline.
+
+### Quality Gates
+
+Quality gates are configured in `config/quality-gates.json`:
+
+```json
+{
+  "failOn": {
+    "overallScore": "red",
+    "newCriticalFindings": true,
+    "newHighFindings": false
+  },
+  "warnOn": {
+    "overallScore": "yellow",
+    "newHighFindings": true,
+    "regressionCount": 3
+  }
+}
+```
+
+- **`failOn`** matches return exit code 1 (pipeline fails)
+- **`warnOn`** matches return exit code 0 with a warning in the PR comment
+- Trend-aware: `newCriticalFindings` and `regressionCount` only trigger when there's a previous run to compare against. First run always passes unless the score is red.
 
 ### Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| `0` | All scorecard categories are green or yellow (or quality gate passes) |
-| `1` | Quality gate triggered (red score or new critical findings) |
-| `2` | Agent error (partial output may be written) |
+| `0` | Quality gate passed (green/yellow, no new critical findings) |
+| `1` | Quality gate failed (red score or new critical findings) |
+| `2` | Agent error (LLM connection failure, partial output may exist) |
 
-### JSON Output
+### Configuring Goals for CI
 
-The `--json` flag outputs a CI-friendly summary including status, overall score, finding count, tool call count, duration, estimated cost, per-category scores, top risks, and `ciOperations` array (one entry per CI adapter operation with status and error details).
+| Goal | Budget | Use case | Cost |
+|------|--------|----------|------|
+| `ci-check` | 15 | Fast smoke test (deps, security, config) | ~$0.25 |
+| `security-review` | 30 | Deep security audit on security-sensitive PRs | ~$0.50 |
+| `nextjs` | 30 | Next.js framework health on frontend PRs | ~$0.50 |
+| `audit` | 45 | Full architecture assessment (weekly scheduled) | ~$0.75 |
+
+Run different goals on different triggers:
+
+```yaml
+# Fast check on every PR
+- name: Quick check
+  if: github.event_name == 'pull_request'
+  run: npx tsx src/index.ts analyze --repo . --goal ci-check --json
+
+# Deep security review on PRs touching auth/
+- name: Security review
+  if: contains(github.event.pull_request.changed_files, 'auth/')
+  run: npx tsx src/index.ts analyze --repo . --goal security-review --budget 30 --json
+```
+
+### Webhook Notifications
+
+Set `WEBHOOK_URL` to a Slack or Teams incoming webhook URL. Radar sends a fire-and-forget POST with:
+
+```json
+{
+  "text": "Radar CI: GREEN — 6 findings (1 new, 2 resolved) on my-repo",
+  "repo": "my-repo",
+  "score": "green",
+  "findings": 6,
+  "newFindings": 1,
+  "resolvedFindings": 2,
+  "durationMs": 45000,
+  "estimatedCostUsd": 0.38
+}
+```
+
+Webhook URLs are validated against the domain blocklist (blocks localhost, private IPs, AWS metadata) before sending.
+
+### Comparing Runs Locally
+
+Use `radar diff` to compare any two findings exports:
+
+```bash
+npx tsx src/index.ts diff output/run-a/findings.json output/run-b/findings.json
+```
+
+Output:
+
+```
+  Previous: 8 findings
+  Current:  6 findings
+  Summary:  +1 new, -3 resolved, 5 persistent
+
+  New:
+    + [MEDIUM] Missing rate limiting on API endpoint
+
+  Resolved:
+    - [HIGH] Exposed API key in config
+    - [MEDIUM] Outdated React version
+    - [LOW] Missing alt text on logo
+```
 
 ### Docker
 
-A multi-stage Docker image is published to GHCR on each release:
+A multi-stage Docker image (`node:20-slim`) is published to GHCR on each release tag:
 
 ```bash
-docker run ghcr.io/aberhamm/repo-audit-delivery-agent:latest analyze --repo /repo --goal ci-check --json
+docker run --rm \
+  -e PORTKEY_API_KEY -e PORTKEY_BASE_URL -e PORTKEY_PROVIDER -e PROVIDER_TYPE \
+  -e AGENT_MODEL -e FAST_MODEL \
+  -v "$(pwd):/repo:ro" \
+  ghcr.io/aberhamm/repo-audit-delivery-agent:latest \
+  analyze --repo /repo --goal ci-check --json
 ```
+
+The image includes all rules, references, and the quality gate config. No additional setup needed.
+
+### Required Permissions
+
+**GitHub Actions:**
+
+```yaml
+permissions:
+  contents: read          # checkout
+  pull-requests: write    # PR comments, labels
+  checks: write           # check run annotations
+  # security-events: write  # optional, for SARIF upload (requires GitHub Advanced Security)
+```
+
+**Azure DevOps:**
+- `$(System.AccessToken)` needs "Contribute to pull requests" permission
+- Build service account needs read access to pipeline artifacts
 
 ## Development
 
