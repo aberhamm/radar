@@ -4,6 +4,88 @@ How the code works, traced end to end. Written so you can explain it confidently
 
 ---
 
+## 0. The Underlying Technology — Pi Agent and OpenClaw
+
+### What is OpenClaw?
+
+OpenClaw is the internal agent platform initiative at Perficient. Radar is a proof of what OpenClaw enables — a working, production-quality AI agent built on top of the Pi runtime. The demo isn't just about auditing repos; it's about demonstrating that we can build autonomous agent systems in-house using this stack.
+
+### What is Pi Agent?
+
+Pi Agent is an open-source AI agent runtime created by Mario Zechner, published at [github.com/badlogic/pi-mono](https://github.com/badlogic/pi-mono). It provides the core loop that powers autonomous AI agents — the part that decides what to do next, calls tools, and manages the conversation with the LLM.
+
+The project uses two packages from the pi-mono monorepo:
+
+| Package | Version | What it provides |
+|---------|---------|-----------------|
+| `@mariozechner/pi-agent-core` | v0.64.0 | Agent class, tool dispatch, event streaming, hook system |
+| `@mariozechner/pi-ai` | v0.64.0 | Model abstraction, TypeBox schemas for tool definitions, provider compatibility |
+
+### What Pi Agent gives us (that we didn't have to build)
+
+**The agent loop.** Pi's `Agent` class handles the observe → reason → act cycle. We give it a system prompt (our consulting rules), tools (our 23 deterministic functions), and a goal prompt. Pi calls the LLM, parses tool call requests from the response, executes the tools in parallel, feeds results back, and repeats. We don't manage the conversation, parse JSON, or handle streaming — Pi does all of that.
+
+**Parallel tool execution.** When the LLM requests multiple tools in one turn (e.g., "read these 3 files"), Pi fires them all concurrently. This is significant for performance — the agent regularly calls 3–5 tools in a single batch.
+
+**Hook system for mid-loop control.** Pi provides `beforeToolCall` and `afterToolCall` callbacks that run before and after every single tool call. We use these to:
+- Enforce budget limits (`beforeToolCall` blocks tools when budget is exhausted)
+- Track costs and token usage (`afterToolCall` increments counters)
+- Inject steering messages (`agent.steer()` nudges the LLM when budget is running low)
+- Switch models mid-run (the dual-model cost optimization)
+- Abort the loop (`agent.abort()` exits when `assemble_output` is called)
+
+**Event subscription.** `agent.subscribe()` gives us a stream of typed events: `message_start`, `message_end`, `message_update`, `tool_execution_start`. The dashboard's live streaming, the CLI's verbose mode, and the cost tracking all consume these events.
+
+**Multi-provider model abstraction.** Pi's `Model<'openai-completions'>` type lets us define a model as config — ID, base URL, headers, cost rates — without importing any provider SDK. Pi speaks the OpenAI-compatible API, and we route through Portkey gateway to whatever backend we want (Bedrock, Azure, direct Anthropic, etc.).
+
+**Faux provider for testing.** Pi's native `registerFauxProvider` lets us script deterministic LLM responses for e2e tests — no API calls, no cost, fully reproducible. Our 3 e2e test files use this to simulate full investigation runs.
+
+### What we built on top of Pi
+
+Pi gives us the loop. We built the domain layer:
+
+| What | Where | Why Pi doesn't do this |
+|------|-------|----------------------|
+| 23 consulting tools | `src/tools/` | Domain-specific — file reading, config parsing, code analysis, evidence recording |
+| Consulting rules (markdown) | `src/rules/` | Domain knowledge — investigation standards, platform patterns, goal playbooks |
+| Budget enforcement logic | `src/agent/runner.ts` (hooks) | Business logic — budget warnings, steering messages, budget extension |
+| Dual-model cost optimization | `src/agent/runner.ts` (model switch) | Our innovation — agent-initiated switch from Sonnet to Haiku mid-run |
+| Evidence verification | `src/tools/analysis/recordFinding.ts` | Anti-hallucination — deterministic verification against actual files |
+| Context compression | `src/agent/runner.ts` (transformContext) | Performance — 3-tier compression to stay within context window |
+| Scorecard computation | `src/output/scorecard.ts` | Domain-specific — red/yellow/green scoring from finding severities |
+| CI/CD integration | `src/ci/` | Deployment — GitHub Actions, Azure DevOps, SARIF, quality gates |
+| Dashboard | `dashboard/` | UX — live streaming UI with SSE, run history, comparison |
+
+### The pi-mono monorepo
+
+Pi-mono contains 7 packages. We use 2 of them. The others are available if we want to extend:
+
+| Package | What it is | We use it? |
+|---------|-----------|-----------|
+| `pi-agent-core` | Agent loop and tool dispatch | **Yes** — the core runtime |
+| `pi-ai` | Model abstraction and TypeBox schemas | **Yes** — model config and tool schemas |
+| `pi-coding-agent` | Interactive CLI coding agent | No (but shows what Pi can build) |
+| `pi-mom` | Slack bot integration | No (potential future: Slack-triggered audits) |
+| `pi-tui` | Terminal UI library | No |
+| `pi-web-ui` | Web chat components | No (we built our own dashboard) |
+| `pi-pods` | GPU pod management | No |
+
+### How to explain it in the demo
+
+> "The agent loop — the part that decides what tool to call next and manages the conversation with the LLM — that's Pi Agent, an open-source runtime. What we built on top is the domain layer: 23 tools that know how to read and analyze CMS codebases, consulting rules written in plain markdown, evidence verification, cost optimization, and the CI/CD integration. Pi handles the plumbing. We handle the expertise."
+
+### Why Pi and not LangChain / CrewAI / Writer / etc.
+
+Pi is lower-level than the no-code agent platforms. That's the point.
+
+- **LangChain/CrewAI** — abstractions over abstractions. Good for prototyping, but when you need precise control over the agent loop (budget enforcement, mid-run model switching, context compression, evidence verification), you're fighting the framework.
+- **Writer/no-code platforms** — good for simple workflows (summarize this, route that). Not built for a 45-step autonomous investigation that calls parallel tool batches and switches models mid-run.
+- **Pi** — gives us the loop, the tool system, the event stream, and gets out of the way. We own the hooks, the tools, the rules, and the output. Full control, no magic.
+
+The CTO's question "Have you taken training on Writer?" is a natural one. The answer: we evaluated the space and chose a runtime that gives us full control over the agent behavior, because the kind of domain-specific agent work we're doing requires it.
+
+---
+
 ## 1. Entry Points
 
 There are two ways to start a run — CLI and dashboard. Both end up calling the same `runAgent()` function.
