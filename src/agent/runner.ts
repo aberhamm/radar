@@ -158,7 +158,11 @@ export async function runPreCompute(repoPath: string): Promise<PreComputeResult>
   // Phase 2: Chain specialist prompts from app roots (requires Phase 1)
   if (result.appRoots && result.appRoots.roots.length > 0) {
     try {
-      result.specialists = await getSpecialistPrompts(repoPath, { appRoots: result.appRoots.roots });
+      result.specialists = await getSpecialistPrompts({
+        roots: result.appRoots.roots,
+        isMonorepo: !!result.appRoots.monorepoTool,
+        monorepoTool: result.appRoots.monorepoTool,
+      });
     } catch { /* graceful — agent will call get_specialist_prompts itself */ }
   }
 
@@ -173,16 +177,16 @@ export function formatPreComputeContext(pre: PreComputeResult): string {
 
   if (pre.appRoots) {
     const roots = pre.appRoots.roots.map(r => {
-      const parts = [r.type, r.version ? `v${r.version}` : null, r.plugins?.length ? `plugins: ${r.plugins.join(', ')}` : null].filter(Boolean);
+      const parts = [r.type, r.frameworkVersion ? `v${r.frameworkVersion}` : null, r.plugins?.length ? `plugins: ${r.plugins.join(', ')}` : null].filter(Boolean);
       return `  ${r.path}: ${parts.join(', ')}`;
     }).join('\n');
     sections.push(`App Roots (${pre.appRoots.roots.length}):\n${roots}`);
     if (pre.appRoots.monorepoTool) sections.push(`Monorepo: ${pre.appRoots.monorepoTool}`);
   }
 
-  if (pre.specialists && pre.specialists.prompts.length > 0) {
-    const specs = pre.specialists.prompts.map(s =>
-      `  ${s.name} (${s.relevance}): ${s.prompt.slice(0, 150)}${s.prompt.length > 150 ? '...' : ''}`
+  if (pre.specialists && pre.specialists.specialists.length > 0) {
+    const specs = pre.specialists.specialists.map(s =>
+      `  ${s.name} (${s.relevance}): ${s.checklist.slice(0, 150)}${s.checklist.length > 150 ? '...' : ''}`
     ).join('\n');
     sections.push(`Specialist Checklists:\n${specs}`);
   }
@@ -303,7 +307,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         step: 0,
         action: 'pre_compute',
         type: 'tool_call',
-        result: `Pre-computed: ${preComputed.appRoots ? preComputed.appRoots.roots.length + ' app roots' : 'no roots'}, ${preComputed.specialists ? preComputed.specialists.prompts.length + ' specialists' : 'no specialists'}, ${preComputed.packageJson ? 'package.json' : 'no package.json'}, ${preComputed.fileTree ? preComputed.fileTree.entries.length + ' entries' : 'no tree'}`,
+        result: `Pre-computed: ${preComputed.appRoots ? preComputed.appRoots.roots.length + ' app roots' : 'no roots'}, ${preComputed.specialists ? preComputed.specialists.specialists.length + ' specialists' : 'no specialists'}, ${preComputed.packageJson ? 'package.json' : 'no package.json'}, ${preComputed.fileTree ? preComputed.fileTree.entries.length + ' entries' : 'no tree'}`,
       });
     } catch {
       // Graceful — agent proceeds without pre-computed context

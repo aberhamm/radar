@@ -25,6 +25,7 @@ export async function GET(
       metrics: record.result.metrics,
       terminationReason: record.result.terminationReason,
       briefMarkdown: record.result.briefMarkdown,
+      state: { findings: record.result.state?.findings ?? [] },
     } : null,
   });
 }
