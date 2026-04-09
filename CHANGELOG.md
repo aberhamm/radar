@@ -1,0 +1,102 @@
+# Changelog
+
+All notable changes to repo-audit-delivery-agent (radar).
+
+## [Unreleased]
+
+## 2026-04-09
+
+### Added
+- **CI/CD platform integration.** Drop radar into a client's GitHub Actions or Azure DevOps pipeline with one-line setup. Auto-detects the platform from environment variables. PR comments with collapsible findings by category, trend tracking (New/Resolved/Persistent), inline file annotations (capped at 30), auto-labels, SARIF upload for GitHub Code Scanning, and configurable quality gates.
+- **GitHub Actions adapter** (`src/ci/github.ts`). Native `fetch()` to GitHub REST API. PR comments with update-in-place via `<!-- radar-ci-comment -->` marker. Check run annotations. Artifact management for cross-run trend tracking. SARIF upload with graceful 403 fallback for repos without Advanced Security.
+- **Azure DevOps adapter** (`src/ci/azureDevops.ts`). PR thread comments, file-anchored annotations, capabilities probe at init, pipeline artifacts. Comment pagination capped at 1000 threads.
+- **CI orchestrator** (`src/ci/orchestrator.ts`). Single `orchestrateCi()` call coordinates all post-analysis CI operations. Each operation logged to `CiOperationsLog` for structured debugging.
+- **SARIF 2.1.0 generator** (`src/output/sarif.ts`). Converts findings to SARIF with severity mapping (critical/high to error, medium to warning, low/info to note). Includes fingerprints for code scanning dedup.
+- **`radar diff` command** (`src/commands/diff.ts`). Compare findings between two runs. Matches by fingerprint field, falls back to SHA-256 of category+filePath+normalizedTitle.
+- **Quality gates** (`src/ci/qualityGate.ts` + `config/quality-gates.json`). Configurable `failOn` (exit 1) and `warnOn` (exit 0 + warning) thresholds. Replaces hardcoded red=1 logic.
+- **Webhook notifications** (`src/ci/webhook.ts`). Fire-and-forget POST to Slack/Teams. 5s timeout. URL validated against domain blocklist for SSRF protection.
+- **Enhanced PR comments.** Collapsible `<details>` sections grouped by category. Trend column when previous run data is available. Progressive truncation at 60K chars for GitHub's comment limit.
+- **Docker image.** Multi-stage `node:20-slim` build for GHCR distribution.
+- **GitHub Action** (`.github/actions/radar/action.yml`). Reusable composite action using the Docker image.
+- 9 new test files covering all CI modules (80 tests).
+
+### Removed
+- `src/output/githubHook.ts`. Replaced by native `fetch()` CI adapters. The `gh` CLI is no longer required.
+
+### Changed
+- `src/commands/analyze.ts` now calls `orchestrateCi()` instead of the old `githubHook` functions. JSON output includes `ciOperations` array.
+- `src/output/ciComment.ts` header changed from "CI Health Check" to "Radar CI Check".
+
+## 2026-04-06
+
+### Added
+- **Expanded stack detection.** `detect_app_roots` now identifies 12+ framework signatures and monorepo tooling (Turborepo, Nx, Lerna, pnpm workspaces).
+- **Confidence calibration.** Every finding carries a 1-10 confidence score. Scoring excludes speculation (<=2), CI blocks only on high-confidence issues (>=7), the brief renders badges and moves low-confidence findings to an appendix.
+- **Session resume and checkpointing.** Checkpoints saved as JSONL every N tool calls. `--resume <path>` hydrates prior state and injects a finding summary into the goal prompt.
+- **Snip boundary.** When the model switches to Haiku, context compression drops aggressively (mid-age to 80 chars, old to 40 chars), reducing writing phase context by ~60%.
+- **Finding fingerprints.** SHA-256 of `category + filePath + normalizedTitle` enables cross-run trend tracking without a database.
+- **Secrets archaeology.** 22 known credential prefix patterns (AWS, GitHub, Stripe, Slack, Google, etc.) added to the security-review goal.
+- **Sophisticated retry.** Per-error-type tiers: 429 rate-limit gets 8 attempts, 529 overload gets 3, 502/503 gets 5, connection errors get 5. Respects `Retry-After` headers. Stale connection detection.
+- **Next.js goal** (`goal-nextjs.md`). 7-category framework health audit.
+- **Accessibility goal** (`goal-accessibility.md`). WCAG 2.1 AA compliance across 6 categories.
+- **Component-map goal.** Structured component inventory with CMS bindings.
+- **Expanded Optimizely rules.** Visual Builder, Content Graph, @remkoj ecosystem, 16 issue patterns.
+- **Session cost persistence.** Per-run costs to JSONL for cross-run analysis.
+
+## 2026-04-05
+
+### Fixed
+- **Evidence verification.** Catches hallucinated identifiers, corrects line numbers, deduplicates findings. Three-layer system: record-time verification, evidence chain tracking, post-investigation pass.
+
+## 2026-04-04
+
+### Added
+- **Live analysis view.** Dashboard shows real-time agent reasoning during active runs.
+- **Animated replay.** Step through completed investigations in the dashboard.
+
+### Fixed
+- Budget pause/resume flow in dashboard. API error handling, SSE staleness polling.
+- Dashboard polish: score dots in history, replay guard, chip styling.
+
+## 2026-04-03
+
+### Added
+- **Production hardening.** 13 items across tool system, concurrency, and context management.
+- **Tool concurrency safety.** `StatefulToolMutex` serializes stateful tools while read-only tools run in parallel. Budget enforcement moved to `afterToolCall` for race-free counting.
+- **Deferred tool loading.** 3 infrequently-used tools load on demand via `tool_search` meta-tool, saving context tokens.
+- **Tool system upgrades.** Ripgrep integration, binary file detection, Levenshtein suggestions on ENOENT, per-tool result size limits with disk spill, 3-tier context compression.
+
+### Fixed
+- Concurrency correctness: budget race condition, `assemble_output` guard against double calls, enforcement assertion for tool classification.
+
+## 2026-04-02
+
+### Added
+- **Evidence verification system.** Record-time snippet verification, evidence chain tracking (must read file before citing it), post-investigation verification pass. Prevents hallucinated evidence.
+- **Dashboard features.** Context bar, top bar with radar branding, sidebar auto-open.
+- **CLI commands.** `analyze` and `compare` extracted to `src/commands/` with full test coverage (23 tests).
+
+### Fixed
+- `recordFinding` type cast regression that broke 10 tests and dashboard build.
+
+## 2026-04-01
+
+### Added
+- **CI/CD goal type.** `ci-check` with 3 categories (deps, security, config), compact PR comment renderer, GitHub hook integration.
+- **JSON export.** `FullExport` schema with complete metadata. CLI `--export` flag.
+- **Secret redaction.** AWS access keys, connection strings, Bearer tokens, PEM private keys stripped from tool results before LLM context.
+- **Prompt injection defense.** Context boundary wrapping, 12 pattern sanitizers.
+- **HTML investigation log.** Collapsible steps with inline scorecard.
+
+## 2026-03-31
+
+### Added
+- **Initial release.** Full Phase 1-4 implementation.
+- 15 deterministic tools (repo, search, config, dependency, analysis).
+- 6 additional tools (web, meta, analysis extensions) completing the 23-tool catalog.
+- Consulting rules (11 markdown files) and reference knowledge base.
+- Pi Agent integration with goal prompts, output assembler, scorecard computation.
+- CLI with `analyze`, `compare`, `tools`, `rules` commands.
+- E2e tests against fixture repos.
+- Dual-model cost optimization (Sonnet investigates, Haiku writes).
+- Portkey AI gateway to Amazon Bedrock.

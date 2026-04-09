@@ -6,6 +6,8 @@ Agentic consulting tool for headless CMS codebase analysis.
 
 repo-audit-delivery-agent investigates headless CMS codebases (Sitecore XM Cloud/JSS and Optimizely SaaS CMS, both with Next.js) and produces structured, scored onboarding briefs. The agent autonomously decides what to investigate using deterministic tools, records findings with file-level evidence, and assembles a 12-section consulting deliverable with an architecture scorecard. It is not a linter or static analysis wrapper -- it reasons like a senior consultant, following human-authored rules loaded from markdown files.
 
+See also: [ARCHITECTURE.md](ARCHITECTURE.md) for system design and component map, [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## Quick Start
 
 ```bash
