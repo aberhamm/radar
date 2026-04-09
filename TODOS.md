@@ -173,6 +173,13 @@ Sourced from `github.com/garrytan/gstack` analysis. Domain knowledge, scoring ru
 | 8 | Eng | Add comment for per-call mutex isolation | Mechanical | P5 | Implicit: second buildPiTools() call gets independent mutex | Skip |
 | 9 | Eng | Add 4 missing concurrency tests | Mechanical | P1 | Serialization verification, double assemble_output, budget race, enforcement | Defer |
 
+## Production Consulting Tool (2026-04-07)
+
+Deferred from CEO plan `/plan-ceo-review` on 2026-04-07. See `docs/designs/production-consulting-tool.md`.
+
+- [ ] **Comparative Benchmarking** — Cross-repo ranking (percentiles, category averages, outlier detection). Needs 20+ gauntlet runs for meaningful data. **P2** — deferred until Phase 1 gauntlet produces enough runs.
+- [ ] **Findings Trend Dashboard** — Visualize findings over time per repo in the Next.js dashboard. Charts: new/resolved/persistent per run, severity distribution over time, confidence calibration drift. Depends on findings diff + gauntlet tracker shipping first. **P3** — Phase 2+ feature.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
@@ -180,6 +187,7 @@ Sourced from `github.com/garrytan/gstack` analysis. Domain knowledge, scoring ru
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 5 | issues_open (via /autoplan) | 3 proposals deferred, 1 critical gap (product validation) |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 4 | issues_open (via /autoplan) | 6 issues, 3 critical gaps (SSRF, budget race, silent overwrite) |
+| Eng Review 2 | `/plan-eng-review` | Production consulting tool plan | 1 | CLEAN | 8.5/10, 6 minor issues (Zod gauntlet reads, null fingerprints, PDF test skip, GoalType enum validation, integration point, config/ dir) |
 | Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAN | score 3→8/10, 11 decisions |
 
 **ENG:** 3 critical gaps: (1) SSRF in fetch_url cross-host redirect, (2) budget enforcement race condition, (3) double assemble_output silent overwrite.
