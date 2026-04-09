@@ -42,15 +42,10 @@ export async function handleCompare(opts: {
     `  ${versionCount} packages resolved${npmResult.fromCache ? ` (cached, ${npmResult.cacheAge})` : ''}`,
   );
 
-  const results: Array<{ repoInput: string; result?: RunResult; repoName: string; error?: string }> = [];
+  // Run agent on both repos in parallel
+  console.log('\nStarting parallel analysis of both repos...\n');
 
-  // Run agent sequentially on each repo
-  for (let i = 0; i < 2; i++) {
-    const repoInput = opts.repos[i];
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`  Repo ${i + 1} of 2: ${repoInput}`);
-    console.log(`${'='.repeat(60)}\n`);
-
+  async function analyzeRepo(repoInput: string): Promise<{ repoInput: string; result?: RunResult; repoName: string; error?: string }> {
     try {
       // Resolve repo path
       let repoPath: string;
@@ -59,13 +54,13 @@ export async function handleCompare(opts: {
       let repoUrl: string | undefined;
 
       if (repoInput.startsWith('http://') || repoInput.startsWith('https://')) {
-        console.log(`Cloning ${repoInput}...`);
+        console.log(`[${repoInput.split('/').pop()?.replace('.git', '') ?? 'repo'}] Cloning...`);
         const cloneResult = await cloneRepo({ url: repoInput });
         repoPath = cloneResult.localPath;
         repoName = repoInput.split('/').pop()?.replace('.git', '') ?? 'unknown';
         repoSource = 'github';
         repoUrl = repoInput;
-        console.log(`  Cloned to ${repoPath} (${cloneResult.defaultBranch}, ${cloneResult.lastCommit.hash.slice(0, 7)})`);
+        console.log(`[${repoName}] Cloned to ${repoPath} (${cloneResult.defaultBranch}, ${cloneResult.lastCommit.hash.slice(0, 7)})`);
       } else {
         repoPath = path.resolve(repoInput);
         if (!fs.existsSync(repoPath)) {
@@ -75,7 +70,7 @@ export async function handleCompare(opts: {
         repoSource = 'local';
       }
 
-      console.log(`Starting investigation (goal: ${goal}, budget: ${budget})...\n`);
+      console.log(`[${repoName}] Starting investigation (goal: ${goal}, budget: ${budget})...`);
 
       const result = await runAgent({
         repoPath,
@@ -89,23 +84,25 @@ export async function handleCompare(opts: {
         verbose,
         onStep: (step) => {
           if (verbose) {
-            formatVerboseStep(step);
+            formatVerboseStep(step, repoName);
           } else {
             const truncated = step.result?.slice(0, 60) ?? '';
-            console.log(`  [Step ${step.step}] ${step.action} → ${truncated}`);
+            console.log(`  [${repoName}] [Step ${step.step}] ${step.action} → ${truncated}`);
           }
         },
       });
 
-      console.log(`\n  [${repoName}] Done: ${result.scorecard.overallScore.toUpperCase()}, ${result.state.findings.length} findings`);
-      results.push({ repoInput, result, repoName });
+      console.log(`[${repoName}] Done: ${result.scorecard.overallScore.toUpperCase()}, ${result.state.findings.length} findings`);
+      return { repoInput, result, repoName };
     } catch (err) {
       const repoName = repoInput.split('/').pop()?.replace('.git', '') ?? repoInput;
       const errorMsg = (err as Error).message;
-      console.error(`\n  [${repoName}] Error: ${errorMsg}`);
-      results.push({ repoInput, repoName, error: errorMsg });
+      console.error(`[${repoName}] Error: ${errorMsg}`);
+      return { repoInput, repoName, error: errorMsg };
     }
   }
+
+  const results = await Promise.all(opts.repos.map(analyzeRepo));
 
   // Generate comparison output
   console.log(`\n${'='.repeat(60)}`);

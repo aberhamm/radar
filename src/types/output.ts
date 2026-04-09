@@ -48,4 +48,8 @@ export interface RunMetrics {
     };
   };
   totalEstimatedCostUsd: number;
+  /** Per-turn timing: total ms spent waiting for LLM responses */
+  llmLatencyMs?: number;
+  /** Number of LLM turns (reasoning cycles) */
+  llmTurns?: number;
 }

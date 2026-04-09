@@ -217,53 +217,48 @@ const DEFAULT_RESULT_LIMIT = 4_000;
 
 // --- Disk spill for oversized results ---
 
-let spillDir: string | null = null;
-
-function getSpillDir(): string {
-  if (!spillDir) {
-    spillDir = join(tmpdir(), `repo-audit-${randomUUID().slice(0, 8)}`);
-    mkdirSync(spillDir, { recursive: true });
-  }
-  return spillDir;
-}
-
-/** Clean up the spill directory. Call after the run completes. */
-export function cleanupSpillDir(): void {
-  if (spillDir) {
-    try { rmSync(spillDir, { recursive: true, force: true }); } catch { /* ignore */ }
-    spillDir = null;
-  }
-}
-
 /**
- * Truncate a tool result to its per-tool limit. If the result exceeds the
- * limit, spill the full result to a temp file on disk and append a reference.
- * Falls back to in-memory truncation if the disk write fails.
+ * Create a per-run spill directory and return { getDir, spillAndTruncate, cleanup }.
+ * Each run gets its own isolated spill dir to avoid races in parallel runs.
  */
-export function spillAndTruncate(toolName: string, resultJson: string): string {
-  const limit = PER_TOOL_LIMITS[toolName] ?? DEFAULT_RESULT_LIMIT;
-  if (resultJson.length <= limit) return resultJson;
+export function createSpillContext(): {
+  spillAndTruncate: (toolName: string, resultJson: string) => string;
+  cleanup: () => void;
+} {
+  let dir: string | null = null;
 
-  const omitted = resultJson.length - limit;
-  try {
-    const dir = getSpillDir();
-    const filename = `${toolName}-${Date.now()}.json`;
-    const filepath = join(dir, filename);
-    writeFileSync(filepath, resultJson, 'utf-8');
-    return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted. Full result: ${filepath}]`;
-  } catch {
-    return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted]`;
+  function getDir(): string {
+    if (!dir) {
+      dir = join(tmpdir(), `repo-audit-${randomUUID().slice(0, 8)}`);
+      mkdirSync(dir, { recursive: true });
+    }
+    return dir;
   }
-}
 
-/** Wrap a tool result as Pi's AgentToolResult format with per-tool size limits. */
-function ok(toolName: string, result: unknown): AgentToolResult<unknown> {
-  const json = JSON.stringify(result);
-  const text = spillAndTruncate(toolName, json);
-  return {
-    content: [{ type: 'text' as const, text }],
-    details: {},
-  };
+  function spillAndTruncate(toolName: string, resultJson: string): string {
+    const limit = PER_TOOL_LIMITS[toolName] ?? DEFAULT_RESULT_LIMIT;
+    if (resultJson.length <= limit) return resultJson;
+
+    const omitted = resultJson.length - limit;
+    try {
+      const d = getDir();
+      const filename = `${toolName}-${Date.now()}.json`;
+      const filepath = join(d, filename);
+      writeFileSync(filepath, resultJson, 'utf-8');
+      return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted. Full result: ${filepath}]`;
+    } catch {
+      return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted]`;
+    }
+  }
+
+  function cleanup(): void {
+    if (dir) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+      dir = null;
+    }
+  }
+
+  return { spillAndTruncate, cleanup };
 }
 
 function err(name: string, error: Error): AgentToolResult<unknown> {
@@ -276,12 +271,26 @@ function err(name: string, error: Error): AgentToolResult<unknown> {
 /**
  * Build all Pi AgentTools for the investigation agent.
  *
- * Returns the tools array and a ref object whose `sections` field is
- * populated when assemble_output is called.
+ * Returns the tools array, a ref object whose `sections` field is
+ * populated when assemble_output is called, and a cleanup function
+ * for the per-run spill directory.
  */
 export function buildPiTools(
   state: AgentState,
-): { tools: AgentTool[]; assembledRef: AssembledSections } {
+): { tools: AgentTool[]; assembledRef: AssembledSections; cleanup: () => void } {
+  // Per-run spill context — each buildPiTools() call gets an isolated spill dir
+  // so parallel runs (e.g. `radar compare`) don't race on cleanup.
+  const spill = createSpillContext();
+
+  /** Wrap a tool result as Pi's AgentToolResult format with per-tool size limits. */
+  function ok(toolName: string, result: unknown): AgentToolResult<unknown> {
+    const json = JSON.stringify(result);
+    const text = spill.spillAndTruncate(toolName, json);
+    return {
+      content: [{ type: 'text' as const, text }],
+      details: {},
+    };
+  }
   const assembledRef: AssembledSections = { sections: null };
   const repoRoot = () => state.repo.localPath;
 
@@ -754,5 +763,5 @@ export function buildPiTools(
     }
   }
 
-  return { tools, assembledRef };
+  return { tools, assembledRef, cleanup: spill.cleanup };
 }

@@ -203,17 +203,28 @@ Deferred from CEO plan `/plan-ceo-review` on 2026-04-07. See `docs/designs/produ
 - [ ] **Comparative Benchmarking** — Cross-repo ranking (percentiles, category averages, outlier detection). Needs 20+ gauntlet runs for meaningful data. **P2** — deferred until Phase 1 gauntlet produces enough runs.
 - [ ] **Findings Trend Dashboard** — Visualize findings over time per repo in the Next.js dashboard. Charts: new/resolved/persistent per run, severity distribution over time, confidence calibration drift. Findings diff is now shipped (`radar diff`). **P3** — Phase 2+ feature.
 
+## Parallel Execution (2026-04-09)
+
+Eng review of 6 parallelism strategies. 3 killed (fan-out, speculative, DAG), 3 shipped/deferred.
+
+### Shipped
+- [x] **Parallel compare mode** — `radar compare` runs both repos simultaneously via `Promise.all`. Prefixed console output (`[repoName]`). Per-run spill dir isolation via `createSpillContext()` closure. `src/commands/compare.ts`, `src/tools/piToolAdapter.ts`.
+- [x] **Pre-computation layer** — Deterministic tools (detect_app_roots, parse_package_json, list_directory, get_specialist_prompts) run before agent loop. Results injected into goal prompt. Saves 3-5 LLM round-trips. `src/agent/runner.ts`.
+- [x] **Per-turn timing instrumentation** — LLM latency (totalLlmMs) and turn count tracked via message_start/message_end events. Added to RunMetrics (llmLatencyMs, llmTurns). `src/agent/runner.ts`, `src/types/output.ts`.
+
+### Deferred
+- [ ] **Writing fan-out** — After investigation, split brief writing across parallel Haiku agents (one per section group). Deferred because writing phase is ~25% of wall-clock, investigation dominates. Revisit after timing data confirms bottleneck. **P3** — depends on timing instrumentation data.
+- [ ] **Dashboard concurrent sessions** — Replace global singleton session (`globalThis.__agentSession`) with per-session isolation for multi-repo dashboard compare. Requires session store (Map or Redis), unique SSE stream per session. **P3** — only matters if dashboard gets multi-repo compare UI.
+- [ ] **Prompt cache hit rate monitoring** — Zero visibility into Portkey prompt cache hits (cachedTokens defaults to 0). If cache isn't hitting, fixing that alone could be 30-50% speedup. Check Portkey dashboard or add debug logging for cache_read_input_tokens. **P2** — potential high-impact optimization hiding behind zero visibility.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 5 | issues_open (via /autoplan) | 3 proposals deferred, 1 critical gap (product validation) |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 5 | CLEAR | mode: SELECTIVE_EXPANSION, 5 accepted, 1 deferred |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 4 | issues_open (via /autoplan) | 6 issues, 3 critical gaps (SSRF, budget race, silent overwrite) |
-| Eng Review 2 | `/plan-eng-review` | Production consulting tool plan | 1 | CLEAN | 8.5/10, 6 minor issues (Zod gauntlet reads, null fingerprints, PDF test skip, GoalType enum validation, integration point, config/ dir) |
-| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAN | score 3→8/10, 11 decisions |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 3 | CLEAR (PLAN) | 5 issues, 1 critical gap (pre-compute error handling) |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | STALE (>7d) | score: 3/10 -> 8/10, 11 decisions |
 
-**ENG:** 3 critical gaps: (1) SSRF in fetch_url cross-host redirect, (2) budget enforcement race condition, (3) double assemble_output silent overwrite.
-**CROSS-MODEL:** CEO + Eng both flagged fetch_url completeness as P1 independently. High-confidence signal.
-**UNRESOLVED:** 3 (taste decisions: READ_ONLY classification fix approach, dashboard scope, backlog priority)
-**VERDICT:** CEO + ENG open issues — commit concurrency.ts first, then fix SSRF + budget race before next eng review.
+**UNRESOLVED:** 0
+**VERDICT:** ENG CLEARED — parallel execution shipped. CEO 5 commits stale, design >7 days stale (neither block).

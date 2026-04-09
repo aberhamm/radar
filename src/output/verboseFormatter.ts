@@ -9,8 +9,9 @@ const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
 const MAGENTA = '\x1b[35m';
 
-export function formatVerboseStep(step: StepEvent): void {
-  const prefix = `${DIM}[Step ${step.step}]${RESET}`;
+export function formatVerboseStep(step: StepEvent, repoPrefix?: string): void {
+  const tag = repoPrefix ? `${DIM}[${repoPrefix}]${RESET} ` : '';
+  const prefix = `${tag}${DIM}[Step ${step.step}]${RESET}`;
 
   switch (step.type) {
     case 'text_response': {

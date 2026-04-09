@@ -17,9 +17,13 @@ import { redactSecrets } from './redaction.js';
 import { wrapInBoundary, BOUNDARY_SYSTEM_INSTRUCTION, validateFindingContent, sanitizeToolOutput } from './contextBoundary.js';
 import { withRetry } from './retry.js';
 import { renderInvestigationHtml } from '../output/investigationHtml.js';
-import { buildPiTools, type AssembledSections, cleanupSpillDir } from '../tools/piToolAdapter.js';
+import { buildPiTools, type AssembledSections } from '../tools/piToolAdapter.js';
 import { verifyFindingEvidence } from '../tools/analysis/verifyEvidence.js';
 import { deduplicateFindings } from '../tools/analysis/deduplicateFindings.js';
+import { detectAppRoots } from '../tools/analysis/detectAppRoots.js';
+import { parsePackageJson } from '../tools/config/parsePackageJson.js';
+import { listDirectory } from '../tools/repo/listDirectory.js';
+import { getSpecialistPrompts } from '../tools/analysis/getSpecialistPrompts.js';
 import { buildPiModel } from '../config/piModel.js';
 import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
@@ -122,6 +126,84 @@ export interface RunResult {
   errorDetail?: string;
 }
 
+// --- Pre-computation layer ---
+
+export interface PreComputeResult {
+  appRoots?: Awaited<ReturnType<typeof detectAppRoots>>;
+  packageJson?: Awaited<ReturnType<typeof parsePackageJson>>;
+  fileTree?: Awaited<ReturnType<typeof listDirectory>>;
+  specialists?: Awaited<ReturnType<typeof getSpecialistPrompts>>;
+}
+
+/**
+ * Run deterministic tools before the agent loop to seed the initial context.
+ * Saves 3-5 LLM round-trips by pre-computing what the agent would discover
+ * in its first few turns. Failures are graceful — the agent proceeds without
+ * whatever tool failed.
+ */
+export async function runPreCompute(repoPath: string): Promise<PreComputeResult> {
+  const result: PreComputeResult = {};
+
+  // Phase 1: Run independent tools in parallel
+  const [appRootsResult, packageJsonResult, fileTreeResult] = await Promise.allSettled([
+    detectAppRoots(repoPath, {}),
+    parsePackageJson(repoPath, { path: 'package.json' }),
+    listDirectory(repoPath, { path: '.', depth: 2 }),
+  ]);
+
+  if (appRootsResult.status === 'fulfilled') result.appRoots = appRootsResult.value;
+  if (packageJsonResult.status === 'fulfilled') result.packageJson = packageJsonResult.value;
+  if (fileTreeResult.status === 'fulfilled') result.fileTree = fileTreeResult.value;
+
+  // Phase 2: Chain specialist prompts from app roots (requires Phase 1)
+  if (result.appRoots && result.appRoots.roots.length > 0) {
+    try {
+      result.specialists = await getSpecialistPrompts(repoPath, { appRoots: result.appRoots.roots });
+    } catch { /* graceful — agent will call get_specialist_prompts itself */ }
+  }
+
+  return result;
+}
+
+/**
+ * Format pre-computed results as a concise context block for the goal prompt.
+ */
+export function formatPreComputeContext(pre: PreComputeResult): string {
+  const sections: string[] = ['PRE-COMPUTED CONTEXT (skip detect_app_roots, get_specialist_prompts, parse_package_json, and list_directory for root — this data is already available):'];
+
+  if (pre.appRoots) {
+    const roots = pre.appRoots.roots.map(r => {
+      const parts = [r.type, r.version ? `v${r.version}` : null, r.plugins?.length ? `plugins: ${r.plugins.join(', ')}` : null].filter(Boolean);
+      return `  ${r.path}: ${parts.join(', ')}`;
+    }).join('\n');
+    sections.push(`App Roots (${pre.appRoots.roots.length}):\n${roots}`);
+    if (pre.appRoots.monorepoTool) sections.push(`Monorepo: ${pre.appRoots.monorepoTool}`);
+  }
+
+  if (pre.specialists && pre.specialists.prompts.length > 0) {
+    const specs = pre.specialists.prompts.map(s =>
+      `  ${s.name} (${s.relevance}): ${s.prompt.slice(0, 150)}${s.prompt.length > 150 ? '...' : ''}`
+    ).join('\n');
+    sections.push(`Specialist Checklists:\n${specs}`);
+  }
+
+  if (pre.packageJson) {
+    const pkg = pre.packageJson;
+    const depCount = Object.keys(pkg.dependencies).length;
+    const devCount = Object.keys(pkg.devDependencies).length;
+    const scripts = Object.keys(pkg.scripts).join(', ');
+    sections.push(`Package: ${pkg.name} — ${depCount} deps, ${devCount} devDeps, scripts: [${scripts}]`);
+  }
+
+  if (pre.fileTree && pre.fileTree.entries) {
+    const dirs = pre.fileTree.entries.filter(e => e.type === 'directory').map(e => e.path);
+    const files = pre.fileTree.entries.filter(e => e.type === 'file').map(e => e.path);
+    sections.push(`File tree (depth 2): ${dirs.length} dirs, ${files.length} files\n  Dirs: ${dirs.slice(0, 20).join(', ')}${dirs.length > 20 ? '...' : ''}\n  Root files: ${files.slice(0, 15).join(', ')}${files.length > 15 ? '...' : ''}`);
+  }
+
+  return sections.join('\n\n');
+}
+
 /**
  * Pi Agent Runner — delegates the investigation loop to Pi's Agent class.
  *
@@ -209,9 +291,33 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // Detect platform if not provided
   const platform = config.platform ?? 'unknown';
 
+  // Pre-compute deterministic tool results to seed the agent's initial context.
+  // Saves 3-5 LLM round-trips by providing app roots, package.json, file tree,
+  // and specialist checklists before the agent starts reasoning.
+  let preComputeContext = '';
+  if (!config.resumeFrom) {
+    try {
+      const preComputed = await runPreCompute(config.repoPath);
+      preComputeContext = formatPreComputeContext(preComputed);
+      config.onStep?.({
+        step: 0,
+        action: 'pre_compute',
+        type: 'tool_call',
+        result: `Pre-computed: ${preComputed.appRoots ? preComputed.appRoots.roots.length + ' app roots' : 'no roots'}, ${preComputed.specialists ? preComputed.specialists.prompts.length + ' specialists' : 'no specialists'}, ${preComputed.packageJson ? 'package.json' : 'no package.json'}, ${preComputed.fileTree ? preComputed.fileTree.entries.length + ' entries' : 'no tree'}`,
+      });
+    } catch {
+      // Graceful — agent proceeds without pre-computed context
+    }
+  }
+
   // Build prompts
   const systemPrompt = buildSystemPrompt(config.goal, platform) + '\n\n---\n\n' + BOUNDARY_SYSTEM_INSTRUCTION;
   let goalPrompt = buildGoalPrompt(config.goal, config.repoPath, toolCallBudget, webSearchBudget);
+
+  // Inject pre-computed context into the goal prompt
+  if (preComputeContext) {
+    goalPrompt += `\n\n---\n\n${preComputeContext}`;
+  }
 
   // If resuming with prior findings, prepend context summary
   if (config.resumeFrom && state.findings.length > 0) {
@@ -220,7 +326,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   }
 
   // Build Pi tools from registry
-  const { tools, assembledRef } = buildPiTools(state);
+  const { tools, assembledRef, cleanup } = buildPiTools(state);
 
   // Build Pi models (or use provided overrides, e.g. faux provider for testing)
   let apiKey: string | undefined;
@@ -569,6 +675,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     afterToolCall,
   });
 
+  // --- Per-turn timing instrumentation ---
+  let turnStartMs = 0;
+  let totalLlmMs = 0;
+  let totalToolMs = 0;
+  let turnCount = 0;
+
   // Subscribe to events for usage tracking, reasoning capture, and batchId rotation
   let streamingText = ''; // accumulates text deltas within a single message
   agent.subscribe((event: AgentEvent) => {
@@ -576,6 +688,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       // New assistant turn — rotate the batchId so parallel tool calls in this turn share it
       currentBatchId = randomUUID();
       streamingText = '';
+      turnStartMs = Date.now();
+      turnCount++;
     }
 
     // Stream text deltas to dashboard in real-time (no waiting for message_end)
@@ -605,6 +719,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
 
     if (event.type === 'message_end' && event.message && 'role' in event.message && event.message.role === 'assistant') {
+      // Track per-turn LLM latency
+      if (turnStartMs > 0) {
+        totalLlmMs += Date.now() - turnStartMs;
+        turnStartMs = 0;
+      }
+
       const msg = event.message;
       trackUsage(state, msg.model, {
         inputTokens: msg.usage.input,
@@ -770,7 +890,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const scorecard = computeScorecard(config.repoName, config.goal, state.findings);
 
   const completedAt = new Date();
-  const metrics = buildMetrics(state, startedAt, completedAt);
+  const metrics = buildMetrics(state, startedAt, completedAt, totalLlmMs, turnCount);
 
   const briefMarkdown = renderBrief(
     scorecard,
@@ -815,8 +935,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     outputPaths.push(debugPath);
   }
 
-  // Clean up spilled tool results from tmpdir
-  cleanupSpillDir();
+  // Clean up spilled tool results from this run's tmpdir
+  cleanup();
 
   return {
     scorecard,
@@ -905,6 +1025,8 @@ function buildMetrics(
   state: AgentState,
   startedAt: Date,
   completedAt: Date,
+  llmLatencyMs?: number,
+  llmTurns?: number,
 ): RunMetrics {
   const models: RunMetrics['models'] = {};
   for (const [modelId, usage] of state.modelUsage.entries()) {
@@ -936,6 +1058,8 @@ function buildMetrics(
     toolCalls: state.toolCallCount,
     models,
     totalEstimatedCostUsd: Math.round(totalCost * 10000) / 10000,
+    ...(llmLatencyMs != null ? { llmLatencyMs } : {}),
+    ...(llmTurns != null ? { llmTurns } : {}),
   };
 }
 

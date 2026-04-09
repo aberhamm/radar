@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { buildPiTools, spillAndTruncate, cleanupSpillDir } from '../../src/tools/piToolAdapter.js';
+import { buildPiTools, createSpillContext } from '../../src/tools/piToolAdapter.js';
 import type { AgentState } from '../../src/types/state.js';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -202,54 +202,86 @@ describe('concurrency partitioning', () => {
   });
 });
 
-describe('spillAndTruncate', () => {
-  afterEach(() => {
-    cleanupSpillDir();
-  });
-
+describe('createSpillContext', () => {
   it('returns unchanged for small results', () => {
+    const spill = createSpillContext();
     const small = JSON.stringify({ data: 'hello' });
-    expect(spillAndTruncate('list_directory', small)).toBe(small);
+    expect(spill.spillAndTruncate('list_directory', small)).toBe(small);
+    spill.cleanup();
   });
 
   it('truncates at per-tool limit for large results', () => {
+    const spill = createSpillContext();
     // Default limit is 4000 for unknown tools
     const large = 'x'.repeat(5000);
-    const result = spillAndTruncate('list_directory', large);
+    const result = spill.spillAndTruncate('list_directory', large);
     expect(result.length).toBeLessThan(5000);
     expect(result).toContain('truncated');
     expect(result).toContain('1000 chars omitted');
+    spill.cleanup();
   });
 
   it('uses per-tool limit (grep_pattern gets 20K)', () => {
+    const spill = createSpillContext();
     const medium = 'x'.repeat(10_000);
     // grep_pattern limit is 20K, so 10K should pass through unchanged
-    expect(spillAndTruncate('grep_pattern', medium)).toBe(medium);
+    expect(spill.spillAndTruncate('grep_pattern', medium)).toBe(medium);
 
     // But 25K should truncate
     const large = 'x'.repeat(25_000);
-    const result = spillAndTruncate('grep_pattern', large);
+    const result = spill.spillAndTruncate('grep_pattern', large);
     expect(result).toContain('truncated');
+    spill.cleanup();
   });
 
   it('writes full result to disk when truncating', () => {
+    const spill = createSpillContext();
     const large = 'x'.repeat(5000);
-    const result = spillAndTruncate('list_directory', large);
+    const result = spill.spillAndTruncate('list_directory', large);
     // Extract file path from the truncation message
     const match = result.match(/Full result: (.+)\]/);
     expect(match).toBeTruthy();
     const filepath = match![1];
     expect(existsSync(filepath)).toBe(true);
     expect(readFileSync(filepath, 'utf-8')).toBe(large);
+    spill.cleanup();
   });
 
-  it('cleanupSpillDir removes spill directory', () => {
+  it('cleanup removes spill directory', () => {
+    const spill = createSpillContext();
     // Trigger a spill to create the directory
-    spillAndTruncate('list_directory', 'x'.repeat(5000));
-    cleanupSpillDir();
+    spill.spillAndTruncate('list_directory', 'x'.repeat(5000));
+    spill.cleanup();
     // After cleanup, next spill should create a new directory
-    const result = spillAndTruncate('list_directory', 'x'.repeat(5000));
+    const result = spill.spillAndTruncate('list_directory', 'x'.repeat(5000));
     const match = result.match(/Full result: (.+)\]/);
     expect(match).toBeTruthy();
+    spill.cleanup();
+  });
+
+  it('parallel runs get isolated spill directories', () => {
+    const spillA = createSpillContext();
+    const spillB = createSpillContext();
+
+    // Both spill large results
+    const resultA = spillA.spillAndTruncate('list_directory', 'a'.repeat(5000));
+    const resultB = spillB.spillAndTruncate('list_directory', 'b'.repeat(5000));
+
+    const matchA = resultA.match(/Full result: (.+)\]/);
+    const matchB = resultB.match(/Full result: (.+)\]/);
+    expect(matchA).toBeTruthy();
+    expect(matchB).toBeTruthy();
+
+    // Different directories
+    const dirA = path.dirname(matchA![1]);
+    const dirB = path.dirname(matchB![1]);
+    expect(dirA).not.toBe(dirB);
+
+    // Cleanup A doesn't affect B
+    spillA.cleanup();
+    expect(existsSync(matchB![1])).toBe(true);
+    expect(existsSync(matchA![1])).toBe(false);
+
+    spillB.cleanup();
   });
 });
