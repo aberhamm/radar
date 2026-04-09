@@ -257,45 +257,119 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 )}
 
                 {/* Committed turns */}
-                {turns.map((turn, i) => {
-                  if (turn.isSwitch) {
+                <div className="relative">
+                  {/* Vertical connector rail */}
+                  {turns.length > 1 && (
+                    <div
+                      className="absolute left-[9px] top-4 bottom-4 w-px"
+                      style={{
+                        background: `linear-gradient(to bottom, var(--color-separator), color-mix(in srgb, ${accentColor} 30%, var(--color-separator)), var(--color-separator))`,
+                      }}
+                    />
+                  )}
+
+                  {turns.map((turn, i) => {
+                    if (turn.isSwitch) {
+                      return (
+                        <div
+                          key={`switch-${i}`}
+                          className="flex items-center gap-3 px-4 py-3 my-3 rounded-xl bg-[rgba(255,159,10,0.05)] border border-[rgba(255,159,10,0.15)] relative z-[1]"
+                          style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                        >
+                          <div className="w-7 h-7 rounded-full bg-[rgba(255,159,10,0.1)] flex items-center justify-center shrink-0">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                              <path d="M3 8h10M10 5l3 3-3 3M6 11L3 8l3-3" stroke="var(--color-warning)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-warning">Analysis Complete</div>
+                            <div className="text-[10px] text-tertiary-label">Switching to fast model for writing</div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const isRecent = i >= turns.length - 2;
+                    const isActive = activeTurnIndex === i;
+                    const isWrite = turn.phase === 'write';
+                    const hasActivities = turn.activities.length > 0;
+
+                    // Derive turn status icon
+                    let iconColor = 'var(--color-tertiary-label)';
+                    let icon: React.ReactNode;
+
+                    if (isActive) {
+                      // Active: pulsing dot
+                      iconColor = accentColor;
+                      icon = (
+                        <div
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ background: accentColor, animation: 'pulse-dot 1.2s ease-in-out infinite' }}
+                        />
+                      );
+                    } else if (isWrite) {
+                      // Write phase: pen icon
+                      iconColor = 'var(--color-success)';
+                      icon = (
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                          <path d="M8.5 1.5l2 2L4 10H2v-2l6.5-6.5z" stroke="var(--color-success)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      );
+                    } else if (hasActivities) {
+                      // Investigative: magnifying glass
+                      iconColor = 'var(--color-tertiary-label)';
+                      icon = (
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                          <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.2" />
+                          <path d="M7.5 7.5L10 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                        </svg>
+                      );
+                    } else {
+                      // Complete: checkmark
+                      icon = (
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                          <path d="M2.5 6.5L5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      );
+                    }
+
                     return (
                       <div
-                        key={`switch-${i}`}
-                        className="flex items-center gap-3 px-4 py-3 my-3 rounded-xl bg-[rgba(255,159,10,0.05)] border border-[rgba(255,159,10,0.15)]"
-                        style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                        key={i}
+                        className={`flex gap-2.5 py-2 transition-opacity duration-300 ${isRecent ? 'opacity-100' : 'opacity-40 hover:opacity-100 focus-within:opacity-100'}`}
                       >
-                        <div className="w-7 h-7 rounded-full bg-[rgba(255,159,10,0.1)] flex items-center justify-center shrink-0">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                            <path d="M3 8h10M10 5l3 3-3 3M6 11L3 8l3-3" stroke="var(--color-warning)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
+                        {/* Status icon waypoint */}
+                        <div
+                          className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-0.5 relative z-[1] transition-all duration-300"
+                          style={{
+                            background: isActive
+                              ? `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`
+                              : 'var(--color-surface)',
+                            color: iconColor,
+                            boxShadow: isActive
+                              ? `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`
+                              : '0 0 0 1px var(--color-separator)',
+                          }}
+                        >
+                          {icon}
                         </div>
-                        <div>
-                          <div className="text-xs font-semibold text-warning">Analysis Complete</div>
-                          <div className="text-[10px] text-tertiary-label">Switching to fast model for writing</div>
+
+                        {/* Turn content */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-[13px] leading-relaxed ${
+                            isWrite ? 'text-success' : 'text-secondary-label'
+                          }`}>
+                            {turn.reasoning}
+                          </p>
+
+                          {hasActivities && (
+                            <ActivityChipGroup activities={turn.activities} active={isActive} accentColor={accentColor} />
+                          )}
                         </div>
                       </div>
                     );
-                  }
-
-                  const isRecent = i >= turns.length - 2;
-                  return (
-                    <div
-                      key={i}
-                      className={`py-2 transition-opacity duration-300 ${isRecent ? 'opacity-100' : 'opacity-40 hover:opacity-100 focus-within:opacity-100'}`}
-                    >
-                      <p className={`text-[13px] leading-relaxed ${
-                        turn.phase === 'write' ? 'text-success' : 'text-secondary-label'
-                      }`}>
-                        {turn.reasoning}
-                      </p>
-
-                      {turn.activities.length > 0 && (
-                        <ActivityChipGroup activities={turn.activities} active={activeTurnIndex === i} accentColor={accentColor} />
-                      )}
-                    </div>
-                  );
-                })}
+                  })}
+                </div>
 
                 {/* Currently typing */}
                 {typingText && (
@@ -363,22 +437,49 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
               </div>
               <div className="px-4 pb-2 flex flex-wrap gap-1">
                 {CATEGORIES.map(cat => {
-                  const isCovered = coveredTopics.has(cat.id);
+                  const isTouched = coveredTopics.has(cat.id);
+                  const hasFindings = findings.some(f => f.category === cat.id);
+                  // 3 levels: not started → touched (tool calls) → confirmed (findings)
+                  const level = hasFindings ? 2 : isTouched ? 1 : 0;
+
                   return (
                     <span
                       key={cat.id}
-                      className={`text-[9px] font-medium px-2 py-0.5 rounded-md transition-all duration-300 ${
-                        isCovered
-                          ? 'bg-[rgba(0,113,227,0.06)] text-tint'
-                          : 'bg-transparent text-quaternary-label'
-                      }`}
+                      className="relative text-[9px] font-medium px-2 py-0.5 rounded-md transition-all duration-300 overflow-hidden"
+                      style={{
+                        color: level === 2
+                          ? 'var(--color-tint)'
+                          : level === 1
+                            ? 'var(--color-secondary-label)'
+                            : 'var(--color-quaternary-label)',
+                        background: level === 0 ? 'transparent' : undefined,
+                      }}
                     >
-                      {isCovered && (
-                        <svg width="8" height="8" viewBox="0 0 12 12" fill="none" className="inline mr-0.5 -mt-px">
-                          <path d="M2.5 6.5L5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
+                      {/* Fill bar background */}
+                      {level > 0 && (
+                        <span
+                          className="absolute inset-0 rounded-md transition-all duration-500"
+                          style={{
+                            background: level === 2
+                              ? 'rgba(0,113,227,0.08)'
+                              : 'rgba(0,113,227,0.03)',
+                            width: level === 2 ? '100%' : '50%',
+                          }}
+                        />
                       )}
-                      {cat.label}
+                      <span className="relative">
+                        {level === 2 && (
+                          <svg width="8" height="8" viewBox="0 0 12 12" fill="none" className="inline mr-0.5 -mt-px">
+                            <path d="M2.5 6.5L5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                        {level === 1 && (
+                          <svg width="8" height="8" viewBox="0 0 12 12" fill="none" className="inline mr-0.5 -mt-px">
+                            <circle cx="6" cy="6" r="2" fill="currentColor" opacity="0.4" />
+                          </svg>
+                        )}
+                        {cat.label}
+                      </span>
                     </span>
                   );
                 })}
@@ -461,7 +562,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                     )}
 
                     {findings.map((f, i) => (
-                      <FindingCard key={`${f.id}-${i}`} finding={f} />
+                      <FindingCard key={`${f.id}-${i}`} finding={f} index={i} />
                     ))}
                   </div>
                 )}

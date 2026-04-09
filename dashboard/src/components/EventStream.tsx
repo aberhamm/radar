@@ -131,9 +131,57 @@ function FindingCard({ event }: { event: StepEvent }) {
   );
 }
 
+// ─── Dependency detection ─────────────────────────────────────────
+
+/** Extract file paths from a tool call's args */
+function extractArgPaths(args: string | undefined): string[] {
+  if (!args) return [];
+  try {
+    const obj = JSON.parse(args);
+    const paths: string[] = [];
+    if (obj.path) paths.push(obj.path);
+    if (obj.filePath) paths.push(obj.filePath);
+    if (obj.paths && Array.isArray(obj.paths)) paths.push(...obj.paths);
+    return paths.filter(Boolean);
+  } catch { return []; }
+}
+
+/** Build a map of file paths → earliest step number that produced them */
+function buildFileOriginMap(events: StepEvent[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const ev of events) {
+    if (!ev.fullResult) continue;
+    try {
+      const result = JSON.parse(ev.fullResult);
+      // Check common result shapes for file paths
+      const paths: string[] = [];
+      if (typeof result === 'object' && result !== null) {
+        if (result.path) paths.push(result.path);
+        if (result.files && Array.isArray(result.files)) {
+          for (const f of result.files) {
+            if (typeof f === 'string') paths.push(f);
+            else if (f?.path) paths.push(f.path);
+          }
+        }
+        if (result.entries && Array.isArray(result.entries)) {
+          for (const e of result.entries) {
+            if (typeof e === 'string') paths.push(e);
+            else if (e?.path) paths.push(e.path);
+            else if (e?.name) paths.push(e.name);
+          }
+        }
+      }
+      for (const p of paths) {
+        if (p && !map.has(p)) map.set(p, ev.step);
+      }
+    } catch { /* not JSON */ }
+  }
+  return map;
+}
+
 // ─── Tool call chip ───────────────────────────────────────────────
 
-function ToolCallChip({ event, isExpanded, onToggle }: { event: StepEvent; isExpanded: boolean; onToggle: () => void }) {
+function ToolCallChip({ event, isExpanded, onToggle, backRef }: { event: StepEvent; isExpanded: boolean; onToggle: () => void; backRef?: number | null }) {
   const hasDetail = !!(event.args || event.fullResult);
   let parsedArgs: string | null = null;
   try {
@@ -155,6 +203,9 @@ function ToolCallChip({ event, isExpanded, onToggle }: { event: StepEvent; isExp
       >
         <span className="text-quaternary-label text-[10px] shrink-0">#{event.step}</span>
         <span className="font-medium text-label whitespace-nowrap">{event.action}</span>
+        {backRef != null && (
+          <span className="text-[9px] text-tint opacity-60 shrink-0">← #{backRef}</span>
+        )}
         {event.result && (
           <span className="text-tertiary-label overflow-hidden text-ellipsis whitespace-nowrap flex-1 text-[11px]">
             {event.result}
@@ -221,7 +272,7 @@ function SpecialEvent({ event }: { event: StepEvent }) {
 
 // ─── Turn card ────────────────────────────────────────────────────
 
-function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number; isLatest: boolean }) {
+function TurnCard({ turn, turnIndex, isLatest, fileOriginMap }: { turn: Turn; turnIndex: number; isLatest: boolean; fileOriginMap: Map<string, number> }) {
   const [expandedCalls, setExpandedCalls] = useState<Set<number>>(new Set());
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
 
@@ -244,6 +295,15 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
   const hasBatches = batchIds.size > 0;
   const isAllParallel = hasBatches && batchIds.size === 1 && turn.toolCalls.length > 1;
   const totalCalls = turn.toolCalls.length;
+  const findingCount = turn.findings.length;
+
+  // Derive a one-line decision summary from the tool calls
+  const decisionSummary = useMemo(() => {
+    if (totalCalls === 0) return null;
+    const actions = [...new Set(turn.toolCalls.map(tc => tc.action))];
+    if (actions.length <= 2) return actions.join(' → ');
+    return `${actions[0]} → … → ${actions[actions.length - 1]} (${totalCalls} steps)`;
+  }, [turn.toolCalls, totalCalls]);
 
   return (
     <div
@@ -266,6 +326,22 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
             )}
           </div>
 
+          {/* Expanded: decision summary + metadata row */}
+          {reasoningExpanded && (decisionSummary || findingCount > 0) && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap" style={{ animation: 'fadeIn 0.2s ease both' }}>
+              {decisionSummary && (
+                <span className="text-[10px] text-tertiary-label font-mono bg-canvas rounded px-2 py-0.5">
+                  {decisionSummary}
+                </span>
+              )}
+              {findingCount > 0 && (
+                <span className="text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ color: '#ff3b30', background: 'rgba(255,59,48,0.06)' }}>
+                  {findingCount} finding{findingCount > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          )}
+
           {totalCalls > 1 && (
             <div className="mt-1.5">
               <span className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 ${
@@ -279,24 +355,45 @@ function TurnCard({ turn, turnIndex, isLatest }: { turn: Turn; turnIndex: number
           )}
         </div>
 
-        {turn.timestamp && (
-          <span className="text-[10px] text-quaternary-label font-mono shrink-0 whitespace-nowrap">
-            {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Finding count badge (always visible when turn has findings) */}
+          {findingCount > 0 && !reasoningExpanded && (
+            <span
+              className="text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center"
+              style={{ color: '#ff3b30', background: 'rgba(255,59,48,0.08)' }}
+            >
+              {findingCount}
+            </span>
+          )}
+          {turn.timestamp && (
+            <span className="text-[10px] text-quaternary-label font-mono whitespace-nowrap">
+              {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Tool calls */}
       {turn.toolCalls.length > 0 && (
         <div className="flex flex-wrap gap-1.5 ml-7">
-          {turn.toolCalls.map((tc, i) => (
-            <ToolCallChip
-              key={`${tc.step}-${tc.action}-${i}`}
-              event={tc}
-              isExpanded={expandedCalls.has(tc.step)}
-              onToggle={() => toggleCall(tc.step)}
-            />
-          ))}
+          {turn.toolCalls.map((tc, i) => {
+            // Find back-reference: check if this tool's args reference a file from a previous step
+            let backRef: number | null = null;
+            const argPaths = extractArgPaths(tc.args);
+            for (const p of argPaths) {
+              const origin = fileOriginMap.get(p);
+              if (origin != null && origin < tc.step) { backRef = origin; break; }
+            }
+            return (
+              <ToolCallChip
+                key={`${tc.step}-${tc.action}-${i}`}
+                event={tc}
+                isExpanded={expandedCalls.has(tc.step)}
+                onToggle={() => toggleCall(tc.step)}
+                backRef={backRef}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -329,6 +426,7 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
   const esRef = useRef<EventSource | null>(null);
 
   const turns = useMemo(() => groupEventsIntoTurns(events), [events]);
+  const fileOriginMap = useMemo(() => buildFileOriginMap(events), [events]);
 
   useEffect(() => {
     if (!autoScroll || !scrollRef.current) return;
@@ -397,6 +495,7 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
           turn={turn}
           turnIndex={i}
           isLatest={i === turns.length - 1}
+          fileOriginMap={fileOriginMap}
         />
       ))}
 

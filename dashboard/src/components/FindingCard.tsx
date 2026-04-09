@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Finding, sevColor, sevBg } from '@/lib/runTransform';
 
-export function FindingCard({ finding }: { finding: Finding }) {
+export function FindingCard({ finding, index }: { finding: Finding; index?: number }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = finding.note || finding.evidenceFiles.length > 0;
   const uniqueFiles = [...new Set(finding.evidenceFiles)];
@@ -12,7 +12,7 @@ export function FindingCard({ finding }: { finding: Finding }) {
     <div
       className="rounded-lg overflow-hidden"
       style={{
-        animation: 'slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
+        animation: `scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) ${(index ?? 0) * 60}ms both`,
         background: sevBg(finding.severity),
       }}
     >
