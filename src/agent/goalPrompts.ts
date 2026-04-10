@@ -92,6 +92,23 @@ IMPORTANT: Record findings throughout your investigation.
 You must record at least 8 findings across all scorecard categories.
 Every scorecard category must have at least one finding.`,
 
+  universal: (localPath) => `You have access to a repository at ${localPath}.
+Conduct a comprehensive investigation covering ALL categories for a multi-goal analysis.
+
+You are a senior consultant investigating this codebase broadly. Your findings will feed
+into 8 different goal scorecards: onboarding, audit, migration, component-map, ci-check,
+security-review, Next.js, and accessibility.
+
+Investigate all 9 core categories: stack, cms-integration, preview-editing, security,
+configuration, architecture, dependencies, deployment, and nextjs patterns.
+Follow your universal investigation rules.
+
+IMPORTANT: Record findings throughout your investigation.
+You must record at least 15 findings across all 9 core categories.
+Every required category must have at least one finding.
+After this pass, specialist agents will add depth for niche categories
+(routing, data-fetching, performance, accessibility, forms, aria).`,
+
   accessibility: (localPath) => `You have access to a repository at ${localPath}.
 Conduct a WCAG 2.1 AA accessibility audit of this project's codebase.
 
@@ -111,10 +128,11 @@ You must record at least 8 findings across all scorecard categories.
 Every scorecard category must have at least one finding.`,
 };
 
-const CATEGORY_COVERAGE: Partial<Record<GoalType, string>> = {
+const CATEGORY_COVERAGE: Partial<Record<GoalType | 'universal', string>> = {
   'security-review': 'security, architecture, configuration, dependencies',
   nextjs: 'routing, architecture, data-fetching, nextjs, stack, performance, configuration, dependencies',
   accessibility: 'accessibility, architecture, forms, aria',
+  universal: 'stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, nextjs',
 };
 
 function getCategoryCoverageList(goal: GoalType): string {
