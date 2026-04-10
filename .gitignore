@@ -38,3 +38,5 @@ dashboard/output/*
 .gstack/*
 .gstack-*/*
 .gstack/
+.next/trace
+.next/trace-build
