@@ -78,15 +78,56 @@ export interface RunResult {
 
 export type SessionStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error';
 
+export interface RunIndexEntry {
+  id: string;
+  goal: string;
+  repoName: string;
+  overallScore?: ScoreLevel;
+  startedAt: string;       // ISO string
+  completedAt?: string;
+  findingsCount?: number;
+  status?: 'in_progress' | 'completed';
+  repoPath?: string;
+  repoSource?: 'github' | 'local';
+  repoUrl?: string;
+}
+
+export interface RunEnvelope {
+  id: string;
+  goal: string;
+  repoName: string;
+  startedAt: string;
+  completedAt?: string;
+  scorecard: Scorecard;
+  metrics: RunMetrics;
+  briefMarkdown: string;
+  terminationReason: string;
+  findingsSummary: Array<{
+    id: string;
+    severity: string;
+    category: string;
+    title: string;
+    evidenceFiles: string[];
+    tags: string[];
+  }>;
+}
+
 export interface RunRecord {
   id: string;
   goal: string;
   repoName: string;
   startedAt: Date;
   completedAt?: Date;
+  overallScore?: ScoreLevel;
+  findingsCount?: number;
   result?: RunResult;
   events: StepEvent[];
-  /** Path to the persisted JSON file (for lazy-loading events from disk) */
+  repoPath?: string;
+  repoSource?: 'github' | 'local';
+  repoUrl?: string;
+  /** Directory path for tiered storage: output/runs/{id}/ */
+  _dirPath?: string;
+  /** Legacy: flat file path (for backward compat during migration) */
   _filePath?: string;
 }
 
@@ -119,6 +160,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const OUTPUT_DIR = path.resolve(process.cwd(), '..', 'output', 'runs');
+const INDEX_FILE = path.join(OUTPUT_DIR, 'index.json');
 
 function ensureOutputDir() {
   if (!fs.existsSync(OUTPUT_DIR)) {
@@ -126,6 +168,11 @@ function ensureOutputDir() {
   }
 }
 
+function runDirPath(id: string): string {
+  return path.join(OUTPUT_DIR, id);
+}
+
+/** Legacy filename for backward-compat migration detection. */
 function runFilename(record: { repoName: string; goal: string; startedAt: Date | string }): string {
   const ts = record.startedAt instanceof Date
     ? record.startedAt.toISOString().replace(/[:.]/g, '-')
@@ -133,49 +180,216 @@ function runFilename(record: { repoName: string; goal: string; startedAt: Date |
   return `${record.repoName}-${record.goal}-${ts}.json`;
 }
 
+// ── Index helpers (Tier 1) ────────────────────────────────────
+
+function readIndex(): RunIndexEntry[] {
+  try {
+    if (!fs.existsSync(INDEX_FILE)) return [];
+    return JSON.parse(fs.readFileSync(INDEX_FILE, 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+function writeIndex(entries: RunIndexEntry[]): void {
+  const tmp = INDEX_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(entries, null, 2));
+  fs.renameSync(tmp, INDEX_FILE);
+}
+
+function appendToIndex(entry: RunIndexEntry): void {
+  const entries = readIndex();
+  const idx = entries.findIndex(e => e.id === entry.id);
+  if (idx >= 0) entries[idx] = entry;
+  else entries.unshift(entry);
+  writeIndex(entries);
+}
+
+// ── Tier 2/3 writers ──────────────────────────────────────────
+
+function writeEnvelope(dirPath: string, record: RunRecord): void {
+  const findings = (record.result?.state?.findings ?? []) as Array<Record<string, unknown>>;
+  const envelope: RunEnvelope = {
+    id: record.id,
+    goal: record.goal,
+    repoName: record.repoName,
+    startedAt: record.startedAt instanceof Date ? record.startedAt.toISOString() : String(record.startedAt),
+    completedAt: record.completedAt instanceof Date ? record.completedAt.toISOString() : record.completedAt ? String(record.completedAt) : undefined,
+    scorecard: record.result!.scorecard,
+    metrics: record.result!.metrics,
+    briefMarkdown: record.result!.briefMarkdown,
+    terminationReason: record.result!.terminationReason,
+    findingsSummary: findings.map(f => ({
+      id: String(f.id ?? ''),
+      severity: String(f.severity ?? 'info'),
+      category: String(f.category ?? ''),
+      title: String(f.title ?? ''),
+      evidenceFiles: ((f.evidence as Array<{ filePath?: string }>) ?? []).map(e => e.filePath ?? ''),
+      tags: (f.tags as string[]) ?? [],
+    })),
+  };
+  fs.writeFileSync(path.join(dirPath, 'envelope.json'), JSON.stringify(envelope, null, 2));
+}
+
+function writeEventsJsonl(dirPath: string, events: StepEvent[]): void {
+  const lines = events.map(e => JSON.stringify(e)).join('\n');
+  fs.writeFileSync(path.join(dirPath, 'events.jsonl'), lines + (lines.length ? '\n' : ''));
+}
+
+function writeFindings(dirPath: string, findings: unknown[]): void {
+  fs.writeFileSync(path.join(dirPath, 'findings.json'), JSON.stringify(findings, null, 2));
+}
+
+// ── Persist & checkpoint ──────────────────────────────────────
+
 /**
  * Checkpoint an in-progress run to disk. Called periodically during a run
- * so that events survive crashes. Overwrites the same file each time.
+ * so that events survive crashes.
  */
 export function checkpointRun(run: {
   id: string; goal: string; repoName: string; startedAt: Date; events: StepEvent[];
 }): void {
   try {
     ensureOutputDir();
-    const data = {
+    const dirPath = runDirPath(run.id);
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+
+    writeEventsJsonl(dirPath, run.events);
+
+    appendToIndex({
       id: run.id,
       goal: run.goal,
       repoName: run.repoName,
-      startedAt: run.startedAt,
+      startedAt: run.startedAt.toISOString(),
       status: 'in_progress',
-      events: run.events,
-    };
-    fs.writeFileSync(path.join(OUTPUT_DIR, runFilename(run)), JSON.stringify(data, null, 2));
+    });
   } catch (err) {
     console.error('[checkpoint] Failed to save run:', (err as Error).message);
   }
 }
 
-/** Save a completed run to disk as JSON. Overwrites any in-progress checkpoint. */
+/** Save a completed run to disk using tiered directory structure. */
 export function persistRun(record: RunRecord): void {
   try {
     ensureOutputDir();
-    const data = {
+    const dirPath = runDirPath(record.id);
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+
+    // Tier 2: envelope (scorecard, metrics, brief, finding summaries)
+    if (record.result) {
+      writeEnvelope(dirPath, record);
+    }
+
+    // Tier 3: events + full findings
+    writeEventsJsonl(dirPath, record.events);
+    writeFindings(dirPath, record.result?.state?.findings ?? []);
+
+    // Tier 1: update index
+    const findings = (record.result?.state?.findings ?? []) as unknown[];
+    appendToIndex({
       id: record.id,
       goal: record.goal,
       repoName: record.repoName,
-      startedAt: record.startedAt,
-      completedAt: record.completedAt,
-      result: record.result,
-      events: record.events,
-    };
-    fs.writeFileSync(path.join(OUTPUT_DIR, runFilename(record)), JSON.stringify(data, null, 2));
+      overallScore: record.result?.scorecard?.overallScore,
+      startedAt: record.startedAt instanceof Date ? record.startedAt.toISOString() : String(record.startedAt),
+      completedAt: record.completedAt instanceof Date ? record.completedAt.toISOString() : record.completedAt ? String(record.completedAt) : undefined,
+      findingsCount: findings.length,
+      status: 'completed',
+      repoPath: record.repoPath,
+      repoSource: record.repoSource,
+      repoUrl: record.repoUrl,
+    });
+
+    // Clean up legacy flat file if it exists
+    try {
+      const legacyPath = path.join(OUTPUT_DIR, runFilename(record));
+      if (fs.existsSync(legacyPath)) fs.unlinkSync(legacyPath);
+    } catch { /* ignore */ }
   } catch (err) {
     console.error('[persist] Failed to save run:', (err as Error).message);
   }
 }
 
-/** Load all saved runs from disk, newest first. Events are lazy-loaded on demand. */
+// ── Migration from flat files ─────────────────────────────────
+
+function migrateFromFlatFiles(): void {
+  let files: string[];
+  try {
+    files = fs.readdirSync(OUTPUT_DIR)
+      .filter(f => f.endsWith('.json') && f !== 'index.json')
+      .sort()
+      .reverse();
+  } catch { return; }
+
+  if (files.length === 0) return;
+
+  console.log(`[migration] Migrating ${files.length} legacy run file(s) to tiered storage...`);
+
+  const entries: RunIndexEntry[] = [];
+
+  for (const f of files) {
+    const filePath = path.join(OUTPUT_DIR, f);
+    try {
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      const id = raw.id ?? crypto.randomUUID();
+      const dirPath = runDirPath(id);
+      if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+
+      const events: StepEvent[] = raw.events ?? [];
+      writeEventsJsonl(dirPath, events);
+
+      if (raw.result) {
+        // Build a temporary RunRecord to reuse writeEnvelope
+        const tempRecord: RunRecord = {
+          id,
+          goal: raw.goal,
+          repoName: raw.repoName,
+          startedAt: new Date(raw.startedAt),
+          completedAt: raw.completedAt ? new Date(raw.completedAt) : undefined,
+          result: raw.result,
+          events: [],
+        };
+        writeEnvelope(dirPath, tempRecord);
+        writeFindings(dirPath, raw.result.state?.findings ?? []);
+
+        entries.push({
+          id,
+          goal: raw.goal,
+          repoName: raw.repoName,
+          overallScore: raw.result.scorecard?.overallScore,
+          startedAt: raw.startedAt,
+          completedAt: raw.completedAt,
+          findingsCount: (raw.result.state?.findings ?? []).length,
+          status: 'completed',
+        });
+      } else {
+        entries.push({
+          id,
+          goal: raw.goal,
+          repoName: raw.repoName,
+          startedAt: raw.startedAt,
+          status: 'in_progress',
+        });
+      }
+
+      // Move legacy file to _migrated/
+      const migratedDir = path.join(OUTPUT_DIR, '_migrated');
+      if (!fs.existsSync(migratedDir)) fs.mkdirSync(migratedDir, { recursive: true });
+      fs.renameSync(filePath, path.join(migratedDir, f));
+    } catch (err) {
+      console.warn(`[migration] Skipping corrupt file ${f}:`, (err as Error).message);
+    }
+  }
+
+  if (entries.length > 0) {
+    writeIndex(entries);
+    console.log(`[migration] Migrated ${entries.length} run(s). Legacy files moved to _migrated/.`);
+  }
+}
+
+// ── Load functions (tiered) ───────────────────────────────────
+
+/** Load all saved runs from disk, newest first. Reads only the index (Tier 1). */
 export function loadPersistedRuns(): RunRecord[] {
   try {
     ensureOutputDir();
@@ -184,53 +398,86 @@ export function loadPersistedRuns(): RunRecord[] {
     return [];
   }
 
-  let files: string[];
-  try {
-    files = fs.readdirSync(OUTPUT_DIR)
-      .filter(f => f.endsWith('.json'))
-      .sort()
-      .reverse();
-  } catch (err) {
-    console.warn('[loadPersistedRuns] Cannot read output dir:', (err as Error).message);
-    return [];
+  // If no index exists, migrate from legacy flat files
+  if (!fs.existsSync(INDEX_FILE)) {
+    migrateFromFlatFiles();
   }
 
-  const records: RunRecord[] = [];
-  for (const f of files) {
-    const filePath = path.join(OUTPUT_DIR, f);
-    try {
-      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      records.push({
-        id: raw.id,
-        goal: raw.goal,
-        repoName: raw.repoName,
-        startedAt: new Date(raw.startedAt),
-        completedAt: raw.completedAt ? new Date(raw.completedAt) : undefined,
-        result: raw.result,
-        events: [],       // lazy — use loadRunEvents() when needed
-        _filePath: filePath,
-      } as RunRecord);
-    } catch (err) {
-      console.warn(`[loadPersistedRuns] Skipping corrupt file ${f}:`, (err as Error).message);
-    }
-  }
-  return records;
+  const entries = readIndex();
+  return entries.map(e => ({
+    id: e.id,
+    goal: e.goal,
+    repoName: e.repoName,
+    startedAt: new Date(e.startedAt),
+    completedAt: e.completedAt ? new Date(e.completedAt) : undefined,
+    overallScore: e.overallScore,
+    findingsCount: e.findingsCount,
+    events: [],
+    repoPath: e.repoPath,
+    repoSource: e.repoSource,
+    repoUrl: e.repoUrl,
+    _dirPath: runDirPath(e.id),
+  }));
 }
 
-/** Load events for a specific run from its persisted JSON file. */
+/** Load the envelope (Tier 2) for a specific run from disk. */
+export function loadRunEnvelope(record: RunRecord): RunEnvelope | null {
+  const dirPath = record._dirPath;
+  if (!dirPath) return null;
+  const envPath = path.join(dirPath, 'envelope.json');
+  try {
+    if (!fs.existsSync(envPath)) return null;
+    return JSON.parse(fs.readFileSync(envPath, 'utf-8'));
+  } catch (err) {
+    console.warn(`[loadRunEnvelope] Failed for run ${record.id}:`, (err as Error).message);
+    return null;
+  }
+}
+
+/** Load full findings (Tier 3) for a specific run from disk. */
+export function loadRunFindings(record: RunRecord): unknown[] {
+  const dirPath = record._dirPath;
+  if (!dirPath) return [];
+  const findingsPath = path.join(dirPath, 'findings.json');
+  try {
+    if (!fs.existsSync(findingsPath)) return [];
+    return JSON.parse(fs.readFileSync(findingsPath, 'utf-8'));
+  } catch (err) {
+    console.warn(`[loadRunFindings] Failed for run ${record.id}:`, (err as Error).message);
+    return [];
+  }
+}
+
+/** Load events (Tier 3) for a specific run. */
 export function loadRunEvents(record: RunRecord): StepEvent[] {
   // If events are already populated (current run, not from disk), return them
   if (record.events.length > 0) return record.events;
 
-  // Lazy-load from disk
-  if (!record._filePath) return [];
-  try {
-    const raw = JSON.parse(fs.readFileSync(record._filePath, 'utf-8'));
-    return raw.events ?? [];
-  } catch (err) {
-    console.warn(`[loadRunEvents] Failed to load events for run ${record.id}:`, (err as Error).message);
-    return [];
+  // Tier 3: load from events.jsonl in run directory
+  if (record._dirPath) {
+    const eventsPath = path.join(record._dirPath, 'events.jsonl');
+    try {
+      if (fs.existsSync(eventsPath)) {
+        const content = fs.readFileSync(eventsPath, 'utf-8').trim();
+        if (!content) return [];
+        return content.split('\n').map(line => JSON.parse(line));
+      }
+    } catch (err) {
+      console.warn(`[loadRunEvents] Failed to load events.jsonl for run ${record.id}:`, (err as Error).message);
+    }
   }
+
+  // Legacy fallback: load from flat file
+  if (record._filePath) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(record._filePath, 'utf-8'));
+      return raw.events ?? [];
+    } catch (err) {
+      console.warn(`[loadRunEvents] Failed to load legacy events for run ${record.id}:`, (err as Error).message);
+    }
+  }
+
+  return [];
 }
 
 // --- SSE stream helper ---

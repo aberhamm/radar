@@ -56,6 +56,10 @@ interface HistoryItem {
   startedAt: string;
   completedAt?: string;
   hasResult: boolean;
+  findingsCount?: number;
+  repoPath?: string;
+  repoSource?: 'github' | 'local';
+  repoUrl?: string;
 }
 
 interface HistoryRunData {
@@ -580,7 +584,7 @@ export default function DashboardPage() {
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {status === 'idle' && (
             <div key="idle" className="animate-slide-up flex-1 flex flex-col">
-              <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} />
+              <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} history={history} />
             </div>
           )}
 
@@ -666,7 +670,7 @@ export default function DashboardPage() {
             onClick={() => setNewRunModal(false)}
           />
           <div className="relative z-10 w-full max-w-lg mx-4 animate-scale-in">
-            <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} />
+            <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} history={history} />
           </div>
         </div>
       )}

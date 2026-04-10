@@ -6,17 +6,24 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Load the agent runner at runtime via tsx, completely bypassing webpack.
- * The agent source tree is heavy (Pi Agent, tools, Node.js APIs) and webpack
- * takes 5+ minutes to compile it. tsx handles TypeScript natively.
+ * Load the agent runner at runtime, completely bypassing webpack.
+ *
+ * Prefers compiled JS from dist/ (fast — no compilation overhead).
+ * Falls back to tsx loader for raw .ts source if dist/ doesn't exist.
  */
 async function loadRunner() {
-  const { register } = await import(/* webpackIgnore: true */ 'node:module');
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
+  const fs = await import(/* webpackIgnore: true */ 'node:fs');
 
-  // Register tsx ESM loader so dynamic import() can handle .ts files.
-  // (.env is loaded eagerly at startup via src/instrumentation.ts)
-  // Safe to call multiple times — Node ignores duplicate registrations.
+  // Prefer compiled JS — avoids tsx cold-start penalty (~5-10s on Windows)
+  const distPath = path.resolve(process.cwd(), '..', 'dist', 'agent', 'runner.js');
+  if (fs.existsSync(distPath)) {
+    const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
+    return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
+  }
+
+  // Fallback: tsx loader for development without a build step
+  const { register } = await import(/* webpackIgnore: true */ 'node:module');
   try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered or unavailable */ }
 
   const agentPath = path.resolve(process.cwd(), '..', 'src', 'agent', 'runner.ts');
@@ -142,8 +149,13 @@ export async function POST(req: NextRequest) {
           repoName: run.repoName,
           startedAt: run.startedAt,
           completedAt: new Date(),
+          overallScore: result.scorecard?.overallScore,
+          findingsCount: result.state?.findings?.length ?? 0,
           result,
           events: [...run.events],
+          repoPath: run.repoPath,
+          repoSource: (repoSource as 'github' | 'local') ?? 'local',
+          repoUrl: repoUrl,
         };
         session.history.unshift(record);
         if (session.history.length > 10) session.history.pop();

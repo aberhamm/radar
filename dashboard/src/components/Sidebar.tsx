@@ -8,6 +8,7 @@ interface HistoryItem {
   completedAt?: string;
   hasResult: boolean;
   score?: 'red' | 'yellow' | 'green' | null;
+  findingsCount?: number;
 }
 
 interface SidebarProps {

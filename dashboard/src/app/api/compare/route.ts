@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/agentSession';
+import { getSession, loadRunEnvelope, loadRunFindings } from '@/lib/agentSession';
 import { diffFindings, type RawFinding } from '@/lib/compareUtils';
 import type { Scorecard, RunMetrics } from '@/lib/agentSession';
 
@@ -51,14 +51,29 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Run not found: ${missing}` }, { status: 404 });
   }
 
-  if (!recordA.result || !recordB.result) {
-    const incomplete = !recordA.result ? recordA.repoName : recordB.repoName;
+  // Resolve result data: use in-memory if available, otherwise load from disk
+  const resultA = recordA.result ?? null;
+  const resultB = recordB.result ?? null;
+  const envelopeA = resultA ? null : loadRunEnvelope(recordA);
+  const envelopeB = resultB ? null : loadRunEnvelope(recordB);
+
+  const scorecardA = resultA?.scorecard ?? envelopeA?.scorecard;
+  const scorecardB = resultB?.scorecard ?? envelopeB?.scorecard;
+  const metricsA = resultA?.metrics ?? envelopeA?.metrics;
+  const metricsB = resultB?.metrics ?? envelopeB?.metrics;
+
+  if (!scorecardA || !scorecardB) {
+    const incomplete = !scorecardA ? recordA.repoName : recordB.repoName;
     return NextResponse.json({ error: `Run has no results: ${incomplete}` }, { status: 400 });
   }
 
-  // Extract raw findings
-  const rawA = (recordA.result.state?.findings ?? []) as RawFinding[];
-  const rawB = (recordB.result.state?.findings ?? []) as RawFinding[];
+  // Extract raw findings: in-memory or from disk (Tier 3)
+  const rawA = (resultA
+    ? (resultA.state?.findings ?? [])
+    : loadRunFindings(recordA)) as RawFinding[];
+  const rawB = (resultB
+    ? (resultB.state?.findings ?? [])
+    : loadRunFindings(recordB)) as RawFinding[];
 
   // Diff on raw findings (fingerprints work on original data)
   const diff = diffFindings(rawA, rawB);
@@ -70,8 +85,8 @@ export async function GET(req: NextRequest) {
       repoName: recordA.repoName,
       goal: recordA.goal,
       startedAt: recordA.startedAt,
-      scorecard: recordA.result.scorecard,
-      metrics: recordA.result.metrics,
+      scorecard: scorecardA,
+      metrics: metricsA,
       findings: rawA.map(transformFinding),
     },
     runB: {
@@ -79,8 +94,8 @@ export async function GET(req: NextRequest) {
       repoName: recordB.repoName,
       goal: recordB.goal,
       startedAt: recordB.startedAt,
-      scorecard: recordB.result.scorecard,
-      metrics: recordB.result.metrics,
+      scorecard: scorecardB,
+      metrics: metricsB,
       findings: rawB.map(transformFinding),
     },
     diff: {

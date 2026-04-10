@@ -25,41 +25,42 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
 // ── Report (Markdown) ──────────────────────────────────────────
 
-function scorecardToMarkdown(scorecard: Scorecard): string {
-  const lines: string[] = [];
-  lines.push(`# ${scorecard.repoName} — ${scorecard.goalType} Audit`);
-  lines.push('');
-  lines.push(`**Overall: ${scorecard.overallScore.toUpperCase()}** · Generated ${scorecard.generatedAt}`);
-  lines.push('');
-
-  lines.push('## Categories');
-  lines.push('');
-  lines.push('| Category | Score | Findings |');
-  lines.push('|----------|-------|----------|');
-  for (const cat of scorecard.categories) {
-    lines.push(`| ${cat.category} | ${cat.score.toUpperCase()} | ${cat.findings.length} |`);
+function goalTitle(goalType: string): string {
+  switch (goalType) {
+    case 'onboarding': return 'Onboarding Brief';
+    case 'audit': return 'Architecture Audit';
+    case 'migration': return 'Migration Scout Report';
+    case 'component-map': return 'Component Map';
+    case 'ci-check': return 'CI Health Check';
+    case 'security-review': return 'Security Review';
+    case 'nextjs': return 'Next.js Health Check';
+    case 'accessibility': return 'Accessibility Audit';
+    default: return 'Analysis Report';
   }
-  lines.push('');
+}
 
-  if (scorecard.topRisks.length > 0) {
-    lines.push('## Top Risks');
-    lines.push('');
-    for (const risk of scorecard.topRisks) {
-      lines.push(`- **[${risk.severity.toUpperCase()}]** ${risk.title}`);
-    }
-    lines.push('');
-  }
-
-  return lines.join('\n');
+/**
+ * Compact header for the exported report. The full scorecard table, top risks,
+ * and investigation log are already rendered inside the brief markdown by
+ * renderBrief(), so we only emit a one-line title + overall score here to
+ * avoid duplication.
+ */
+function scorecardHeader(scorecard: Scorecard): string {
+  const title = goalTitle(scorecard.goalType);
+  const date = new Date(scorecard.generatedAt).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+  return `# ${scorecard.repoName} — ${title}\n\n**Overall: ${scorecard.overallScore.toUpperCase()}** · ${date}\n\n`;
 }
 
 export function buildReportMarkdown(briefMarkdown: string, scorecard: Scorecard): string {
-  return scorecardToMarkdown(scorecard) + '---\n\n' + briefMarkdown;
+  return scorecardHeader(scorecard) + '---\n\n' + briefMarkdown;
 }
 
 export function exportReportMarkdown(briefMarkdown: string, scorecard: Scorecard) {
   const md = buildReportMarkdown(briefMarkdown, scorecard);
-  downloadBlob(md, `${scorecard.repoName}-report.md`, 'text/markdown');
+  const slug = scorecard.repoName.replace(/[^a-zA-Z0-9-]/g, '-');
+  downloadBlob(md, `${slug}-report.md`, 'text/markdown');
 }
 
 // ── Events (CSV) ───────────────────────────────────────────────

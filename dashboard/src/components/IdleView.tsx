@@ -2,9 +2,23 @@
 
 import { useState, useCallback, useEffect } from 'react';
 
+interface HistoryRunItem {
+  id: string;
+  goal: string;
+  repoName: string;
+  startedAt: string;
+  completedAt?: string;
+  hasResult: boolean;
+  findingsCount?: number;
+  repoPath?: string;
+  repoSource?: 'github' | 'local';
+  repoUrl?: string;
+}
+
 interface IdleViewProps {
   initialRepoPath?: string;
   onStart: (repoPath: string, goal: string, repoName?: string) => void;
+  history?: HistoryRunItem[];
 }
 
 interface CachedRepo {
@@ -20,7 +34,7 @@ function isGitHubUrl(value: string): boolean {
   return trimmed.startsWith('http://') || trimmed.startsWith('https://');
 }
 
-export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
+export function IdleView({ initialRepoPath = '', onStart, history = [] }: IdleViewProps) {
   const [repoPath, setRepoPath] = useState(initialRepoPath);
   const [goal, setGoal] = useState('onboarding');
   const [loading, setLoading] = useState(false);
@@ -34,6 +48,9 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
 
   // Cached repos from .repos/
   const [cachedRepos, setCachedRepos] = useState<CachedRepo[]>([]);
+
+  // Pulling state for rerun (auto-pull git repos)
+  const [rerunPulling, setRerunPulling] = useState(false);
 
   const isUrl = isGitHubUrl(repoPath);
   const isCloned = cloneStatus === 'cloned';
@@ -68,6 +85,56 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
     setClonedCached(true);
     setCloneStatus('cloned');
     setError('');
+  }, []);
+
+  const handleSelectHistoryRun = useCallback(async (run: HistoryRunItem) => {
+    setError('');
+
+    // Set the goal from the historical run
+    setGoal(run.goal);
+
+    if (run.repoSource === 'github' && run.repoUrl) {
+      // GitHub repo: set URL, auto-pull latest
+      setRepoPath(run.repoUrl);
+      setRerunPulling(true);
+      setCloneStatus('cloning');
+      try {
+        const res = await fetch('/api/clone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: run.repoUrl }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || 'Failed to pull repository');
+          setCloneStatus('idle');
+          setRerunPulling(false);
+          return;
+        }
+        setClonedPath(data.localPath);
+        setClonedRepoName(data.repoName);
+        setClonedCached(true);
+        setCloneStatus('cloned');
+
+        // Refresh cached repos list
+        fetch('/api/repos')
+          .then(r => r.json())
+          .then(d => { if (d.repos) setCachedRepos(d.repos); })
+          .catch(() => { /* ignore */ });
+      } catch (err) {
+        setError((err as Error).message);
+        setCloneStatus('idle');
+      } finally {
+        setRerunPulling(false);
+      }
+    } else if (run.repoPath) {
+      // Local repo: just pre-fill the path
+      setRepoPath(run.repoPath);
+      setCloneStatus('idle');
+      setClonedPath('');
+      setClonedRepoName('');
+      setClonedCached(false);
+    }
   }, []);
 
   const handleClone = async () => {
@@ -145,7 +212,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
   // Determine button label and state
   let buttonLabel: string;
   let buttonDisabled: boolean;
-  if (isCloning) {
+  if (isCloning || rerunPulling) {
     buttonLabel = 'Pulling...';
     buttonDisabled = true;
   } else if (isCloned) {
@@ -185,9 +252,46 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
               onChange={e => handleInputChange(e.target.value)}
               placeholder="https://github.com/org/repo or /path/to/repo"
               className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none focus:focus-glow transition-all"
-              disabled={loading || isCloning}
+              disabled={loading || isCloning || rerunPulling}
             />
           </div>
+
+          {/* Previous runs picker */}
+          {history.length > 0 && !isCloned && !isCloning && !loading && !rerunPulling && (
+            <div>
+              <label className="block text-xs font-medium text-secondary-label mb-1.5">
+                Rerun Previous
+              </label>
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                {history.map(run => (
+                  <button
+                    key={run.id}
+                    type="button"
+                    onClick={() => handleSelectHistoryRun(run)}
+                    className="flex items-center gap-2.5 w-full text-left px-3 py-2 rounded-lg bg-elevated hover:bg-[rgb(0_113_227/0.06)] border border-transparent hover:border-[rgb(0_113_227/0.15)] transition-all cursor-pointer group"
+                  >
+                    <svg className="w-4 h-4 text-tertiary-label group-hover:text-tint shrink-0 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="1 4 1 10 7 10" />
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    </svg>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-label font-medium truncate">
+                        {run.repoName}
+                        <span className="ml-1.5 text-[11px] text-tertiary-label font-normal">{run.goal}</span>
+                      </div>
+                      <div className="text-[11px] text-quaternary-label truncate">
+                        {run.completedAt ? new Date(run.completedAt).toLocaleDateString() : new Date(run.startedAt).toLocaleDateString()}
+                        {run.repoSource === 'github' && <span className="ml-1 text-tint/60">git</span>}
+                      </div>
+                    </div>
+                    <svg className="w-3.5 h-3.5 text-quaternary-label group-hover:text-tint shrink-0 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Cached repos picker */}
           {cachedRepos.length > 0 && !isCloned && !isCloning && !loading && (
@@ -252,7 +356,7 @@ export function IdleView({ initialRepoPath = '', onStart }: IdleViewProps) {
             <select
               value={goal}
               onChange={e => setGoal(e.target.value)}
-              disabled={loading || isCloning}
+              disabled={loading || isCloning || rerunPulling}
               className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none cursor-pointer"
             >
               <option value="onboarding">Onboarding — full codebase overview</option>
