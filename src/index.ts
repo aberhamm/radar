@@ -10,6 +10,7 @@ import type { AgentState } from './types/state.js';
 import { listRuleFiles, validateRules } from './agent/systemPrompt.js';
 import type { GoalType } from './types/state.js';
 import { handleAnalyze } from './commands/analyze.js';
+import { handleAnalyzeAll } from './commands/analyzeAll.js';
 import { handleCompare } from './commands/compare.js';
 import { handleDiff } from './commands/diff.js';
 
@@ -25,6 +26,7 @@ program
   .addHelpText('after', `
 Examples:
   $ radar analyze --repo ./my-sitecore-repo
+  $ radar analyze --repo ./my-repo --goal all --budget 100
   $ radar analyze --repo https://github.com/Sitecore/xmcloud-starter-js --verbose
   $ radar compare --repos ./repo-a ./repo-b
   $ radar tools
@@ -36,7 +38,7 @@ program
   .command('analyze')
   .description('Run an agentic investigation on a repository')
   .option('--repo <path>', 'Repository URL or local path')
-  .option('--goal <type>', 'Analysis goal: onboarding, audit, migration, component-map, ci-check, security-review, nextjs, accessibility')
+  .option('--goal <type>', 'Analysis goal: onboarding, audit, migration, component-map, ci-check, security-review, nextjs, accessibility, all')
   .option('--platform <name>', 'Platform override: sitecore, optimizely (auto-detected if omitted)')
   .option('--output <dir>', 'Output directory', './output')
   .option('--budget <n>', 'Tool call budget', '45')
@@ -50,7 +52,8 @@ program
   .option('--checkpoint-interval <n>', 'Save checkpoint every N tool calls (0 to disable)', '5')
   .action(async (opts) => {
     try {
-      const exitCode = await handleAnalyze(opts);
+      const handler = opts.goal === 'all' ? handleAnalyzeAll : handleAnalyze;
+      const exitCode = await handler(opts);
       if (exitCode !== 0) process.exit(exitCode);
     } catch (err) {
       console.error(`\nError: ${(err as Error).message}`);
