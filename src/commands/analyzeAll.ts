@@ -54,8 +54,8 @@ export async function handleAnalyzeAll(opts: {
   }
 
   const totalBudget = parseInt(opts.budget, 10);
-  if (totalBudget < 40) {
-    throw new Error(`Budget ${totalBudget} is too low for --goal all. Minimum recommended: 60.`);
+  if (totalBudget < 60) {
+    throw new Error(`Budget ${totalBudget} is too low for --goal all. Minimum recommended: 100.`);
   }
 
   const platform = opts.platform ?? 'unknown';
@@ -94,9 +94,10 @@ export async function handleAnalyzeAll(opts: {
     `  ${Object.keys(npmResult.versions).length} packages resolved${npmResult.fromCache ? ` (cached, ${npmResult.cacheAge})` : ''}`,
   );
 
-  // Budget allocation
-  const coreBudget = Math.floor(totalBudget * 0.6);
-  const nextjsBudget = Math.floor(totalBudget * 0.2);
+  // Budget allocation — core gets 70% because it must investigate AND record findings.
+  // Specialists get 15% each for targeted depth.
+  const coreBudget = Math.floor(totalBudget * 0.7);
+  const nextjsBudget = Math.floor(totalBudget * 0.15);
   const a11yBudget = totalBudget - coreBudget - nextjsBudget;
 
   console.log(`\nStarting universal analysis (budget: ${coreBudget}+${nextjsBudget}+${a11yBudget}=${totalBudget})...\n`);
@@ -114,7 +115,7 @@ export async function handleAnalyzeAll(opts: {
       repoName,
       repoSource,
       repoUrl,
-      goal: 'audit' as GoalType, // Broadest coverage
+      goal: 'universal' as GoalType, // Universal rules: broad investigation + aggressive recording
       platform: platform !== 'unknown' ? platform : undefined,
       toolCallBudget: coreBudget,
       outputDir,

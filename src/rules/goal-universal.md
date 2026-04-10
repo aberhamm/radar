@@ -53,6 +53,16 @@ Work systematically:
 - **low** — minor: style, optional improvements, documentation gaps
 - **info** — observation: healthy patterns, architectural decisions documented
 
+## CRITICAL: Record Findings Early and Often
+
+DO NOT wait until the end to record findings. After every 3-4 tool calls, stop and call
+record_finding for what you've observed so far. If you reach 50% of your budget without
+any recorded findings, you are doing it wrong. Investigation without recording is wasted work.
+
+The biggest failure mode is spending your entire budget investigating and never recording.
+Record a finding as soon as you have enough evidence for one. You can always add more
+findings later, but you cannot recover budget spent on unrecorded investigation.
+
 ## Finding Expectations
 
 - Minimum 15 findings across all categories. Most real projects yield 20-30.

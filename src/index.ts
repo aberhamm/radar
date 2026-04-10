@@ -52,6 +52,10 @@ program
   .option('--checkpoint-interval <n>', 'Save checkpoint every N tool calls (0 to disable)', '5')
   .action(async (opts) => {
     try {
+      // Default budget is higher for --goal all (150 vs 45)
+      if (opts.goal === 'all' && opts.budget === '45') {
+        opts.budget = '150';
+      }
       const handler = opts.goal === 'all' ? handleAnalyzeAll : handleAnalyze;
       const exitCode = await handler(opts);
       if (exitCode !== 0) process.exit(exitCode);
