@@ -277,7 +277,7 @@ function err(name: string, error: Error): AgentToolResult<unknown> {
  */
 export function buildPiTools(
   state: AgentState,
-): { tools: AgentTool[]; assembledRef: AssembledSections; cleanup: () => void } {
+): { tools: AgentTool[]; assembledRef: AssembledSections; cleanup: () => void; mutex: StatefulToolMutex } {
   // Per-run spill context — each buildPiTools() call gets an isolated spill dir
   // so parallel runs (e.g. `radar compare`) don't race on cleanup.
   const spill = createSpillContext();
@@ -763,5 +763,5 @@ export function buildPiTools(
     }
   }
 
-  return { tools, assembledRef, cleanup: spill.cleanup };
+  return { tools, assembledRef, cleanup: spill.cleanup, mutex };
 }

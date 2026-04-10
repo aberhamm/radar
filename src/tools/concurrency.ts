@@ -81,4 +81,9 @@ export class StatefulToolMutex {
     this._chain = result.then(() => {}, () => {});
     return result;
   }
+
+  /** Wait for all queued operations to drain. */
+  async drain(): Promise<void> {
+    await this._chain;
+  }
 }

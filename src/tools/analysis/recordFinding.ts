@@ -233,10 +233,15 @@ export async function recordFinding(
   let rejectedEvidenceCount = 0;
 
   for (const finding of findings) {
+    // Push to state FIRST, before async evidence verification.
+    // If agent.abort() fires mid-verification (e.g., assemble_output in same batch),
+    // the finding still exists in state with its original evidence.
+    // The post-loop verification pass in runner.ts will clean up unverifiable evidence.
+    state.findings.push(finding);
+
     const verifiedEvidence: Evidence[] = [];
 
     for (const ev of finding.evidence) {
-      // Enhancement 6: Check if file was ever read by the agent
       const normalizedEvPath = normalizePath(ev.filePath);
       const wasRead = [...state.filesRead].some(
         (readPath) => normalizePath(readPath) === normalizedEvPath,
@@ -250,7 +255,6 @@ export async function recordFinding(
         continue;
       }
 
-      // Enhancement 1+3: Verify snippet against actual file content
       const result = await verifyAndCorrectEvidence(state.repo.localPath, ev);
 
       if (result.status === 'rejected') {
@@ -267,7 +271,6 @@ export async function recordFinding(
     }
 
     finding.evidence = verifiedEvidence;
-    state.findings.push(finding);
   }
 
   return {

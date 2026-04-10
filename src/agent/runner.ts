@@ -397,7 +397,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   }
 
   // Build Pi tools from registry
-  const { tools, assembledRef, cleanup } = buildPiTools(state);
+  const { tools, assembledRef, cleanup, mutex } = buildPiTools(state);
 
   // Build Pi models (or use provided overrides, e.g. faux provider for testing)
   let apiKey: string | undefined;
@@ -455,6 +455,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     _signal?: AbortSignal,
   ): Promise<BeforeToolCallResult | undefined> => {
     const toolName = ctx.toolCall.name;
+
+    // If assemble_output already fired, abort on the next tool call.
+    // This allows tools in the same batch as assemble_output to complete
+    // while preventing additional turns from starting.
+    if (terminationReason === 'completed' && toolName !== 'record_finding') {
+      agent.abort();
+      return { block: true, reason: 'Output assembly complete.' };
+    }
 
     // Web search budget
     if (toolName === 'web_search' && state.webSearchCount >= webSearchBudget) {
@@ -596,10 +604,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
     }
 
-    // If assemble_output was called, abort the agent loop
+    // If assemble_output was called, set termination flag.
+    // DON'T abort immediately — other tools in the same parallel batch
+    // (e.g., record_finding) may not have executed yet, and Pi's abort
+    // cancels pending tool executions at the framework level.
+    // Instead, abort via beforeToolCall on the NEXT turn.
     if (isAssemble && assembledRef.sections !== null) {
       terminationReason = 'completed';
-      agent.abort();
       return undefined;
     }
 
