@@ -29,7 +29,7 @@ export function loadRule(filename: string): string | null {
  * Rules are joined with markdown separators.
  * Platform rules are optional — if the platform is 'unknown', they're skipped.
  */
-export function buildSystemPrompt(goal: GoalType, platform: string): string {
+export function buildSystemPrompt(goal: GoalType | 'universal', platform: string): string {
   const parts: string[] = [];
 
   const core = loadRule('core.md');

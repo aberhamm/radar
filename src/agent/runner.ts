@@ -90,6 +90,9 @@ export interface RunnerConfig {
   resumeFrom?: string;
   /** Save checkpoints every N tool calls (default: 5). Set 0 to disable. */
   checkpointInterval?: number;
+  /** Pre-populated state from a prior pass (for tiered investigation).
+   *  Findings, filesRead, fileReadCache carry over. Budgets reset. */
+  initialState?: Partial<AgentState>;
 }
 
 export interface StepEvent {
@@ -124,6 +127,50 @@ export interface RunResult {
   terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error';
   /** Error message if terminationReason is 'error' */
   errorDetail?: string;
+}
+
+// --- State merging ---
+
+/**
+ * Merge prior state into a fresh state object.
+ * Carries over: findings, filesRead, fileReadCache, resolvedVersions, stackProfile, fetchedDocs, modelUsage.
+ * Does NOT carry over: toolCallCount, toolCallBudget, webSearchCount, urlFetchCount, goal, investigationLog.
+ * Includes input validation — rejects corrupt state shapes gracefully.
+ */
+export function mergeState(target: AgentState, source: Partial<AgentState>): void {
+  if (source.findings && Array.isArray(source.findings)) {
+    target.findings = [...source.findings];
+  }
+  if (source.filesRead && source.filesRead instanceof Set) {
+    for (const f of source.filesRead) target.filesRead.add(f);
+  }
+  if (source.fileReadCache && source.fileReadCache instanceof Map) {
+    for (const [k, v] of source.fileReadCache) {
+      target.fileReadCache.set(k, v);
+    }
+  }
+  if (source.resolvedVersions && typeof source.resolvedVersions === 'object') {
+    target.resolvedVersions = { ...source.resolvedVersions };
+  }
+  if (source.stackProfile) {
+    target.stackProfile = source.stackProfile;
+  }
+  if (source.fetchedDocs && Array.isArray(source.fetchedDocs)) {
+    target.fetchedDocs = [...source.fetchedDocs];
+  }
+  if (source.modelUsage && source.modelUsage instanceof Map) {
+    for (const [k, v] of source.modelUsage) {
+      const existing = target.modelUsage.get(k);
+      if (existing) {
+        existing.calls += v.calls;
+        existing.inputTokens += v.inputTokens;
+        existing.outputTokens += v.outputTokens;
+        existing.cachedTokens += v.cachedTokens;
+      } else {
+        target.modelUsage.set(k, { ...v });
+      }
+    }
+  }
 }
 
 // --- Pre-computation layer ---
@@ -265,15 +312,35 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const checkpointInterval = config.checkpointInterval ?? 5;
   const repoSlug = config.repoName.replace(/[^a-zA-Z0-9_-]/g, '-');
 
+  // Apply initial state from prior pass (tiered investigation)
+  if (config.initialState) {
+    mergeState(state, config.initialState);
+    config.onStep?.({
+      step: 0,
+      action: 'initial_state',
+      type: 'tool_call',
+      result: `Loaded initial state: ${state.findings.length} findings, ${state.filesRead.size} files read.`,
+    });
+  }
+
   // Resume from checkpoint if provided
   if (config.resumeFrom) {
     const checkpoint = loadLatestCheckpoint(config.resumeFrom);
     if (checkpoint) {
       const hydrated = hydrateState(checkpoint.state);
-      // Merge hydrated state into the fresh state object
-      Object.assign(state, hydrated);
+      // Merge carry-over fields (findings, filesRead, fileReadCache, etc.)
+      mergeState(state, hydrated);
+      // Restore checkpoint-specific fields that mergeState intentionally skips
+      state.toolCallCount = hydrated.toolCallCount;
+      state.webSearchCount = hydrated.webSearchCount;
+      state.urlFetchCount = hydrated.urlFetchCount;
+      state.docTokensUsed = hydrated.docTokensUsed;
+      state.investigationLog = hydrated.investigationLog;
       // Restore budgets to allow extending beyond the original
-      state.toolCallBudget = Math.max(state.toolCallBudget, toolCallBudget);
+      state.toolCallBudget = Math.max(hydrated.toolCallBudget, toolCallBudget);
+      state.webSearchBudget = hydrated.webSearchBudget;
+      state.urlFetchBudget = hydrated.urlFetchBudget;
+      state.docTokenBudget = hydrated.docTokenBudget;
       sessionId = checkpoint.sessionId;
       checkpointSeq = checkpoint.seq;
       config.onStep?.({
@@ -1067,7 +1134,7 @@ function buildMetrics(
   };
 }
 
-function writeOutputFiles(
+export function writeOutputFiles(
   outputDir: string,
   repoName: string,
   scorecard: Scorecard,
