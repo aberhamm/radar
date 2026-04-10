@@ -464,6 +464,28 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       return { block: true, reason: 'Output assembly complete.' };
     }
 
+    // Recording enforcement gate: when 75%+ budget is spent with zero findings,
+    // block investigation tools to force the agent into recording mode.
+    // Only record_finding, switch_to_fast_model, and assemble_output are allowed.
+    const RECORDING_GATE_PCT = 0.75;
+    const WRITING_TOOLS = new Set(['record_finding', 'switch_to_fast_model', 'assemble_output']);
+    if (
+      state.findings.length === 0 &&
+      state.toolCallCount >= Math.floor(currentBudget * RECORDING_GATE_PCT) &&
+      !WRITING_TOOLS.has(toolName)
+    ) {
+      if (!modelSwitched && canSwitchModel) {
+        modelSwitched = true;
+        snipBoundaryActive = true;
+        summaryCache.clear();
+        switchModelInPlace();
+      }
+      return {
+        block: true,
+        reason: `Investigation budget exhausted (${state.toolCallCount}/${currentBudget} calls used, 0 findings recorded). You MUST call record_finding now for what you have observed, then assemble_output.`,
+      };
+    }
+
     // Web search budget
     if (toolName === 'web_search' && state.webSearchCount >= webSearchBudget) {
       return { block: true, reason: 'Web search budget exhausted.' };
@@ -643,7 +665,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
       agent.steer({
         role: 'user',
-        content: `CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all required sections. Use your investigation so far — do not investigate further.`,
+        content: state.findings.length === 0
+          ? `CRITICAL: Only ${remaining} tool calls left and you have 0 findings recorded. Call record_finding IMMEDIATELY for each observation, then assemble_output. Do not investigate further.`
+          : `CRITICAL: Only ${remaining} tool calls left. You MUST call assemble_output NOW with your written content for all required sections. Use your investigation so far — do not investigate further.`,
         timestamp: Date.now(),
       });
     } else if (remaining <= halfBudget && remaining > 0 && !budgetWarningHalfSent && assembledRef.sections === null) {
@@ -925,6 +949,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
     }
   }
+
+  // Drain the mutex: when record_finding and assemble_output are in the same batch,
+  // the mutex may still be processing record_finding calls after assemble_output
+  // triggers termination. Without draining, those findings would be lost.
+  await mutex.drain();
 
   // Post-loop: assemble output (partial if error/stuck)
   const sections = assembledRef.sections ?? {};
