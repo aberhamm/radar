@@ -221,10 +221,10 @@ Eng review of 6 parallelism strategies. 3 killed (fan-out, speculative, DAG), 3 
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 5 | CLEAR | mode: SELECTIVE_EXPANSION, 5 accepted, 1 deferred |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 6 | CLEAR | mode: SELECTIVE_EXPANSION, 5 accepted, 1 deferred |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 3 | CLEAR (PLAN) | 5 issues, 1 critical gap (pre-compute error handling) |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 5 | CLEAR (PLAN) | 12 issues, 1 critical gap (abort between passes) |
 | Design Review | `/plan-design-review` | UI/UX gaps | 1 | STALE (>7d) | score: 3/10 -> 8/10, 11 decisions |
 
 **UNRESOLVED:** 0
-**VERDICT:** ENG CLEARED — parallel execution shipped. CEO 5 commits stale, design >7 days stale (neither block).
+**VERDICT:** ENG CLEARED — multi-goal dashboard review complete. 16 decisions resolved, 0 unresolved. CEO 26 commits stale, design >7 days stale (neither block).
