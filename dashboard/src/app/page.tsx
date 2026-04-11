@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { StepEvent, Scorecard, RunMetrics, RunResult } from '@/lib/agentSession';
+import type { StepEvent, Scorecard, RunMetrics, RunResult, HistoryItem } from '@/lib/agentSession';
 import { transformRunData } from '@/lib/runTransform';
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
@@ -49,19 +49,6 @@ interface CompletedResult {
   briefMarkdown: string;
 }
 
-interface HistoryItem {
-  id: string;
-  goal: string;
-  repoName: string;
-  startedAt: string;
-  completedAt?: string;
-  hasResult: boolean;
-  findingsCount?: number;
-  repoPath?: string;
-  repoSource?: 'github' | 'local';
-  repoUrl?: string;
-}
-
 interface HistoryRunData {
   repoName: string;
   goal: string;
@@ -98,10 +85,11 @@ export default function DashboardPage() {
   const [compareSelections, setCompareSelections] = useState<string[]>([]);
   const [compareData, setCompareData] = useState<CompareData | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
 
   // Prepend sample run to history
-  const fullHistory = useMemo(() => [SAMPLE_HISTORY_ITEM, ...history], [history]);
+  const fullHistory = useMemo(() => [SAMPLE_HISTORY_ITEM as HistoryItem, ...history], [history]);
 
   // Auto-open sidebar on desktop
   useEffect(() => {
@@ -115,7 +103,10 @@ export default function DashboardPage() {
     fetch('/api/session')
       .then((r) => r.json())
       .then((data) => {
-        if (data.history) setHistory(data.history);
+        if (data.history) {
+          setHistory(data.history);
+          setHasMoreHistory(data.hasMore ?? false);
+        }
         if (data.status === 'running' || data.status === 'budget_paused') {
           if (data.currentRun && data.currentRun.isAlive) {
             setCurrentRun({
@@ -323,6 +314,21 @@ export default function DashboardPage() {
       setCompareLoading(false);
     }
   }, [compareSelections]);
+
+  const handleLoadMore = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/session?offset=${history.length}&limit=50`);
+      const data = await res.json();
+      if (data.history && data.history.length > 0) {
+        setHistory(prev => [...prev, ...data.history]);
+        setHasMoreHistory(data.hasMore ?? false);
+      } else {
+        setHasMoreHistory(false);
+      }
+    } catch {
+      // silently fail
+    }
+  }, [history.length]);
 
   const handleExitCompare = useCallback(() => {
     setStatus('idle');
@@ -579,6 +585,8 @@ export default function DashboardPage() {
           onToggleCompare={handleToggleCompareMode}
           onCompareSelect={handleCompareSelect}
           onCompare={handleCompare}
+          hasMore={hasMoreHistory}
+          onLoadMore={handleLoadMore}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden relative">

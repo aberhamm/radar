@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { runAgent, runPreCompute, writeOutputFiles, type RunResult } from '../agent/runner.js';
 import { cloneRepo } from '../tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from '../tools/dependency/queryNpmVersions.js';
@@ -18,6 +19,7 @@ import {
   type MultiGoalResult,
   type MultiGoalMetrics,
 } from '../output/multiGoalSummary.js';
+import { persistRunToTieredStorage } from '../output/runPersistence.js';
 import type { GoalType, AgentState } from '../types/state.js';
 import type { Scorecard } from '../types/output.js';
 
@@ -102,9 +104,12 @@ export async function handleAnalyzeAll(opts: {
 
   console.log(`\nStarting universal analysis (budget: ${coreBudget}+${nextjsBudget}+${a11yBudget}=${totalBudget})...\n`);
 
+  const parentRunId = crypto.randomUUID();
   const passResults: PassResult[] = [];
   let sharedState: Partial<AgentState> | undefined;
   const allInvestigationLogs: AgentState['investigationLog'] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allEvents: Array<Record<string, any>> = [];
 
   // --- Pass 1: Core investigation ---
   const coreStart = Date.now();
@@ -121,6 +126,7 @@ export async function handleAnalyzeAll(opts: {
       outputDir,
       verbose,
       onStep: (step) => {
+        allEvents.push(step);
         if (verbose) formatVerboseStep(step, '[Core]');
         else console.log(`  [Core] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
       },
@@ -147,6 +153,7 @@ export async function handleAnalyzeAll(opts: {
   }
 
   // --- Pass 2: Next.js specialist ---
+  allEvents.push({ step: -1, action: 'pass_boundary', result: 'Next.js Specialist', timestamp: new Date().toISOString() });
   const nextjsStart = Date.now();
   console.log(`\n[Next.js] Starting specialist pass (budget: ${nextjsBudget})...`);
   try {
@@ -162,6 +169,7 @@ export async function handleAnalyzeAll(opts: {
       verbose,
       initialState: sharedState,
       onStep: (step) => {
+        allEvents.push(step);
         if (verbose) formatVerboseStep(step, '[Next.js]');
         else console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
       },
@@ -187,6 +195,7 @@ export async function handleAnalyzeAll(opts: {
   }
 
   // --- Pass 3: Accessibility specialist ---
+  allEvents.push({ step: -1, action: 'pass_boundary', result: 'Accessibility Specialist', timestamp: new Date().toISOString() });
   const a11yStart = Date.now();
   console.log(`\n[A11y] Starting specialist pass (budget: ${a11yBudget})...`);
   try {
@@ -202,6 +211,7 @@ export async function handleAnalyzeAll(opts: {
       verbose,
       initialState: sharedState,
       onStep: (step) => {
+        allEvents.push(step);
         if (verbose) formatVerboseStep(step, '[A11y]');
         else console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
       },
@@ -309,6 +319,40 @@ export async function handleAnalyzeAll(opts: {
     fs.writeFileSync(exportPath, serializeExport(fullExport), 'utf-8');
     allOutputPaths.push(exportPath);
   }
+
+  // --- Phase 7b: Persist to tiered storage (output/runs/) for dashboard ---
+  const runsDir = path.join(path.dirname(outputDir), 'runs');
+  const startedAt = lastSuccessful.result.metrics.startedAt;
+  const completedAt = new Date().toISOString();
+
+  for (const goal of ALL_GOALS) {
+    const scorecard = scorecards.get(goal)!;
+    const briefResult = briefResults.find((b) => b.goal === goal);
+    const sections = briefResult?.sections ?? {};
+    const briefMarkdown = renderBrief(
+      scorecard,
+      sections,
+      allInvestigationLogs,
+      lastSuccessful.result.state.fetchedDocs,
+      passResults.reduce((sum, p) => sum + (p.result?.metrics.toolCalls ?? 0), 0),
+      totalBudget,
+    );
+
+    persistRunToTieredStorage(runsDir, {
+      id: crypto.randomUUID(),
+      goal,
+      repoName,
+      startedAt,
+      completedAt,
+      scorecard,
+      metrics: lastSuccessful.result.metrics,
+      briefMarkdown,
+      terminationReason: lastSuccessful.result.terminationReason,
+      findings: allFindings,
+      parentRunId,
+    }, allEvents);
+  }
+  console.log(`  Persisted ${ALL_GOALS.length} runs to tiered storage (parentRunId: ${parentRunId.slice(0, 8)}...)`);
 
   // Unified findings
   const findingsPath = path.join(outputDir, 'findings.json');

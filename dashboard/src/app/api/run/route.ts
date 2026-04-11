@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, persistRun, checkpointRun, sendStreamEvent } from '@/lib/agentSession';
+import { getSession, persistRun, checkpointRun, sendStreamEvent, loadPersistedRuns } from '@/lib/agentSession';
+import type { StepEvent, RunResult } from '@/lib/agentSession';
+import { dashboardAnalyzeAll } from '@/lib/dashboardAnalyzeAll';
 import path from 'node:path';
 
 export const runtime = 'nodejs';
@@ -29,6 +31,27 @@ async function loadRunner() {
   const agentPath = path.resolve(process.cwd(), '..', 'src', 'agent', 'runner.ts');
   const mod = await import(/* webpackIgnore: true */ pathToFileURL(agentPath).href);
   return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
+}
+
+/**
+ * Load computeScorecard at runtime, same pattern as loadRunner.
+ */
+async function loadScorecard() {
+  const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
+  const fs = await import(/* webpackIgnore: true */ 'node:fs');
+
+  const distPath = path.resolve(process.cwd(), '..', 'dist', 'output', 'scorecard.js');
+  if (fs.existsSync(distPath)) {
+    const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
+    return mod.computeScorecard as (repoName: string, goal: string, findings: unknown[]) => unknown;
+  }
+
+  const { register } = await import(/* webpackIgnore: true */ 'node:module');
+  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered */ }
+
+  const srcPath = path.resolve(process.cwd(), '..', 'src', 'output', 'scorecard.ts');
+  const mod = await import(/* webpackIgnore: true */ pathToFileURL(srcPath).href);
+  return mod.computeScorecard as (repoName: string, goal: string, findings: unknown[]) => unknown;
 }
 
 export async function POST(req: NextRequest) {
@@ -94,6 +117,65 @@ export async function POST(req: NextRequest) {
   (async () => {
     try {
       const runAgent = await loadRunner();
+
+      // Multi-goal: use orchestrator for goal='all'
+      if (goal === 'all') {
+        const computeScorecard = await loadScorecard();
+
+        const multiResult = await dashboardAnalyzeAll(
+          runAgent as unknown as (opts: Record<string, unknown>) => Promise<RunResult>,
+          computeScorecard,
+          {
+            repoPath: resolvedRepoPath,
+            repoName,
+            repoSource: (repoSource as 'github' | 'local') ?? 'local',
+            repoUrl: repoUrl,
+            budget: 100,
+            onStep: (event: StepEvent) => {
+              const run = session.currentRun;
+              if (!run) return;
+              if (event.type === 'text_delta' || event.type === 'tool_start') {
+                sendStreamEvent(run.streamController, event);
+                return;
+              }
+              run.events.push(event);
+              sendStreamEvent(run.streamController, event);
+              if (run.events.length % 10 === 0) {
+                checkpointRun(run);
+              }
+            },
+            abortSignal: abortController.signal,
+          },
+        );
+
+        // Use the first goal's result for the session completion
+        const firstGoal = multiResult.goals[0];
+        session.status = 'complete';
+        session.result = {
+          scorecard: firstGoal?.scorecard as any,
+          metrics: firstGoal?.metrics as any,
+          terminationReason: 'completed',
+          briefMarkdown: '',
+          outputPaths: [],
+          state: { findings: [] },
+        };
+
+        // Refresh history
+        session.history = loadPersistedRuns({ limit: 50 });
+
+        const run = session.currentRun;
+        sendStreamEvent(run?.streamController ?? null, {
+          type: 'run_complete',
+          multiGoal: true,
+          parentRunId: multiResult.parentRunId,
+          goals: multiResult.goals.map(g => ({ goal: g.goal, runId: g.runId })),
+          result: { scorecard: firstGoal?.scorecard, metrics: firstGoal?.metrics, terminationReason: 'completed' },
+        });
+        try { run?.streamController?.close(); } catch { /* already closed */ }
+        return;
+      }
+
+      // Single-goal: existing flow
       const result = await runAgent({
         repoPath: resolvedRepoPath,
         repoName,

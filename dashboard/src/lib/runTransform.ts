@@ -103,17 +103,50 @@ export function transformRunData(
   events: StepEvent[],
   result: RunResult,
 ): TransformedRunData {
-  // 1. Group events into analysis turns (pre-switch) by reasoning changes
+  // 1. Group events into analysis turns by reasoning changes.
+  //    Multi-goal runs have multiple switch_to_fast_model events (one per pass)
+  //    and pass_boundary markers between passes. We treat switch events as
+  //    turn delimiters but continue processing (no bail-after-first-switch).
+  //    Post-switch "writing" events (record_finding, assemble_output) are
+  //    skipped since findings are already in the result object.
   const turns: AnalysisTurn[] = [];
   let currentReasoning = '';
   let currentActivities: Activity[] = [];
   let currentCategories = new Set<string>();
-  let switchSeen = false;
+  let inWritingPhase = false;
   let turnStartTime: number | null = null;
   let lastTimestamp: number | null = null;
 
+  const WRITING_ACTIONS = new Set(['record_finding', 'assemble_output']);
+
   for (const ev of events) {
     const ts = ev.timestamp ? new Date(ev.timestamp).getTime() : null;
+
+    // Pass boundary: synthetic event injected between multi-goal passes
+    if (ev.action === 'pass_boundary') {
+      // Flush current turn
+      if (currentReasoning && currentActivities.length > 0) {
+        turns.push({
+          reasoning: currentReasoning,
+          activities: currentActivities,
+          categoriesCovered: [...currentCategories],
+          duration: turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 2000,
+        });
+      }
+      // Add a visual pass separator
+      const passName = ev.result ?? 'Next pass';
+      turns.push({
+        reasoning: `Starting ${passName} investigation pass.`,
+        activities: [{ label: 'pass_boundary', files: [], detail: passName }],
+        categoriesCovered: [],
+        duration: 500,
+      });
+      currentReasoning = '';
+      currentActivities = [];
+      currentCategories = new Set();
+      inWritingPhase = false; // new pass = back to investigation
+      continue;
+    }
 
     if (ev.action === 'switch_to_fast_model') {
       // Flush current turn
@@ -132,15 +165,15 @@ export function transformRunData(
         categoriesCovered: [],
         duration: 1200,
       });
-      switchSeen = true;
+      inWritingPhase = true;
       currentReasoning = '';
       currentActivities = [];
       currentCategories = new Set();
       continue;
     }
 
-    // Skip post-switch events (findings, assembly) — handled separately
-    if (switchSeen) continue;
+    // Skip writing-phase events (findings/assembly handled via result object)
+    if (inWritingPhase && WRITING_ACTIONS.has(ev.action)) continue;
 
     if (ev.type === 'text_response' && ev.reasoning && ev.reasoning !== currentReasoning) {
       // New reasoning = new turn. Flush previous.
@@ -190,8 +223,8 @@ export function transformRunData(
     if (ts) lastTimestamp = ts;
   }
 
-  // Flush last pre-switch turn if any
-  if (currentReasoning && currentActivities.length > 0 && !switchSeen) {
+  // Flush last turn if any
+  if (currentReasoning && currentActivities.length > 0) {
     turns.push({
       reasoning: currentReasoning,
       activities: currentActivities,

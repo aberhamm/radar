@@ -124,44 +124,39 @@ describe('agentSession — sendStreamEvent', () => {
 // ---------------------------------------------------------------------------
 
 describe('agentSession — persistRun', () => {
-  // We mock fs to avoid writing to real disk
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('writes a JSON file to the output/runs directory', () => {
-    const existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
-    const mkdirSyncSpy = vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+  it('writes tiered files to output/runs/{id}/ directory', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     const writeFileSyncSpy = vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue('[]'); // empty index
+    vi.spyOn(fs, 'renameSync').mockReturnValue(undefined);
 
     const record = makeRunRecord();
     persistRun(record);
 
-    expect(writeFileSyncSpy).toHaveBeenCalledOnce();
-
-    const [filePath, content] = writeFileSyncSpy.mock.calls[0] as [string, string];
-    expect(filePath).toContain('test-repo-onboarding-');
-    expect(filePath.endsWith('.json')).toBe(true);
-
-    const parsed = JSON.parse(content);
-    expect(parsed.id).toBe('test-run-1');
-    expect(parsed.goal).toBe('onboarding');
-    expect(parsed.repoName).toBe('test-repo');
-    expect(parsed.events).toHaveLength(1);
+    // Should write events.jsonl, findings.json, and index.json.tmp
+    // (no envelope since record.result is undefined)
+    const writtenPaths = writeFileSyncSpy.mock.calls.map(c => String(c[0]));
+    expect(writtenPaths.some(p => p.includes('events.jsonl'))).toBe(true);
+    expect(writtenPaths.some(p => p.includes('findings.json'))).toBe(true);
+    expect(writtenPaths.some(p => p.includes('index.json.tmp'))).toBe(true);
   });
 
   it('creates the output directory if it does not exist', () => {
-    const existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
     const mkdirSyncSpy = vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
-    const writeFileSyncSpy = vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue('[]');
+    vi.spyOn(fs, 'renameSync').mockReturnValue(undefined);
 
     persistRun(makeRunRecord());
 
-    expect(mkdirSyncSpy).toHaveBeenCalledOnce();
-    const [dirPath, opts] = mkdirSyncSpy.mock.calls[0] as [string, { recursive: boolean }];
-    expect(dirPath).toContain('output');
-    expect(dirPath).toContain('runs');
-    expect(opts.recursive).toBe(true);
+    const mkdirCalls = mkdirSyncSpy.mock.calls.map(c => String(c[0]));
+    expect(mkdirCalls.some(p => p.includes('runs'))).toBe(true);
   });
 
   it('logs error and does not throw when writeFileSync fails', () => {
@@ -172,8 +167,8 @@ describe('agentSession — persistRun', () => {
     });
 
     expect(() => persistRun(makeRunRecord())).not.toThrow();
-    expect(consoleSpy).toHaveBeenCalledOnce();
-    expect(consoleSpy.mock.calls[0][0]).toContain('[persist]');
+    expect(consoleSpy).toHaveBeenCalled();
+    expect(String(consoleSpy.mock.calls[0][0])).toContain('[persist]');
   });
 });
 
@@ -182,45 +177,67 @@ describe('agentSession — loadPersistedRuns', () => {
     vi.restoreAllMocks();
   });
 
-  it('loads and parses JSON run files from disk, newest first', () => {
+  it('loads entries from index.json, newest first', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
-    vi.spyOn(fs, 'readdirSync').mockReturnValue([
-      'repo-a-onboarding-2026-01-01.json' as unknown as fs.Dirent,
-      'repo-b-audit-2026-01-02.json' as unknown as fs.Dirent,
-    ]);
-    vi.spyOn(fs, 'readFileSync').mockImplementation((filePath: fs.PathOrFileDescriptor) => {
-      const p = String(filePath);
-      if (p.includes('repo-a')) {
-        return JSON.stringify({
-          id: 'run-a',
-          goal: 'onboarding',
-          repoName: 'repo-a',
-          startedAt: '2026-01-01T00:00:00Z',
-          events: [],
-        });
-      }
-      return JSON.stringify({
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify([
+      {
         id: 'run-b',
         goal: 'audit',
         repoName: 'repo-b',
         startedAt: '2026-01-02T00:00:00Z',
         completedAt: '2026-01-02T01:00:00Z',
-        events: [{ step: 1, action: 'test' }],
-      });
-    });
+        status: 'completed',
+      },
+      {
+        id: 'run-a',
+        goal: 'onboarding',
+        repoName: 'repo-a',
+        startedAt: '2026-01-01T00:00:00Z',
+        status: 'completed',
+      },
+    ]));
 
     const runs = loadPersistedRuns();
 
-    // Sorted newest first (reverse alphabetical with these filenames)
     expect(runs).toHaveLength(2);
     expect(runs[0].id).toBe('run-b');
     expect(runs[1].id).toBe('run-a');
-
-    // Dates should be parsed
     expect(runs[0].startedAt).toBeInstanceOf(Date);
     expect(runs[0].completedAt).toBeInstanceOf(Date);
     expect(runs[1].completedAt).toBeUndefined();
+  });
+
+  it('supports pagination with limit and offset', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify([
+      { id: 'run-1', goal: 'audit', repoName: 'r1', startedAt: '2026-01-03T00:00:00Z' },
+      { id: 'run-2', goal: 'audit', repoName: 'r2', startedAt: '2026-01-02T00:00:00Z' },
+      { id: 'run-3', goal: 'audit', repoName: 'r3', startedAt: '2026-01-01T00:00:00Z' },
+    ]));
+
+    const page = loadPersistedRuns({ limit: 2, offset: 1 });
+    expect(page).toHaveLength(2);
+    expect(page[0].id).toBe('run-2');
+    expect(page[1].id).toBe('run-3');
+  });
+
+  it('preserves parentRunId from index entries', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify([
+      {
+        id: 'child-1',
+        goal: 'audit',
+        repoName: 'repo',
+        startedAt: '2026-01-01T00:00:00Z',
+        parentRunId: 'parent-abc',
+      },
+    ]));
+
+    const runs = loadPersistedRuns();
+    expect(runs[0].parentRunId).toBe('parent-abc');
   });
 
   it('returns empty array when directory does not exist and creation fails', () => {

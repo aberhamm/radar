@@ -5,6 +5,7 @@
  */
 
 import { getPortkeyConfig, type PortkeyConfig } from '../config/portkeyConfig.js';
+import { withRetry } from '../agent/retry.js';
 import type { GoalType } from '../types/state.js';
 import type { Finding } from '../types/findings.js';
 import type { Scorecard } from '../types/output.js';
@@ -36,33 +37,44 @@ export async function writeBriefSections(
 
   try {
     const portkeyConfig = getPortkeyConfig(config);
-    const response = await fetch(`${portkeyConfig.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: portkeyConfig.headers,
-      body: JSON.stringify({
-        model: portkeyConfig.fastModelId,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a senior technical consultant writing a brief report. Output each section with a markdown ## heading followed by content. Use the section keys exactly as specified.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 4096,
-        temperature: 0.3,
-      }),
+    const requestBody = JSON.stringify({
+      model: portkeyConfig.fastModelId,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a senior technical consultant writing a brief report. Output each section with a markdown ## heading followed by content. Use the section keys exactly as specified.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 4096,
+      temperature: 0.3,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'unknown');
-      return { goal, sections: {}, error: `HTTP ${response.status}: ${errorText.slice(0, 200)}` };
-    }
+    const json = await withRetry(
+      async () => {
+        const response = await fetch(`${portkeyConfig.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: portkeyConfig.headers,
+          body: requestBody,
+        });
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'unknown');
+          const err = new Error(`HTTP ${response.status}: ${errorText.slice(0, 200)}`);
+          (err as Error & { status: number }).status = response.status;
+          throw err;
+        }
+        return (await response.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+      },
+      {
+        onRetry: (attempt, err, delayMs) => {
+          console.warn(`[brief:${goal}] Retry ${attempt} after ${delayMs}ms: ${err.message.slice(0, 100)}`);
+        },
+      },
+    );
 
-    const json = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
     const content = json.choices?.[0]?.message?.content ?? '';
-
     const sections = parseSections(content);
     return { goal, sections };
   } catch (err) {

@@ -365,6 +365,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [] }: IdleVi
               <option value="migration">Migration — upgrade path assessment</option>
               <option value="nextjs">Next.js Audit — framework health &amp; patterns</option>
               <option value="accessibility">Accessibility — WCAG 2.1 AA compliance</option>
+              <option value="all">All Goals — universal analysis (8 scorecards)</option>
             </select>
           </div>
 

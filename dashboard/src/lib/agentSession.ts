@@ -90,6 +90,24 @@ export interface RunIndexEntry {
   repoPath?: string;
   repoSource?: 'github' | 'local';
   repoUrl?: string;
+  /** Shared ID linking child entries of a multi-goal (--goal all) run */
+  parentRunId?: string;
+}
+
+/** Unified history item for sidebar display. Derived from RunIndexEntry. */
+export interface HistoryItem {
+  id: string;
+  goal: string;
+  repoName: string;
+  startedAt: string;
+  completedAt?: string;
+  hasResult: boolean;
+  findingsCount?: number;
+  score?: ScoreLevel | null;
+  repoPath?: string;
+  repoSource?: 'github' | 'local';
+  repoUrl?: string;
+  parentRunId?: string;
 }
 
 export interface RunEnvelope {
@@ -110,6 +128,8 @@ export interface RunEnvelope {
     evidenceFiles: string[];
     tags: string[];
   }>;
+  /** Shared ID linking child envelopes of a multi-goal run */
+  parentRunId?: string;
 }
 
 export interface RunRecord {
@@ -125,6 +145,8 @@ export interface RunRecord {
   repoPath?: string;
   repoSource?: 'github' | 'local';
   repoUrl?: string;
+  /** Shared ID linking child records of a multi-goal run */
+  parentRunId?: string;
   /** Directory path for tiered storage: output/runs/{id}/ */
   _dirPath?: string;
   /** Legacy: flat file path (for backward compat during migration) */
@@ -227,6 +249,7 @@ function writeEnvelope(dirPath: string, record: RunRecord): void {
       evidenceFiles: ((f.evidence as Array<{ filePath?: string }>) ?? []).map(e => e.filePath ?? ''),
       tags: (f.tags as string[]) ?? [],
     })),
+    ...(record.parentRunId ? { parentRunId: record.parentRunId } : {}),
   };
   fs.writeFileSync(path.join(dirPath, 'envelope.json'), JSON.stringify(envelope, null, 2));
 }
@@ -298,6 +321,7 @@ export function persistRun(record: RunRecord): void {
       repoPath: record.repoPath,
       repoSource: record.repoSource,
       repoUrl: record.repoUrl,
+      ...(record.parentRunId ? { parentRunId: record.parentRunId } : {}),
     });
 
     // Clean up legacy flat file if it exists
@@ -389,8 +413,8 @@ function migrateFromFlatFiles(): void {
 
 // ── Load functions (tiered) ───────────────────────────────────
 
-/** Load all saved runs from disk, newest first. Reads only the index (Tier 1). */
-export function loadPersistedRuns(): RunRecord[] {
+/** Load saved runs from disk, newest first. Reads only the index (Tier 1). */
+export function loadPersistedRuns(opts?: { limit?: number; offset?: number }): RunRecord[] {
   try {
     ensureOutputDir();
   } catch (err) {
@@ -403,7 +427,15 @@ export function loadPersistedRuns(): RunRecord[] {
     migrateFromFlatFiles();
   }
 
-  const entries = readIndex();
+  let entries = readIndex();
+
+  // Pagination
+  const offset = opts?.offset ?? 0;
+  const limit = opts?.limit ?? entries.length;
+  if (offset > 0 || limit < entries.length) {
+    entries = entries.slice(offset, offset + limit);
+  }
+
   return entries.map(e => ({
     id: e.id,
     goal: e.goal,
@@ -416,8 +448,14 @@ export function loadPersistedRuns(): RunRecord[] {
     repoPath: e.repoPath,
     repoSource: e.repoSource,
     repoUrl: e.repoUrl,
+    parentRunId: e.parentRunId,
     _dirPath: runDirPath(e.id),
   }));
+}
+
+/** Get total number of runs in the index (for pagination). */
+export function getRunCount(): number {
+  return readIndex().length;
 }
 
 /** Load the envelope (Tier 2) for a specific run from disk. */
@@ -478,6 +516,26 @@ export function loadRunEvents(record: RunRecord): StepEvent[] {
   }
 
   return [];
+}
+
+// ── HistoryItem conversion ───────────────────────────────────
+
+/** Convert a RunRecord to a HistoryItem for sidebar display. */
+export function toHistoryItem(r: RunRecord): HistoryItem {
+  return {
+    id: r.id,
+    goal: r.goal,
+    repoName: r.repoName,
+    startedAt: r.startedAt instanceof Date ? r.startedAt.toISOString() : String(r.startedAt),
+    completedAt: r.completedAt instanceof Date ? r.completedAt.toISOString() : r.completedAt ? String(r.completedAt) : undefined,
+    hasResult: !!r.result,
+    findingsCount: r.findingsCount ?? r.result?.state?.findings?.length,
+    score: r.overallScore ?? r.result?.scorecard?.overallScore ?? null,
+    repoPath: r.repoPath,
+    repoSource: r.repoSource,
+    repoUrl: r.repoUrl,
+    parentRunId: r.parentRunId,
+  };
 }
 
 // --- SSE stream helper ---

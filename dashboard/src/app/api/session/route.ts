@@ -1,12 +1,23 @@
-import { NextResponse } from 'next/server';
-import { getSession, resetSession, sendStreamEvent } from '@/lib/agentSession';
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, resetSession, sendStreamEvent, loadPersistedRuns, getRunCount } from '@/lib/agentSession';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = getSession();
+  const url = new URL(req.url);
+  const offset = parseInt(url.searchParams.get('offset') ?? '0', 10);
+  const limit = parseInt(url.searchParams.get('limit') ?? '50', 10);
+
+  // If offset > 0, this is a "load more" request — read directly from disk
+  const records = offset > 0
+    ? loadPersistedRuns({ limit, offset })
+    : session.history;
+
+  const totalCount = getRunCount();
+
   return NextResponse.json({
     status: session.status,
     lastError: session.lastError ?? null,
-    history: session.history.map(r => ({
+    history: records.map(r => ({
       id: r.id,
       goal: r.goal,
       repoName: r.repoName,
@@ -18,7 +29,9 @@ export async function GET() {
       repoPath: r.repoPath,
       repoSource: r.repoSource,
       repoUrl: r.repoUrl,
+      parentRunId: r.parentRunId,
     })),
+    hasMore: offset + records.length < totalCount,
     currentRun: session.currentRun ? {
       goal: session.currentRun.goal,
       repoName: session.currentRun.repoName,

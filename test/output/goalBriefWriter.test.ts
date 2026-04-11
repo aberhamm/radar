@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock withRetry to pass through without retries in tests (avoids exponential backoff timeouts)
+vi.mock('../../src/agent/retry.js', () => ({
+  withRetry: async (fn: () => Promise<unknown>) => fn(),
+}));
+
 import {
   writeBriefSections,
   writeAllBriefs,
