@@ -233,7 +233,9 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 ### Deferred
 
 - [ ] **Hosted dashboard demo** — Deploy dashboard to internal URL with pre-loaded gauntlet runs. Practice leads browse results without installing anything. **P2** — depends on gauntlet completion.
-- [ ] **Dashboard design review** — Stale (>7 days, scored 3/10 initially). Run `/plan-design-review` before 2026-04-26 demo date. **P1** — dashboard is the primary interface.
+- [x] **Dashboard design review** — Refreshed 2026-04-12. Score: 5/10 → 7/10. 7 decisions made, 2 deferred. Build-now: tablet panel collapse, blockquote restyle. See decisions table below. **P1** — done (review), implementation pending.
+- [ ] **Dashboard design implementation** — Implement 7 design decisions from 2026-04-12 review: IdleView value prop hero, client-ready error states, goal default guidance, scoreboard layout, a11y baseline, exec summary banner, enhanced wordmark. Plus 2 build-now items (tablet panel collapse, blockquote restyle). **P1** — blocks demo readiness.
+- [x] **Dashboard DESIGN.md** — Created via `/design-consultation` on 2026-04-12. Precision Instrument aesthetic, Outfit + Instrument Serif + JetBrains Mono + system stack, Apple HIG tokens, brand-configurable tint layer for client theming. **P2** — done.
 - [ ] **SOW generator** — Out of scope by design. Radar produces findings, not engagement scoping. Scope definition is the consultant's job.
 
 ## GSTACK REVIEW REPORT
@@ -243,7 +245,7 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 7 | CLEAR | mode: SELECTIVE_EXPANSION, 7 proposals, 5 accepted, 1 deferred |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 5 | CLEAR (PLAN) | 12 issues, 1 critical gap (abort between passes) |
-| Design Review | `/plan-design-review` | UI/UX gaps | 1 | STALE (>7d) | score: 3/10 -> 8/10, 11 decisions |
+| Design Review | `/plan-design-review` | UI/UX gaps | 2 | CLEAR (FULL) | score: 5/10 -> 7/10, 7 decisions, 2 build-now |
 
-**UNRESOLVED:** 0
-**VERDICT:** ENG CLEARED — Go-to-market CEO review complete. Provider abstraction critical finding. 5 cherry-picks accepted. Design review stale, recommend refresh before 2026-04-26 demo.
+**UNRESOLVED:** 2 (sidebar date grouping, PDF layout — both non-blocking)
+**VERDICT:** ENG + DESIGN CLEARED — 7 design decisions made for April 26 demo. Implementation pending. DESIGN.md formalized via /design-consultation (2026-04-12).
