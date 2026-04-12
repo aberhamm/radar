@@ -444,7 +444,7 @@ export default function DashboardPage() {
     } finally {
       setHistoryLoading(false);
     }
-  }, [compareMode, handleCompareSelect]);
+  }, [compareMode, handleCompareSelect, history]);
 
   const handleViewReport = useCallback(() => {
     setStatus('complete');
