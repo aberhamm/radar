@@ -10,15 +10,14 @@
 - **Direction:** Precision Instrument
 - **Decoration level:** Intentional (subtle shadows and surface hierarchy, no gradients/blobs/patterns)
 - **Mood:** Clean, confident, quietly authoritative. Like an Apple-designed consulting tool. The tool feels like it was built by people who care about craft. Not a developer toy, not a corporate bore.
-- **Reference sites:** Linear (density, minimalism), Vercel (light-first clarity), Apple HIG (shadow hierarchy, system colors)
+- **Reference sites:** Linear (density, minimalism), Vercel (light-first clarity), Apple HIG (shadow hierarchy, system colors), Square/DigitalOcean/OpenRouter (one-font-family geometric sans, clean authority)
 
 ## Typography
-- **Display/Brand:** Outfit — geometric sans with warmth, signals "modern but not generic." Used for brand wordmark, hero headings, section titles.
-- **Report Titles:** Instrument Serif — used sparingly (3-4 instances per screen max) for report hero titles and empty-state headlines. One serif in a sans-serif system says "consulting deliverable" not "SaaS product."
+- **Display/Brand:** Outfit — geometric sans with warmth, signals "modern but not generic." Used for brand wordmark, hero headings, report titles, section titles. At 600-700 weight it carries display duties without needing a second typeface. Think Square, DigitalOcean, OpenRouter: one clean geometric sans does all the work.
 - **Body/UI:** System stack (-apple-system, BlinkMacSystemFont, SF Pro Display, system-ui, Segoe UI) — fastest paint, native feel, zero layout shift.
 - **Data/Tables:** JetBrains Mono — tabular-nums for aligned score data, file paths, code snippets, finding IDs, metric values.
 - **Code:** JetBrains Mono
-- **Loading:** Outfit and JetBrains Mono via next/font/google (automatic subsetting). Instrument Serif via next/font/google (add when implementing report titles).
+- **Loading:** Outfit and JetBrains Mono via next/font/google (automatic subsetting). Two fonts total. No serif.
 - **Scale:**
 
 | Level | Size | Weight | Use |
@@ -30,7 +29,7 @@
 | lg | 20px | 600 | Section headings |
 | xl | 24px | 600-700 | Page titles (Outfit) |
 | 2xl | 32px | 700 | Hero headings (Outfit) |
-| 3xl | 40px | 700 | Display (Outfit), report titles (Instrument Serif) |
+| 3xl | 40px | 700 | Display, report titles (Outfit) |
 
 ## Color
 
@@ -108,7 +107,7 @@ Override at `:root` level. A client theme is 2-3 CSS variable overrides:
 - Score colors (red/amber/green/blue) are NEVER client-configurable. They have universal semantic meaning.
 - Surface and label colors are NEVER client-configurable. They maintain WCAG contrast ratios.
 - If a client's brand color is red, it must be distinguishable from `--color-danger`. Use a different shade or pair with a secondary brand color for the tint.
-- Typography is fixed. Outfit, Instrument Serif, JetBrains Mono, and the system stack are part of Radar's identity.
+- Typography is fixed. Outfit, JetBrains Mono, and the system stack are part of Radar's identity.
 
 ## Spacing
 - **Base unit:** 4px
@@ -157,6 +156,23 @@ Override at `:root` level. A client theme is 2-3 CSS variable overrides:
 - **Existing animations (globals.css):** fadeIn, slideUp, scaleIn, slideDown, chip-enter, check-pop, progress-shimmer, expand-down
 - **Focus glow:** `0 0 0 4px rgba(0,113,227,0.12)` — uses tint color at 12% opacity
 
+## Reference Patterns
+
+Specific patterns borrowed from best-in-class developer tool dashboards.
+
+### Stat Bar (from OpenRouter)
+Bold numbers in a horizontal row with tiny labels underneath. Use for idle view social proof and exec summary banners.
+```
+23 tools    |    8 goals    |    $0.03 avg    |    47s avg
+```
+Implementation: `flex` row, number in Outfit 700 at 24-32px, label in system font 11px tertiary color. No cards, no borders. Just numbers and labels.
+
+### Card Density (from DigitalOcean)
+Pack information into cards without feeling cramped: generous internal padding (md: 16px) with tight external gaps (sm: 8px between cards). The breathing room is INSIDE the card, not between cards. This lets you show more cards per viewport while each card still reads clearly.
+
+### Flat Navigation (from OpenRouter)
+Nav items are flat text buttons with no background fill until hover. Active state uses font-weight change (500 to 600) rather than background color. Keeps the nav bar visually quiet so the content area dominates. The `/` keyboard shortcut hint for search is a nice touch for power users.
+
 ## AI Slop Anti-Patterns (never use)
 - Purple/violet gradients as accent
 - 3-column feature grid with icons in colored circles
@@ -170,8 +186,9 @@ Override at `:root` level. A client theme is 2-3 CSS variable overrides:
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-04-12 | Initial design system created | Created by /design-consultation. Synthesized from competitive research (Linear, Vercel, Sentry, SonarCloud, Snyk) + Claude subagent "Night Desk" direction |
-| 2026-04-12 | Instrument Serif for report titles | Subagent insight: one serif in a sans-serif system signals "consulting deliverable" to practice leads |
+| 2026-04-12 | Dropped Instrument Serif, all-Outfit | User feedback: serif looked wrong. Square/DigitalOcean/OpenRouter pattern: one geometric sans at varied weights handles everything. Authority from weight + size, not typeface switching. |
 | 2026-04-12 | Asymmetric 60/40 report layout | Subagent insight: mirrors how consulting assessments get read (scan scores right, read detail left) |
 | 2026-04-12 | Semantic-only color approach | Color reserved for scores (red/amber/green). Tint for interactive only. UI is neutral. Subagent validated. |
 | 2026-04-12 | Brand configuration layer | Client-configurable accent tokens (tint, hover, brand). Score and surface colors are fixed. |
 | 2026-04-12 | Apple HIG foundation retained | Competitive research confirmed: Apple HIG light-first is the gap between dark-neon dev tools and corporate-blue enterprise. Practice leads know this visual language. |
+| 2026-04-12 | Added reference patterns | Stat bar (OpenRouter), card density (DigitalOcean), flat navigation (OpenRouter). Concrete implementation guidance for recurring UI patterns. |
