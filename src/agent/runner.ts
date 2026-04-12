@@ -1010,6 +1010,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state.fetchedDocs,
     state.toolCallCount,
     currentBudget,
+    metrics,
   );
 
   const fullExport = buildFullExport(state, scorecard, sections, metrics, terminationReason, currentBudget);

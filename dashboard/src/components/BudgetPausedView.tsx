@@ -42,7 +42,9 @@ export function BudgetPausedView({ findings, toolCalls, budget, onDecision }: Bu
         <div className="text-2xl mb-2">⏸</div>
         <h2 className="text-base font-semibold text-label mb-1.5">Budget Exhausted</h2>
         <p className="text-sm text-secondary-label mb-1">
-          Used {toolCalls} of {budget} tool calls.
+          {toolCalls > budget
+            ? `Tool call budget exceeded (${toolCalls}/${budget}).`
+            : `Used ${toolCalls} of ${budget} tool calls.`}
         </p>
         <p className="text-sm text-secondary-label mb-6">
           {findings > 0

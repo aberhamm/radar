@@ -1,6 +1,7 @@
-import type { Scorecard, CategoryScore } from '../types/output.js';
+import type { Scorecard, CategoryScore, RunMetrics } from '../types/output.js';
 import type { Finding } from '../types/findings.js';
 import type { InvestigationEntry, FetchedDoc } from '../types/state.js';
+import { renderExecutiveSummary } from './executiveSummary.js';
 
 /**
  * Render a scorecard + agent-written sections into a consultant-readable markdown brief.
@@ -12,6 +13,7 @@ export function renderBrief(
   fetchedDocs: FetchedDoc[],
   toolCallsUsed: number,
   toolCallBudget: number,
+  metrics?: RunMetrics,
 ): string {
   const lines: string[] = [];
 
@@ -29,6 +31,13 @@ export function renderBrief(
   lines.push('');
   lines.push('---');
   lines.push('');
+
+  // Executive summary — deterministic, computed from scorecard + metrics
+  if (metrics) {
+    lines.push(renderExecutiveSummary(scorecard, metrics));
+    lines.push('---');
+    lines.push('');
+  }
 
   // Render agent-written sections
   // Normalize keys: the LLM may use slightly different key names

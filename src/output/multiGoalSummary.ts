@@ -17,7 +17,9 @@ export interface MultiGoalResult {
 export interface PassBreakdown {
   pass: string;
   toolCalls: number;
+  budget: number;
   durationMs: number;
+  terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error';
 }
 
 export interface MultiGoalMetrics {
@@ -50,10 +52,12 @@ export function renderMultiGoalSummary(
   // Pass breakdown
   lines.push('### Investigation Passes');
   lines.push('');
-  lines.push('| Pass | Tool Calls | Duration |');
-  lines.push('|------|-----------|----------|');
+  lines.push('| Pass | Tool Calls | Budget | Duration | Status |');
+  lines.push('|------|-----------|--------|----------|--------|');
   for (const pass of metrics.passBreakdown) {
-    lines.push(`| ${pass.pass} | ${pass.toolCalls} | ${(pass.durationMs / 1000).toFixed(1)}s |`);
+    const exceeded = pass.terminationReason === 'budget_exhausted';
+    const status = exceeded ? '⚠️ budget exceeded' : '✓';
+    lines.push(`| ${pass.pass} | ${pass.toolCalls}/${pass.budget} | ${pass.budget} | ${(pass.durationMs / 1000).toFixed(1)}s | ${status} |`);
   }
   lines.push('');
 

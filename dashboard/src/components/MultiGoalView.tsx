@@ -138,22 +138,53 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
 
 // ─── Pass Breakdown ─────────────────────────────────────────────
 
+interface PassInfo {
+  name: string;
+  eventCount: number;
+  budget?: number;
+  terminationReason?: string;
+}
+
 function PassBreakdown({ events }: { events: StepEvent[] }) {
   // Count events per pass by looking at pass_boundary markers
-  const passes: Array<{ name: string; eventCount: number }> = [];
+  // and read budget/outcome from pass_complete events
+  const passes: PassInfo[] = [];
   let currentPass = 'Core';
   let currentCount = 0;
 
+  // Index pass_complete events by pass name for quick lookup
+  const completions = new Map<string, { toolCalls: number; budget: number; terminationReason: string }>();
+  for (const ev of events) {
+    if (ev.action === 'pass_complete' && ev.result) {
+      try {
+        const data = JSON.parse(ev.result as string);
+        completions.set(data.pass, data);
+      } catch { /* ignore parse errors */ }
+    }
+  }
+
   for (const ev of events) {
     if (ev.action === 'pass_boundary') {
-      passes.push({ name: currentPass, eventCount: currentCount });
+      const completion = completions.get(currentPass);
+      passes.push({
+        name: currentPass,
+        eventCount: completion?.toolCalls ?? currentCount,
+        budget: completion?.budget,
+        terminationReason: completion?.terminationReason,
+      });
       currentPass = (ev.result as string) ?? 'Next pass';
       currentCount = 0;
     } else if (ev.type === 'tool_call') {
       currentCount++;
     }
   }
-  passes.push({ name: currentPass, eventCount: currentCount });
+  const lastCompletion = completions.get(currentPass);
+  passes.push({
+    name: currentPass,
+    eventCount: lastCompletion?.toolCalls ?? currentCount,
+    budget: lastCompletion?.budget,
+    terminationReason: lastCompletion?.terminationReason,
+  });
 
   const totalCalls = passes.reduce((sum, p) => sum + p.eventCount, 0);
   if (totalCalls === 0) return null;
@@ -163,7 +194,11 @@ function PassBreakdown({ events }: { events: StepEvent[] }) {
       <h3 className="text-[13px] font-semibold text-label mb-3">Investigation Passes</h3>
       <div className="flex flex-col gap-2">
         {passes.map(pass => {
-          const pct = totalCalls > 0 ? (pass.eventCount / totalCalls) * 100 : 0;
+          const pct = pass.budget
+            ? Math.min((pass.eventCount / pass.budget) * 100, 100)
+            : totalCalls > 0 ? (pass.eventCount / totalCalls) * 100 : 0;
+          const exceeded = pass.budget ? pass.eventCount >= pass.budget : false;
+          const barColor = exceeded ? 'var(--color-warning, #ff9500)' : 'var(--color-tint)';
           return (
             <div key={pass.name} className="flex items-center gap-3">
               <span className="text-[12px] text-secondary-label w-[140px] shrink-0 truncate">
@@ -171,12 +206,12 @@ function PassBreakdown({ events }: { events: StepEvent[] }) {
               </span>
               <div className="flex-1 h-2 bg-elevated rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-tint rounded-full transition-all"
-                  style={{ width: `${pct}%` }}
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${pct}%`, background: barColor }}
                 />
               </div>
-              <span className="text-[11px] text-tertiary-label w-[80px] text-right shrink-0">
-                {pass.eventCount} calls
+              <span className={`text-[11px] w-[100px] text-right shrink-0 ${exceeded ? 'text-warning font-medium' : 'text-tertiary-label'}`}>
+                {pass.eventCount}{pass.budget ? `/${pass.budget}` : ''} calls
               </span>
             </div>
           );

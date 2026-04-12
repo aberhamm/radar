@@ -58,9 +58,9 @@ function makeMetrics(overrides: Partial<MultiGoalMetrics> = {}): MultiGoalMetric
     totalDurationMs: 30000,
     totalCostUsd: 0.50,
     passBreakdown: [
-      { pass: 'Core', toolCalls: 70, durationMs: 20000 },
-      { pass: 'Next.js Specialist', toolCalls: 15, durationMs: 5000 },
-      { pass: 'Accessibility Specialist', toolCalls: 15, durationMs: 5000 },
+      { pass: 'Core', toolCalls: 70, budget: 70, durationMs: 20000, terminationReason: 'completed' },
+      { pass: 'Next.js Specialist', toolCalls: 15, budget: 15, durationMs: 5000, terminationReason: 'completed' },
+      { pass: 'Accessibility Specialist', toolCalls: 15, budget: 15, durationMs: 5000, terminationReason: 'completed' },
     ],
     ...overrides,
   };
@@ -96,9 +96,9 @@ describe('renderMultiGoalSummary', () => {
     expect(md).toContain('**Findings:** 3 total');
     expect(md).toContain('**Tool calls:** 100');
 
-    // Pass breakdown table
-    expect(md).toContain('| Core | 70 | 20.0s |');
-    expect(md).toContain('| Next.js Specialist | 15 | 5.0s |');
+    // Pass breakdown table — now includes budget and status columns
+    expect(md).toContain('| Core | 70/70 | 70 | 20.0s | ✓ |');
+    expect(md).toContain('| Next.js Specialist | 15/15 | 15 | 5.0s | ✓ |');
 
     // Score matrix
     expect(md).toContain('## Score Matrix');

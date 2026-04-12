@@ -112,6 +112,21 @@ export async function dashboardAnalyzeAll(
 
       lastResult = result;
 
+      // Emit pass_complete event with budget and termination info
+      const passCompleteEvent: StepEvent = {
+        step: -1,
+        action: 'pass_complete',
+        result: JSON.stringify({
+          pass: pass.name,
+          toolCalls: (result.metrics as Record<string, unknown>)?.toolCalls ?? 0,
+          budget: passBudget,
+          terminationReason: (result as Record<string, unknown>).terminationReason ?? 'completed',
+        }),
+        timestamp: new Date().toISOString(),
+      };
+      allEvents.push(passCompleteEvent);
+      opts.onStep(passCompleteEvent);
+
       // Carry state forward to next pass.
       // The full agent state has many fields beyond what dashboard types expose.
       // We pass the raw state object through to runAgent's initialState param.

@@ -44,7 +44,7 @@ program
   .option('--goal <type>', 'Analysis goal: onboarding, audit, migration, component-map, ci-check, security-review, nextjs, accessibility, all')
   .option('--platform <name>', 'Platform override: sitecore, optimizely (auto-detected if omitted)')
   .option('--output <dir>', 'Output directory', './output')
-  .option('--budget <n>', 'Tool call budget', '45')
+  .option('--budget <n>', 'Tool call budget (default: 150 for all, 45 for single goal)')
   .option('--dry-run', 'Show configuration without running')
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .option('--json', 'Output summary as JSON (for CI integration)')
@@ -55,9 +55,9 @@ program
   .option('--checkpoint-interval <n>', 'Save checkpoint every N tool calls (0 to disable)', '5')
   .action(async (opts) => {
     try {
-      // Default budget is higher for --goal all (150 vs 45)
-      if (opts.goal === 'all' && opts.budget === '45') {
-        opts.budget = '150';
+      // Apply goal-appropriate default budget if user didn't specify
+      if (!opts.budget) {
+        opts.budget = opts.goal === 'all' ? '150' : '45';
       }
       const handler = opts.goal === 'all' ? handleAnalyzeAll : handleAnalyze;
       const exitCode = await handler(opts);

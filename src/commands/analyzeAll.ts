@@ -36,6 +36,7 @@ const ALL_GOALS: GoalType[] = [
 
 interface PassResult {
   pass: string;
+  budget: number;
   result?: RunResult;
   error?: string;
   durationMs: number;
@@ -132,7 +133,7 @@ export async function handleAnalyzeAll(opts: {
       },
     });
     const coreDuration = Date.now() - coreStart;
-    passResults.push({ pass: 'Core', result: coreResult, durationMs: coreDuration });
+    passResults.push({ pass: 'Core', budget: coreBudget, result: coreResult, durationMs: coreDuration });
     allInvestigationLogs.push(...coreResult.state.investigationLog);
     sharedState = {
       findings: coreResult.state.findings,
@@ -143,10 +144,11 @@ export async function handleAnalyzeAll(opts: {
       fetchedDocs: coreResult.state.fetchedDocs,
       modelUsage: coreResult.state.modelUsage,
     };
-    console.log(`[Core] Done: ${coreResult.state.findings.length} findings, ${coreResult.metrics.toolCalls} calls, ${(coreDuration / 1000).toFixed(1)}s`);
+    allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Core', toolCalls: coreResult.metrics.toolCalls, budget: coreBudget, terminationReason: coreResult.terminationReason }), timestamp: new Date().toISOString() });
+    console.log(`[Core] Done: ${coreResult.state.findings.length} findings, ${coreResult.metrics.toolCalls}/${coreBudget} calls, ${(coreDuration / 1000).toFixed(1)}s`);
   } catch (err) {
     const coreDuration = Date.now() - coreStart;
-    passResults.push({ pass: 'Core', error: (err as Error).message, durationMs: coreDuration });
+    passResults.push({ pass: 'Core', budget: coreBudget, error: (err as Error).message, durationMs: coreDuration });
     console.error(`[Core] Failed: ${(err as Error).message}`);
     // Core failure is fatal
     return 2;
@@ -175,7 +177,7 @@ export async function handleAnalyzeAll(opts: {
       },
     });
     const nextjsDuration = Date.now() - nextjsStart;
-    passResults.push({ pass: 'Next.js Specialist', result: nextjsResult, durationMs: nextjsDuration });
+    passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, result: nextjsResult, durationMs: nextjsDuration });
     allInvestigationLogs.push(...nextjsResult.state.investigationLog);
     // Update shared state with new findings
     sharedState = {
@@ -187,10 +189,11 @@ export async function handleAnalyzeAll(opts: {
       fetchedDocs: nextjsResult.state.fetchedDocs,
       modelUsage: nextjsResult.state.modelUsage,
     };
-    console.log(`[Next.js] Done: ${nextjsResult.state.findings.length} total findings, ${nextjsResult.metrics.toolCalls} calls`);
+    allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Next.js Specialist', toolCalls: nextjsResult.metrics.toolCalls, budget: nextjsBudget, terminationReason: nextjsResult.terminationReason }), timestamp: new Date().toISOString() });
+    console.log(`[Next.js] Done: ${nextjsResult.state.findings.length} total findings, ${nextjsResult.metrics.toolCalls}/${nextjsBudget} calls`);
   } catch (err) {
     const nextjsDuration = Date.now() - nextjsStart;
-    passResults.push({ pass: 'Next.js Specialist', error: (err as Error).message, durationMs: nextjsDuration });
+    passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, error: (err as Error).message, durationMs: nextjsDuration });
     console.warn(`[Next.js] Specialist failed (graceful degradation): ${(err as Error).message}`);
   }
 
@@ -217,7 +220,7 @@ export async function handleAnalyzeAll(opts: {
       },
     });
     const a11yDuration = Date.now() - a11yStart;
-    passResults.push({ pass: 'Accessibility Specialist', result: a11yResult, durationMs: a11yDuration });
+    passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, result: a11yResult, durationMs: a11yDuration });
     allInvestigationLogs.push(...a11yResult.state.investigationLog);
     sharedState = {
       findings: a11yResult.state.findings,
@@ -228,10 +231,11 @@ export async function handleAnalyzeAll(opts: {
       fetchedDocs: a11yResult.state.fetchedDocs,
       modelUsage: a11yResult.state.modelUsage,
     };
-    console.log(`[A11y] Done: ${a11yResult.state.findings.length} total findings, ${a11yResult.metrics.toolCalls} calls`);
+    allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Accessibility Specialist', toolCalls: a11yResult.metrics.toolCalls, budget: a11yBudget, terminationReason: a11yResult.terminationReason }), timestamp: new Date().toISOString() });
+    console.log(`[A11y] Done: ${a11yResult.state.findings.length} total findings, ${a11yResult.metrics.toolCalls}/${a11yBudget} calls`);
   } catch (err) {
     const a11yDuration = Date.now() - a11yStart;
-    passResults.push({ pass: 'Accessibility Specialist', error: (err as Error).message, durationMs: a11yDuration });
+    passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, error: (err as Error).message, durationMs: a11yDuration });
     console.warn(`[A11y] Specialist failed (graceful degradation): ${(err as Error).message}`);
   }
 
@@ -286,6 +290,7 @@ export async function handleAnalyzeAll(opts: {
       lastSuccessful.result.state.fetchedDocs,
       passResults.reduce((sum, p) => sum + (p.result?.metrics.toolCalls ?? 0), 0),
       totalBudget,
+      lastSuccessful.result.metrics,
     );
 
     // Update the multiGoalResult with brief path
@@ -336,6 +341,7 @@ export async function handleAnalyzeAll(opts: {
       lastSuccessful.result.state.fetchedDocs,
       passResults.reduce((sum, p) => sum + (p.result?.metrics.toolCalls ?? 0), 0),
       totalBudget,
+      lastSuccessful.result.metrics,
     );
 
     persistRunToTieredStorage(runsDir, {
@@ -374,7 +380,9 @@ export async function handleAnalyzeAll(opts: {
     passBreakdown: passResults.map((p) => ({
       pass: p.pass,
       toolCalls: p.result?.metrics.toolCalls ?? 0,
+      budget: p.budget,
       durationMs: p.durationMs,
+      terminationReason: p.result?.terminationReason ?? (p.error ? 'error' : 'budget_exhausted'),
     })),
   };
 
@@ -417,10 +425,18 @@ export async function handleAnalyzeAll(opts: {
 
   // Summary output
   console.log(`\n--- Universal analysis complete ---\n`);
-  console.log(`  Tool calls: ${totalToolCalls}`);
+  console.log(`  Tool calls: ${totalToolCalls}/${totalBudget}`);
   console.log(`  Findings:   ${allFindings.length}`);
   console.log(`  Duration:   ${(totalDuration / 1000).toFixed(1)}s`);
   console.log(`  Est. cost:  $${totalCost.toFixed(4)}`);
+  console.log('');
+  console.log('  Passes:');
+  for (const p of passResults) {
+    const calls = p.result?.metrics.toolCalls ?? 0;
+    const reason = p.result?.terminationReason ?? (p.error ? 'error' : 'unknown');
+    const flag = reason === 'budget_exhausted' ? ' ⚠️  budget exceeded' : reason === 'completed' ? '' : ` (${reason})`;
+    console.log(`    ${p.pass}: ${calls}/${p.budget} calls, ${(p.durationMs / 1000).toFixed(1)}s${flag}`);
+  }
   console.log('');
   console.log('  Scores:');
   for (const goal of ALL_GOALS) {
