@@ -32,6 +32,8 @@ export interface Evidence {
   verified?: boolean;
   /** Granular verification outcome */
   verificationStatus?: 'verified' | 'corrected' | 'unverifiable';
+  /** Actual source code from the file around the referenced line (5-line window). Set by verification. */
+  sourceContext?: string;
 }
 
 export interface DocRef {

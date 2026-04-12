@@ -213,6 +213,55 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
 }
 
 /**
+ * Extract specific claims from a finding description that should appear in evidence.
+ * Returns package names (@scope/name), version numbers (X.Y.Z), and env var names.
+ */
+function extractDescriptionClaims(description: string): string[] {
+  const claims: string[] = [];
+
+  // Scoped package names: @scope/package-name
+  const scopedPkgs = description.match(/@[\w-]+\/[\w.-]+/g);
+  if (scopedPkgs) claims.push(...scopedPkgs);
+
+  // Version numbers with context: v1.2.3, ^1.2.3, ~1.2, :^8, etc.
+  // Only capture when they look like version claims (preceded by version-like context)
+  const versions = description.match(/(?:[:v^~]|version\s*)\d+(?:\.\d+)+/gi);
+  if (versions) {
+    claims.push(...versions.map(v => v.replace(/^[:v^~]\s*|^version\s*/i, '')));
+  }
+
+  return claims;
+}
+
+/**
+ * Check if key claims in the finding description are supported by evidence snippets.
+ * Returns warnings for claims that appear in the description but not in any evidence.
+ */
+function checkDescriptionEvidenceCoherence(finding: Finding): string[] {
+  const warnings: string[] = [];
+  if (finding.evidence.length === 0) return warnings;
+
+  const claims = extractDescriptionClaims(finding.description);
+  if (claims.length === 0) return warnings;
+
+  // Combine all evidence snippets + descriptions into one searchable string
+  const evidenceText = finding.evidence
+    .map(e => `${e.snippet} ${e.description}`)
+    .join(' ');
+
+  const unsupported = claims.filter(claim => !evidenceText.includes(claim));
+
+  if (unsupported.length > 0) {
+    warnings.push(
+      `Description claims not found in evidence: ${unsupported.join(', ')}. ` +
+      `Ensure evidence snippets contain the specific packages/versions you reference.`,
+    );
+  }
+
+  return warnings;
+}
+
+/**
  * Record finding(s) into the agent state. Returns the finding ID(s)
  * and updated total count. This is the only tool that mutates state.
  *
@@ -223,6 +272,7 @@ function extractFindings(input: Record<string, unknown>): Finding[] {
  * - Checks each evidence item's filePath was read by the agent (filesRead)
  * - Reads the actual file and compares the snippet against real code
  * - Auto-corrects mismatched snippets, rejects evidence for missing files
+ * - Checks that key claims in the description appear in evidence snippets
  */
 export async function recordFinding(
   state: AgentState,
@@ -233,6 +283,14 @@ export async function recordFinding(
   let rejectedEvidenceCount = 0;
 
   for (const finding of findings) {
+    // Warn if finding has no evidence at all
+    if (finding.evidence.length === 0) {
+      warnings.push(
+        `Finding "${finding.id}" has no evidence. Findings without evidence are unreliable. ` +
+        `Add at least one evidence item with filePath, snippet, and description.`,
+      );
+    }
+
     // Push to state FIRST, before async evidence verification.
     // If agent.abort() fires mid-verification (e.g., assemble_output in same batch),
     // the finding still exists in state with its original evidence.
@@ -271,6 +329,10 @@ export async function recordFinding(
     }
 
     finding.evidence = verifiedEvidence;
+
+    // After verification, check description-evidence coherence
+    const coherenceWarnings = checkDescriptionEvidenceCoherence(finding);
+    warnings.push(...coherenceWarnings);
   }
 
   return {

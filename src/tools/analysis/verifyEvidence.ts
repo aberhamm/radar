@@ -183,6 +183,9 @@ export async function verifyAndCorrectEvidence(
   const fileContent = result.content;
   const window = extractCodeWindow(fileContent, evidence.lineNumber);
 
+  // Always capture actual source context around the referenced line for user validation
+  const sourceContext = extractCodeWindow(fileContent, evidence.lineNumber, 3);
+
   // Check snippet against the relevant window first, then full file
   if (snippetMatchesContent(evidence.snippet, window) ||
       snippetMatchesContent(evidence.snippet, fileContent)) {
@@ -196,6 +199,7 @@ export async function verifyAndCorrectEvidence(
         ...(correctedLine ? { lineNumber: correctedLine } : {}),
         verified: true,
         verificationStatus: 'verified',
+        sourceContext,
       },
       status: 'verified',
       note: `Snippet verified against ${evidence.filePath}${correctedLine ? `:${correctedLine}` : ''}${lineChanged ? ` (line corrected from ${evidence.lineNumber})` : ''}`,
@@ -211,6 +215,7 @@ export async function verifyAndCorrectEvidence(
       snippet: actualSnippet,
       verified: true,
       verificationStatus: 'corrected',
+      sourceContext,
     },
     status: 'corrected',
     note: `Snippet did not match ${evidence.filePath}${evidence.lineNumber ? `:${evidence.lineNumber}` : ''}. Auto-corrected to actual code.`,
@@ -246,6 +251,7 @@ export async function verifyFindingEvidence(
 
     const fileContent = result.content;
     const window = extractCodeWindow(fileContent, ev.lineNumber);
+    const sourceContext = extractCodeWindow(fileContent, ev.lineNumber, 3);
 
     if (ev.snippet && (snippetMatchesContent(ev.snippet, window) ||
         snippetMatchesContent(ev.snippet, fileContent))) {
@@ -257,6 +263,7 @@ export async function verifyFindingEvidence(
         ...(correctedLine ? { lineNumber: correctedLine } : {}),
         verified: true,
         verificationStatus: 'verified',
+        sourceContext,
       });
     } else {
       const actualSnippet = extractCodeWindow(fileContent, ev.lineNumber, 2);
@@ -267,6 +274,7 @@ export async function verifyFindingEvidence(
         snippet: actualSnippet,
         verified: true,
         verificationStatus: 'corrected',
+        sourceContext,
       });
     }
   }
