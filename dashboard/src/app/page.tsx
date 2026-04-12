@@ -29,6 +29,21 @@ const SAMPLE_HISTORY_ITEM = {
   hasResult: true,
 };
 
+// ─── Helpers ─────────────────────────────────────────────────────
+
+function friendlyError(raw: string): string {
+  if (!raw) return 'Something went wrong during the analysis. Please try again.';
+  if (raw.includes('ENOENT') || raw.includes('not found'))
+    return 'The repository path could not be found. Double-check the path or URL and try again.';
+  if (raw.includes('timeout') || raw.includes('ETIMEDOUT'))
+    return 'The analysis timed out. This can happen with very large repositories. Try a more specific goal.';
+  if (raw.includes('ECONNREFUSED') || raw.includes('network'))
+    return 'Could not connect to the analysis server. Make sure the backend is running.';
+  if (raw.includes('budget') || raw.includes('limit'))
+    return 'The analysis exceeded its resource budget. Try increasing the budget or using a narrower goal.';
+  return 'The analysis encountered an unexpected error. Please try again.';
+}
+
 // ─── Types ──────────────────────────────────────────────────────
 
 type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing' | 'multigoal';
@@ -88,6 +103,7 @@ export default function DashboardPage() {
   const [compareLoading, setCompareLoading] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [multiGoalData, setMultiGoalData] = useState<MultiGoalData | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
 
   // Prepend sample run to history
@@ -264,6 +280,7 @@ export default function DashboardPage() {
 
   const handleRunError = useCallback((error: string) => {
     console.error('Run error:', error);
+    setErrorMessage(error);
     setStatus('error');
   }, []);
 
@@ -506,6 +523,7 @@ export default function DashboardPage() {
           onClick={() => setSidebarOpen((prev) => !prev)}
           className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors cursor-pointer"
           title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
         >
           <svg className="w-4 h-4 text-secondary-label" viewBox="0 0 16 16" fill="currentColor">
             <rect y="2" width="16" height="1.5" rx="0.75" />
@@ -515,7 +533,7 @@ export default function DashboardPage() {
         </button>
 
         {/* Brand */}
-        <span className="text-[17px] font-bold text-tint tracking-tight font-brand select-none whitespace-nowrap shrink-0">
+        <span className="text-[20px] font-bold text-tint tracking-[-0.02em] font-brand select-none whitespace-nowrap shrink-0">
           radar
         </span>
 
@@ -525,6 +543,7 @@ export default function DashboardPage() {
             onClick={cycleTheme}
             className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors cursor-pointer"
             title={`Theme: ${themeMode}`}
+            aria-label={`Switch theme, current: ${themeMode}`}
           >
             {themeMode === 'light' ? (
               <svg
@@ -620,7 +639,7 @@ export default function DashboardPage() {
           onLoadMore={handleLoadMore}
         />
 
-        <main className="flex-1 flex flex-col overflow-hidden relative">
+        <main className="flex-1 flex flex-col overflow-hidden relative" aria-label="Main content">
           {status === 'idle' && (
             <div key="idle" className="animate-slide-up flex-1 flex flex-col">
               <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} history={history} />
@@ -695,7 +714,8 @@ export default function DashboardPage() {
                 <circle cx="12" cy="12" r="10" />
                 <path d="m15 9-6 6M9 9l6 6" />
               </svg>
-              <p className="text-danger text-sm">Run failed. Check server logs for details.</p>
+              <h2 className="text-lg font-semibold text-label mb-2">Analysis could not complete</h2>
+              <p className="text-sm text-secondary-label max-w-sm">{friendlyError(errorMessage)}</p>
               <button
                 onClick={handleNewRun}
                 className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
@@ -715,7 +735,7 @@ export default function DashboardPage() {
             onClick={() => setNewRunModal(false)}
           />
           <div className="relative z-10 w-full max-w-lg mx-4 animate-scale-in">
-            <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} history={history} />
+            <IdleView compact initialRepoPath={lastRepoPath} onStart={handleStart} history={history} />
           </div>
         </div>
       )}

@@ -153,7 +153,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
         key={h.id}
         onClick={handleClick}
         disabled={isDisabledInCompare}
-        className={`text-left rounded-lg p-2.5 transition-all group border-l-2 w-full ${
+        className={`text-left rounded-lg p-2.5 min-h-touch transition-all group border-l-2 w-full ${
           opts.isChild ? 'pl-5' : ''
         } ${
           isDisabledInCompare
@@ -231,6 +231,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
       )}
 
       <aside
+        aria-label="Run history"
         className={`bg-canvas border-r border-separator flex flex-col shrink-0 overflow-hidden z-30 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           open ? 'w-[240px]' : 'w-0'
         } fixed lg:relative h-full`}

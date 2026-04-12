@@ -13,6 +13,7 @@ import {
   costToMarkdown,
 } from '@/lib/export';
 import { EventStream } from './EventStream';
+import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
 
 interface CompleteViewProps {
   briefMarkdown: string;
@@ -24,8 +25,54 @@ interface CompleteViewProps {
 
 type Tab = 'report' | 'events' | 'rules' | 'cost';
 
-function scoreColor(score: 'red' | 'yellow' | 'green'): string {
-  return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
+// ─── Exec Summary Banner ───────────────────────────────────────
+
+function ExecSummaryBanner({ scorecard, metrics }: { scorecard: Scorecard; metrics: RunMetrics }) {
+  const grade = scoreToGrade(scorecard.overallScore);
+  const gradeColor = scoreColor(scorecard.overallScore);
+  const verdict = scoreToVerdict(scorecard.overallScore);
+
+  return (
+    <div className="px-6 py-4 border-b border-separator bg-surface shrink-0">
+      <div className="flex items-start gap-5 max-w-[860px]">
+        <div
+          className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: `color-mix(in srgb, ${gradeColor} 10%, transparent)` }}
+        >
+          <span className="text-[28px] font-bold font-brand" style={{ color: gradeColor }}>
+            {grade}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[15px] font-semibold text-label mb-1">{verdict}</div>
+          <div className="flex items-center gap-4 text-[12px] text-secondary-label mb-2 flex-wrap">
+            <span>{scorecard.categories.length} categories scored</span>
+            <span>{metrics.toolCalls} tool calls</span>
+            <span>${metrics.totalEstimatedCostUsd.toFixed(2)}</span>
+            <span>{(metrics.durationMs / 1000).toFixed(0)}s</span>
+          </div>
+          {scorecard.topRisks.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {scorecard.topRisks.slice(0, 3).map(risk => (
+                <span
+                  key={risk.id}
+                  className="text-[11px] px-2 py-0.5 rounded-md"
+                  style={{
+                    background: risk.severity === 'critical' || risk.severity === 'high'
+                      ? 'rgba(255,59,48,0.08)' : 'rgba(255,149,0,0.08)',
+                    color: risk.severity === 'critical' || risk.severity === 'high'
+                      ? 'var(--color-danger)' : 'var(--color-warning)',
+                  }}
+                >
+                  {risk.title}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?: RunMetrics }) {
@@ -38,6 +85,8 @@ function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?:
         <div
           className="w-3 h-3 rounded-full shrink-0"
           style={{ background: scoreColor(scorecard.overallScore) }}
+          role="img"
+          aria-label={`Score: ${scorecard.overallScore}`}
         />
         <div className="flex-1">
           <span className="font-bold text-sm text-label">
@@ -240,6 +289,9 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Exec summary banner */}
+      <ExecSummaryBanner scorecard={scorecard} metrics={metrics} />
+
       {/* Segmented control tab bar */}
       <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
         <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5">
@@ -247,7 +299,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-1.5 min-w-[72px] rounded-md text-[13px] font-medium transition-all cursor-pointer ${
+              className={`px-5 py-1.5 min-w-[72px] min-h-touch rounded-md text-[13px] font-medium transition-all cursor-pointer ${
                 activeTab === tab.id
                   ? 'bg-surface text-label shadow-sm'
                   : 'text-secondary-label hover:text-label'

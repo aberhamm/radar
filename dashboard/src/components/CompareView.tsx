@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Scorecard, RunMetrics, CategoryScore, ScoreLevel } from '@/lib/agentSession';
 import { FindingCard } from './FindingCard';
 import type { Finding } from '@/lib/runTransform';
+import { scoreColor } from '@/lib/utils';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -37,10 +38,6 @@ interface CompareViewProps {
 type Tab = 'scorecard' | 'findings' | 'cost';
 
 // ── Helpers ────────────────────────────────────────────────────
-
-function scoreColor(score: ScoreLevel): string {
-  return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
-}
 
 function scoreLabel(score: ScoreLevel): string {
   return score.toUpperCase();
@@ -114,6 +111,8 @@ function ScorecardTab({ data }: { data: CompareData }) {
               <div
                 className="w-3 h-3 rounded-full shrink-0"
                 style={{ background: scoreColor(run.scorecard.overallScore) }}
+                role="img"
+                aria-label={`Score: ${run.scorecard.overallScore}`}
               />
               <span className="text-lg font-bold" style={{ color: scoreColor(run.scorecard.overallScore) }}>
                 {scoreLabel(run.scorecard.overallScore)}

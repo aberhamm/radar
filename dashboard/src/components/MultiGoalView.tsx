@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Scorecard, RunMetrics, StepEvent } from '@/lib/agentSession';
 import { transformRunData, type TransformedRunData } from '@/lib/runTransform';
 import { AnalysisView } from './AnalysisView';
+import { scoreColor, scoreBg, scoreToGrade } from '@/lib/utils';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -34,18 +35,6 @@ interface MultiGoalViewProps {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-function scoreColor(score: string): string {
-  return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
-}
-
-function scoreBg(score: string): string {
-  return score === 'red'
-    ? 'rgba(255,59,48,0.06)'
-    : score === 'yellow'
-      ? 'rgba(255,149,0,0.06)'
-      : 'rgba(52,199,89,0.06)';
-}
-
 function goalDisplayName(goal: string): string {
   const names: Record<string, string> = {
     onboarding: 'Onboarding',
@@ -74,33 +63,29 @@ function goalDescription(goal: string): string {
   return descs[goal] ?? '';
 }
 
-// ─── Score Matrix ───────────────────────────────────────────────
+// ─── Scoreboard ─────────────────────────────────────────────────
 
-function ScoreMatrix({ goals, onSelect }: { goals: MultiGoalGoal[]; onSelect: (id: string, goal: string) => void }) {
+function Scoreboard({ goals, onSelect }: { goals: MultiGoalGoal[]; onSelect: (id: string, goal: string) => void }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+    <div className="flex gap-1 overflow-x-auto pb-2">
       {goals.map(g => (
         <button
           key={g.id}
           onClick={() => onSelect(g.id, g.goal)}
-          className="text-left p-4 rounded-xl border border-separator hover:border-tint hover:shadow-md transition-all cursor-pointer group"
+          className="flex-1 min-w-[120px] text-center p-4 rounded-xl border border-separator hover:border-tint hover:shadow-md transition-all cursor-pointer group"
           style={{ background: scoreBg(g.scorecard.overallScore) }}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <div
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ background: scoreColor(g.scorecard.overallScore) }}
-            />
-            <span className="text-[13px] font-semibold text-label group-hover:text-tint transition-colors">
-              {goalDisplayName(g.goal)}
-            </span>
+          <div
+            className="text-[24px] font-bold font-brand mb-1"
+            style={{ color: scoreColor(g.scorecard.overallScore) }}
+          >
+            {scoreToGrade(g.scorecard.overallScore)}
           </div>
-          <div className="text-[11px] text-tertiary-label mb-2">
-            {goalDescription(g.goal)}
+          <div className="text-[13px] font-semibold text-label group-hover:text-tint transition-colors mb-0.5">
+            {goalDisplayName(g.goal)}
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-secondary-label">
-            <span>{g.scorecard.overallScore.toUpperCase()}</span>
-            <span>{g.scorecard.categories.length} categories</span>
+          <div className="text-[11px] text-tertiary-label">
+            {g.findingsCount} findings
           </div>
         </button>
       ))}
@@ -241,6 +226,8 @@ export function MultiGoalView({ data, onSelectGoal }: MultiGoalViewProps) {
           <div
             className="w-3 h-3 rounded-full shrink-0"
             style={{ background: scoreColor(worstScore) }}
+            role="img"
+            aria-label={`Score: ${worstScore}`}
           />
           <h1 className="text-[20px] font-bold text-label">
             {data.repoName}
@@ -287,8 +274,8 @@ export function MultiGoalView({ data, onSelectGoal }: MultiGoalViewProps) {
         {viewMode === 'summary' && (
           <div className="px-6 py-5 max-w-4xl">
             <div className="mb-6">
-              <h2 className="text-[15px] font-semibold text-label mb-3">Score Matrix</h2>
-              <ScoreMatrix goals={data.goals} onSelect={onSelectGoal} />
+              <h2 className="text-[15px] font-semibold text-label mb-3">Scoreboard</h2>
+              <Scoreboard goals={data.goals} onSelect={onSelectGoal} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

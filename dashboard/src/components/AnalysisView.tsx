@@ -58,6 +58,18 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
   const [autoScroll, setAutoScroll] = useState(true);
   const [verbose, setVerbose] = useState(true);
   const isAutoScrolling = useRef(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(() => {
+    if (typeof window !== 'undefined') return window.innerWidth >= 1024;
+    return true;
+  });
+
+  // Auto-collapse right panel on tablet
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handler = (e: MediaQueryListEvent) => setRightPanelOpen(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   // Run timer
   const [elapsed, setElapsed] = useState(0);
@@ -249,6 +261,20 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                   )}
                 </svg>
                 {verbose ? 'Verbose' : 'Compact'}
+              </button>
+
+              {/* Panel toggle */}
+              <button
+                type="button"
+                onClick={() => setRightPanelOpen(p => !p)}
+                className="text-[10px] font-medium text-tertiary-label hover:text-label transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+                aria-label={rightPanelOpen ? 'Hide findings panel' : 'Show findings panel'}
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0">
+                  <rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.3" />
+                  <line x1="11" y1="2" x2="11" y2="14" stroke="currentColor" strokeWidth="1.3" />
+                </svg>
+                {rightPanelOpen ? 'Hide' : 'Panel'}
               </button>
             </div>
             <div className="flex-1 relative overflow-hidden">
@@ -518,7 +544,8 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
           </div>
 
           {/* Right sidebar: files examined + findings */}
-          <div className="w-[260px] border-l border-separator bg-canvas flex flex-col shrink-0">
+          <div className={`border-l border-separator bg-canvas flex flex-col shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${rightPanelOpen ? 'w-[260px]' : 'w-0 border-l-0'}`}>
+          <div className="w-[260px] flex flex-col h-full">
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
               {/* Files examined section */}
               <div className="shrink-0">
@@ -636,6 +663,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 })}
               </div>
             </div>
+          </div>
           </div>
 
         {/* Budget pause overlay (live mode only) */}
