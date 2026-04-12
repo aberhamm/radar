@@ -24,7 +24,7 @@ export async function handleCompare(opts: {
   }
 
   const goal = opts.goal as GoalType;
-  const validGoals = ['onboarding', 'audit', 'migration', 'component-map', 'ci-check', 'security-review', 'nextjs', 'accessibility'];
+  const validGoals = ['onboarding', 'audit', 'audit-generic', 'migration', 'component-map', 'ci-check', 'security-review', 'nextjs', 'accessibility'];
   if (!validGoals.includes(goal)) {
     throw new Error(`Invalid goal: ${goal}. Valid: ${validGoals.join(', ')}`);
   }

@@ -67,6 +67,8 @@ export interface RunnerConfig {
   repoUrl?: string;
   goal: GoalType;
   platform?: string; // auto-detected if not provided
+  /** Scope investigation to a specific app root within a monorepo (relative path from repoPath) */
+  appRoot?: string;
   toolCallBudget?: number;
   webSearchBudget?: number;
   urlFetchBudget?: number;
@@ -188,25 +190,46 @@ export interface PreComputeResult {
  * in its first few turns. Failures are graceful — the agent proceeds without
  * whatever tool failed.
  */
-export async function runPreCompute(repoPath: string): Promise<PreComputeResult> {
+export async function runPreCompute(repoPath: string, appRoot?: string): Promise<PreComputeResult> {
   const result: PreComputeResult = {};
+
+  // When an appRoot is specified, scope scanning to that subdirectory
+  const scanPath = appRoot ? path.join(repoPath, appRoot) : repoPath;
+  const pkgJsonPath = appRoot ? path.join(appRoot, 'package.json') : 'package.json';
+  const listPath = appRoot ?? '.';
 
   // Phase 1: Run independent tools in parallel
   const [appRootsResult, packageJsonResult, fileTreeResult] = await Promise.allSettled([
-    detectAppRoots(repoPath, {}),
-    parsePackageJson(repoPath, { path: 'package.json' }),
-    listDirectory(repoPath, { path: '.', depth: 2 }),
+    detectAppRoots(repoPath, appRoot ? { repoPath: appRoot } : {}),
+    parsePackageJson(repoPath, { path: pkgJsonPath }),
+    listDirectory(repoPath, { path: listPath, depth: 2 }),
   ]);
 
-  if (appRootsResult.status === 'fulfilled') result.appRoots = appRootsResult.value;
+  if (appRootsResult.status === 'fulfilled') {
+    const roots = appRootsResult.value;
+    // Cap at 15 roots to prevent context overflow in large monorepos
+    if (roots.roots.length > 15) {
+      const total = roots.roots.length;
+      // Keep root-level + shallowest entries
+      roots.roots = roots.roots.slice(0, 15);
+      roots.roots.push({
+        path: `... and ${total - 15} more (${total} total)`,
+        type: 'unknown',
+        hasPackageJson: false,
+      });
+    }
+    result.appRoots = roots;
+  }
   if (packageJsonResult.status === 'fulfilled') result.packageJson = packageJsonResult.value;
   if (fileTreeResult.status === 'fulfilled') result.fileTree = fileTreeResult.value;
 
   // Phase 2: Chain specialist prompts from app roots (requires Phase 1)
   if (result.appRoots && result.appRoots.roots.length > 0) {
     try {
+      // Only pass real roots (not the "... and N more" placeholder)
+      const realRoots = result.appRoots.roots.filter(r => !r.path.startsWith('...'));
       result.specialists = await getSpecialistPrompts({
-        roots: result.appRoots.roots,
+        roots: realRoots,
         isMonorepo: !!result.appRoots.monorepoTool,
         monorepoTool: result.appRoots.monorepoTool,
       });
@@ -368,7 +391,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let preComputeContext = '';
   if (!config.resumeFrom) {
     try {
-      const preComputed = await runPreCompute(config.repoPath);
+      const preComputed = await runPreCompute(config.repoPath, config.appRoot);
       preComputeContext = formatPreComputeContext(preComputed);
       config.onStep?.({
         step: 0,

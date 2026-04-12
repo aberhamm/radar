@@ -33,6 +33,7 @@ export interface MultiGoalRunOptions {
   repoName: string;
   repoSource: 'github' | 'local';
   repoUrl?: string;
+  appRoot?: string;
   budget?: number;
   onStep: (event: StepEvent) => void;
   onBudgetExhausted?: (state: { findings: number; toolCalls: number; budget: number }) => Promise<boolean>;
@@ -99,6 +100,7 @@ export async function dashboardAnalyzeAll(
         repoName: opts.repoName,
         repoSource: opts.repoSource,
         ...(opts.repoUrl ? { repoUrl: opts.repoUrl } : {}),
+        ...(opts.appRoot ? { appRoot: opts.appRoot } : {}),
         goal: pass.goal,
         toolCallBudget: passBudget,
         verbose: true,
@@ -118,9 +120,9 @@ export async function dashboardAnalyzeAll(
         action: 'pass_complete',
         result: JSON.stringify({
           pass: pass.name,
-          toolCalls: (result.metrics as Record<string, unknown>)?.toolCalls ?? 0,
+          toolCalls: (result.metrics as unknown as Record<string, unknown>)?.toolCalls ?? 0,
           budget: passBudget,
-          terminationReason: (result as Record<string, unknown>).terminationReason ?? 'completed',
+          terminationReason: (result as unknown as Record<string, unknown>).terminationReason ?? 'completed',
         }),
         timestamp: new Date().toISOString(),
       };

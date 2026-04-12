@@ -15,9 +15,18 @@ interface HistoryRunItem {
   repoUrl?: string;
 }
 
+interface AppRoot {
+  path: string;
+  type: string;
+  hasPackageJson: boolean;
+  framework?: string;
+  frameworkVersion?: string;
+  plugins?: string[];
+}
+
 interface IdleViewProps {
   initialRepoPath?: string;
-  onStart: (repoPath: string, goal: string, repoName?: string) => void;
+  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string) => void;
   history?: HistoryRunItem[];
   compact?: boolean;
 }
@@ -53,6 +62,13 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
   // Pulling state for rerun (auto-pull git repos)
   const [rerunPulling, setRerunPulling] = useState(false);
 
+  // Monorepo root detection
+  const [detectedRoots, setDetectedRoots] = useState<AppRoot[]>([]);
+  const [isMonorepo, setIsMonorepo] = useState(false);
+  const [monorepoTool, setMonorepoTool] = useState<string | undefined>();
+  const [selectedRoot, setSelectedRoot] = useState<string>(''); // '' = entire repo
+  const [detectingRoots, setDetectingRoots] = useState(false);
+
   const isUrl = isGitHubUrl(repoPath);
   const isCloned = cloneStatus === 'cloned';
   const isCloning = cloneStatus === 'cloning';
@@ -67,6 +83,25 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
       .catch(() => { /* ignore */ });
   }, []);
 
+  // Detect app roots for a repo path — called after clone or when a local path is ready
+  const detectRoots = useCallback(async (repoLocalPath: string) => {
+    setDetectingRoots(true);
+    try {
+      const res = await fetch('/api/detect-roots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoPath: repoLocalPath }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setDetectedRoots(data.roots ?? []);
+      setIsMonorepo(data.isMonorepo ?? false);
+      setMonorepoTool(data.monorepoTool);
+      setSelectedRoot(''); // default to entire repo
+    } catch { /* ignore detection failures */ }
+    finally { setDetectingRoots(false); }
+  }, []);
+
   const handleInputChange = useCallback((value: string) => {
     setRepoPath(value);
     setError('');
@@ -76,8 +111,19 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
       setClonedPath('');
       setClonedRepoName('');
       setClonedCached(false);
+      setDetectedRoots([]);
+      setIsMonorepo(false);
+      setSelectedRoot('');
     }
   }, [cloneStatus]);
+
+  // Detect roots when a local path is entered and input loses focus
+  const handleInputBlur = useCallback(() => {
+    const trimmed = repoPath.trim();
+    if (trimmed && !isGitHubUrl(trimmed) && cloneStatus === 'idle') {
+      detectRoots(trimmed);
+    }
+  }, [repoPath, cloneStatus, detectRoots]);
 
   const handleSelectCached = useCallback((repo: CachedRepo) => {
     setRepoPath(`https://github.com/${repo.owner}/${repo.repo}`);
@@ -86,7 +132,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
     setClonedCached(true);
     setCloneStatus('cloned');
     setError('');
-  }, []);
+    detectRoots(repo.localPath);
+  }, [detectRoots]);
 
   const handleSelectHistoryRun = useCallback(async (run: HistoryRunItem) => {
     setError('');
@@ -117,6 +164,9 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
         setClonedCached(true);
         setCloneStatus('cloned');
 
+        // Detect app roots for monorepo selection
+        detectRoots(data.localPath);
+
         // Refresh cached repos list
         fetch('/api/repos')
           .then(r => r.json())
@@ -135,8 +185,9 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
       setClonedPath('');
       setClonedRepoName('');
       setClonedCached(false);
+      detectRoots(run.repoPath);
     }
-  }, []);
+  }, [detectRoots]);
 
   const handleClone = async () => {
     if (!repoPath.trim()) return;
@@ -158,6 +209,9 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
       setClonedRepoName(data.repoName);
       setClonedCached(!!data.cached);
       setCloneStatus('cloned');
+
+      // Detect app roots for monorepo selection
+      detectRoots(data.localPath);
 
       // Refresh cached repos list
       fetch('/api/repos')
@@ -195,6 +249,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
           repoPath: targetPath,
           goal,
           ...(isCloned ? { repoSource: 'github', repoUrl: repoPath.trim() } : {}),
+          ...(selectedRoot ? { appRoot: selectedRoot } : {}),
         }),
       });
       if (!res.ok) {
@@ -203,7 +258,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
         setLoading(false);
         return;
       }
-      onStart(targetPath, goal, isCloned ? clonedRepoName : undefined);
+      onStart(targetPath, goal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined);
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
@@ -250,6 +305,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
           type="text"
           value={repoPath}
           onChange={e => handleInputChange(e.target.value)}
+          onBlur={handleInputBlur}
           placeholder="https://github.com/org/repo or /path/to/repo"
           className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none focus:focus-glow transition-all"
           disabled={loading || isCloning || rerunPulling}
@@ -278,6 +334,44 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
         </div>
       )}
 
+      {/* Monorepo root picker */}
+      {detectingRoots && (
+        <div className="flex items-center gap-2 px-1 py-1">
+          <div className="w-3 h-3 border-2 border-tint border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-tertiary-label">Detecting app roots...</span>
+        </div>
+      )}
+      {!detectingRoots && isMonorepo && detectedRoots.length > 1 && (
+        <div>
+          <label htmlFor="root-select" className="block text-xs font-medium text-secondary-label mb-1.5">
+            App Root
+            <span className="ml-1.5 text-tertiary-label font-normal">
+              {detectedRoots.length} roots detected{monorepoTool ? ` (${monorepoTool})` : ''}
+            </span>
+          </label>
+          <select
+            id="root-select"
+            value={selectedRoot}
+            onChange={e => setSelectedRoot(e.target.value)}
+            disabled={loading || isCloning || rerunPulling}
+            className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none cursor-pointer"
+          >
+            <option value="">Entire repository</option>
+            {detectedRoots.map(root => (
+              <option key={root.path} value={root.path}>
+                {root.path}
+                {root.framework ? ` — ${root.framework}${root.frameworkVersion ? ` ${root.frameworkVersion}` : ''}` : ''}
+              </option>
+            ))}
+          </select>
+          {selectedRoot && (
+            <p className="text-[11px] text-tertiary-label mt-1.5">
+              Analysis will be scoped to <span className="font-mono text-secondary-label">{selectedRoot}</span>
+            </p>
+          )}
+        </div>
+      )}
+
       <div>
         <label htmlFor="goal-select" className="block text-xs font-medium text-secondary-label mb-1.5">
           Goal
@@ -293,6 +387,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
           <option value="onboarding">Onboarding — full codebase overview</option>
           <option value="security-review">Security Review — focus on vulnerabilities</option>
           <option value="audit">Audit — deep quality analysis</option>
+          <option value="audit-generic">Generic Audit — any stack, no CMS required</option>
           <option value="migration">Migration — upgrade path assessment</option>
           <option value="nextjs">Next.js Audit — framework health &amp; patterns</option>
           <option value="accessibility">Accessibility — WCAG 2.1 AA compliance</option>

@@ -109,6 +109,20 @@ Every required category must have at least one finding.
 After this pass, specialist agents will add depth for niche categories
 (routing, data-fetching, performance, accessibility, forms, aria).`,
 
+  'audit-generic': (localPath) => `You have access to a repository at ${localPath}.
+Produce a scored architecture audit for this project.
+
+This project may use ANY technology stack. Do not assume it uses a CMS, Next.js, or any
+specific framework. Start by identifying the stack from package manifests and project structure,
+then investigate accordingly.
+
+Every category in the scorecard must have a score based on real findings with evidence.
+If a category is healthy, score it green with a finding that documents what you verified.
+If you find real issues, document them with file paths and code evidence.
+
+Your consulting rules define the scoring criteria and required categories.
+You must record at least 8 findings. Every category needs at least one.`,
+
   accessibility: (localPath) => `You have access to a repository at ${localPath}.
 Conduct a WCAG 2.1 AA accessibility audit of this project's codebase.
 
@@ -130,6 +144,7 @@ Every scorecard category must have at least one finding.`,
 
 const CATEGORY_COVERAGE: Partial<Record<GoalType | 'universal', string>> = {
   'security-review': 'security, architecture, configuration, dependencies',
+  'audit-generic': 'stack, security, configuration, architecture, dependencies, deployment',
   nextjs: 'routing, architecture, data-fetching, nextjs, stack, performance, configuration, dependencies',
   accessibility: 'accessibility, architecture, forms, aria',
   universal: 'stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, nextjs',

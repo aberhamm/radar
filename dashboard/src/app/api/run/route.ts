@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   // Claim session immediately (before any await) to close the TOCTOU race window
   session.status = 'running';
 
-  let body: { repoPath?: string; goal?: string; repoSource?: string; repoUrl?: string };
+  let body: { repoPath?: string; goal?: string; repoSource?: string; repoUrl?: string; appRoot?: string };
   try {
     body = await req.json();
   } catch {
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { repoPath, goal = 'onboarding', repoSource, repoUrl } = body;
+  const { repoPath, goal = 'onboarding', repoSource, repoUrl, appRoot } = body;
 
   if (!repoPath) {
     session.status = 'idle';
@@ -141,6 +141,7 @@ export async function POST(req: NextRequest) {
             repoName,
             repoSource: (repoSource as 'github' | 'local') ?? 'local',
             repoUrl: repoUrl,
+            ...(appRoot ? { appRoot } : {}),
             budget: 100,
             onStep: (event: StepEvent) => {
               const run = session.currentRun;
@@ -211,7 +212,8 @@ export async function POST(req: NextRequest) {
         repoName,
         repoSource: (repoSource as 'github' | 'local') ?? 'local',
         ...(repoUrl ? { repoUrl } : {}),
-        goal: goal as 'onboarding' | 'audit' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility',
+        ...(appRoot ? { appRoot } : {}),
+        goal: goal as 'onboarding' | 'audit' | 'audit-generic' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility',
         verbose: true,
         onStep: (event) => {
           const run = session.currentRun;

@@ -44,10 +44,21 @@ const ACCESSIBILITY_CATEGORY_MAP: Record<string, FindingCategory[]> = {
   'Dynamic Content': ['aria', 'accessibility'],
 };
 
+const GENERIC_CATEGORY_MAP: Record<string, FindingCategory[]> = {
+  'Stack & Framework': ['stack'],
+  'Security & Configuration': ['security', 'configuration'],
+  Architecture: ['architecture', 'routing', 'data-fetching'],
+  Dependencies: ['dependencies'],
+  'Testing & Quality': ['architecture'],
+  'Deployment & Operations': ['deployment'],
+  'Documentation & DX': ['stack'],
+};
+
 function getCategoryMap(goal: GoalType): Record<string, FindingCategory[]> {
   if (goal === 'security-review') return SECURITY_CATEGORY_MAP;
   if (goal === 'nextjs') return NEXTJS_CATEGORY_MAP;
   if (goal === 'accessibility') return ACCESSIBILITY_CATEGORY_MAP;
+  if (goal === 'audit-generic') return GENERIC_CATEGORY_MAP;
   return ONBOARDING_CATEGORY_MAP;
 }
 
