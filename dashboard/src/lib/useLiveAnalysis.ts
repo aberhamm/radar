@@ -101,6 +101,15 @@ export function useLiveAnalysis(
             category: f.category ?? '',
             title: f.title ?? ev.action,
             evidenceFiles: (f.evidence ?? []).map((e: { filePath: string }) => e.filePath),
+            evidence: (f.evidence ?? []).map((e: { filePath: string; lineNumber?: number; snippet?: string; description?: string; verificationStatus?: string; sourceContext?: string; originalSnippet?: string }) => ({
+              filePath: e.filePath,
+              lineNumber: e.lineNumber,
+              snippet: e.snippet ?? '',
+              description: e.description ?? '',
+              verificationStatus: e.verificationStatus,
+              sourceContext: e.sourceContext,
+              originalSnippet: e.originalSnippet,
+            })),
             note: f.investigationNote ?? f.description ?? '',
             tags: f.tags ?? [],
           });

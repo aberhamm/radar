@@ -26,12 +26,23 @@ export interface Activity {
   pending?: boolean;
 }
 
+export interface EvidenceItem {
+  filePath: string;
+  lineNumber?: number;
+  snippet: string;
+  description: string;
+  verificationStatus?: 'verified' | 'corrected' | 'unverifiable';
+  sourceContext?: string;
+  originalSnippet?: string;
+}
+
 export interface Finding {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
   category: string;
   title: string;
   evidenceFiles: string[];
+  evidence: EvidenceItem[];
   note: string;
   tags: string[];
 }
@@ -236,7 +247,11 @@ export function transformRunData(
   // 2. Transform findings
   const rawFindings = (result.state?.findings ?? []) as Array<{
     id: string; severity: string; category: string; title: string;
-    description?: string; evidence?: Array<{ filePath: string }>;
+    description?: string; evidence?: Array<{
+      filePath: string; lineNumber?: number; snippet?: string;
+      description?: string; verificationStatus?: string;
+      sourceContext?: string; originalSnippet?: string;
+    }>;
     investigationNote?: string; tags?: string[];
   }>;
 
@@ -246,6 +261,15 @@ export function transformRunData(
     category: f.category,
     title: f.title,
     evidenceFiles: (f.evidence ?? []).map(e => e.filePath),
+    evidence: (f.evidence ?? []).map(e => ({
+      filePath: e.filePath,
+      lineNumber: e.lineNumber,
+      snippet: e.snippet ?? '',
+      description: e.description ?? '',
+      verificationStatus: e.verificationStatus as EvidenceItem['verificationStatus'],
+      sourceContext: e.sourceContext,
+      originalSnippet: e.originalSnippet,
+    })),
     note: f.investigationNote ?? f.description ?? '',
     tags: f.tags ?? [],
   }));
