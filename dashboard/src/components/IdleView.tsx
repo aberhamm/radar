@@ -238,7 +238,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [] }: IdleVi
           Start Analysis
         </h1>
         <p className="text-sm text-secondary-label mb-6">
-          Point at a headless CMS codebase. The agent analyzes architecture, security, dependencies, and delivery risk, then writes a scored report.
+          Point at a codebase. The agent analyzes architecture, security, dependencies, and delivery risk, then writes a scored report.
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

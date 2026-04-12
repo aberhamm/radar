@@ -12,6 +12,7 @@ import { IdleView } from '@/components/IdleView';
 import { CompleteView } from '@/components/CompleteView';
 import { CompareView, type CompareData } from '@/components/CompareView';
 import { AnalysisView } from '@/components/AnalysisView';
+import { MultiGoalView, type MultiGoalData } from '@/components/MultiGoalView';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
 
@@ -30,7 +31,7 @@ const SAMPLE_HISTORY_ITEM = {
 
 // ─── Types ──────────────────────────────────────────────────────
 
-type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing';
+type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing' | 'multigoal';
 
 interface CurrentRun {
   repoPath: string;
@@ -86,6 +87,7 @@ export default function DashboardPage() {
   const [compareData, setCompareData] = useState<CompareData | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [multiGoalData, setMultiGoalData] = useState<MultiGoalData | null>(null);
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
 
   // Prepend sample run to history
@@ -157,6 +159,8 @@ export default function DashboardPage() {
     setIsSampleReplay(false);
     setBudgetPausedData(null);
     setNewRunModal(false);
+    setSelectedRunId(null);
+    setMultiGoalData(null);
   }, []);
 
   const handleNewEvent = useCallback((event: StepEvent) => {
@@ -214,16 +218,16 @@ export default function DashboardPage() {
 
   /** Budget decision from ContextBar — calls the API then updates UI */
   const handleBudgetDecisionWithApi = useCallback(async (extend: boolean) => {
+    // Always dismiss the modal immediately so the UI doesn't get stuck
+    handleBudgetDecision(extend);
     try {
-      const res = await fetch('/api/extend-budget', {
+      await fetch('/api/extend-budget', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ extend }),
       });
-      if (!res.ok) return; // stay paused if API rejects
-      handleBudgetDecision(extend);
     } catch {
-      // network error — stay paused
+      // API error — modal already dismissed, agent will resolve on its own
     }
   }, [handleBudgetDecision]);
 
@@ -364,6 +368,28 @@ export default function DashboardPage() {
       return;
     }
 
+    // Check if this is a multi-goal group parent click
+    const isGroupParent = history.some(h => h.parentRunId === id);
+    if (isGroupParent) {
+      setHistoryLoading(true);
+      try {
+        const r = await fetch(`/api/history/group/${encodeURIComponent(id)}`);
+        const data = await r.json();
+        if (data.error) {
+          console.warn('[history] Failed to load group:', id, data.error);
+          return;
+        }
+        setMultiGoalData(data as MultiGoalData);
+        setSelectedRunId(id);
+        setStatus('multigoal');
+      } catch (err) {
+        console.error('[history] Failed to load group:', id, err);
+      } finally {
+        setHistoryLoading(false);
+      }
+      return;
+    }
+
     setHistoryLoading(true);
     try {
       const r = await fetch(`/api/history/${encodeURIComponent(id)}`);
@@ -406,6 +432,11 @@ export default function DashboardPage() {
   const handleViewReport = useCallback(() => {
     setStatus('complete');
   }, []);
+
+  /** Called when user clicks a goal card in MultiGoalView */
+  const handleSelectGoalFromMulti = useCallback((goalId: string, _goal: string) => {
+    handleSelectHistory(goalId);
+  }, [handleSelectHistory]);
 
   const isRunningOrPaused = status === 'running' || status === 'budget_paused';
 
@@ -603,7 +634,7 @@ export default function DashboardPage() {
                 liveState={liveState}
                 budgetPaused={status === 'budget_paused'}
                 budgetPausedData={budgetPausedData}
-                onBudgetDecision={handleBudgetDecision}
+                onBudgetDecision={handleBudgetDecisionWithApi}
               />
             </div>
           )}
@@ -626,6 +657,12 @@ export default function DashboardPage() {
           {status === 'comparing' && compareData && (
             <div key="comparing" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <CompareView data={compareData} />
+            </div>
+          )}
+
+          {status === 'multigoal' && multiGoalData && (
+            <div key="multigoal" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              <MultiGoalView data={multiGoalData} onSelectGoal={handleSelectGoalFromMulti} />
             </div>
           )}
 

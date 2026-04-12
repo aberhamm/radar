@@ -158,8 +158,8 @@ program
 
     // Check if dashboard directory exists
     if (!fs.existsSync(dashboardDir)) {
-      console.error('Dashboard not yet built. The dashboard/ directory does not exist.');
-      console.error('Run: pnpm dashboard:setup to scaffold it.');
+      console.error('Dashboard directory not found at:', dashboardDir);
+      console.error('Run: cd dashboard && pnpm install');
       process.exit(1);
     }
 

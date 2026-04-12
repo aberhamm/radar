@@ -4,7 +4,7 @@
  * bypassing Pi Agent (no tool calling needed for brief writing).
  */
 
-import { getPortkeyConfig, type PortkeyConfig } from '../config/portkeyConfig.js';
+import { getProviderConfig, type ProviderConfig } from '../config/providerConfig.js';
 import { withRetry } from '../agent/retry.js';
 import type { GoalType } from '../types/state.js';
 import type { Finding } from '../types/findings.js';
@@ -31,14 +31,14 @@ export async function writeBriefSections(
   goal: GoalType,
   findings: Finding[],
   scorecard: Scorecard,
-  config?: Partial<PortkeyConfig>,
+  config?: Partial<ProviderConfig>,
 ): Promise<BriefWriteResult> {
   const prompt = buildBriefPrompt(goal, findings, scorecard);
 
   try {
-    const portkeyConfig = getPortkeyConfig(config);
+    const providerCfg = getProviderConfig(config);
     const requestBody = JSON.stringify({
-      model: portkeyConfig.fastModelId,
+      model: providerCfg.fastModelId,
       messages: [
         {
           role: 'system',
@@ -52,9 +52,9 @@ export async function writeBriefSections(
 
     const json = await withRetry(
       async () => {
-        const response = await fetch(`${portkeyConfig.baseUrl}/chat/completions`, {
+        const response = await fetch(`${providerCfg.baseUrl}/chat/completions`, {
           method: 'POST',
-          headers: portkeyConfig.headers,
+          headers: providerCfg.headers,
           body: requestBody,
         });
         if (!response.ok) {
@@ -86,7 +86,7 @@ export async function writeAllBriefs(
   goals: GoalType[],
   findings: Finding[],
   scorecards: Map<GoalType, Scorecard>,
-  config?: Partial<PortkeyConfig>,
+  config?: Partial<ProviderConfig>,
 ): Promise<BriefWriteResult[]> {
   return Promise.all(
     goals.map((goal) => {

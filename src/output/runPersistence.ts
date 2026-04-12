@@ -46,6 +46,9 @@ export interface RunEnvelopeData {
   terminationReason: string;
   findings: Finding[];
   parentRunId?: string;
+  repoPath?: string;
+  repoSource?: 'github' | 'local';
+  repoUrl?: string;
 }
 
 // ── Internals ────────────────────────────────────────────────
@@ -144,6 +147,9 @@ export function persistRunToTieredStorage(
       findingsCount: data.findings.length,
       status: 'completed',
       ...(data.parentRunId ? { parentRunId: data.parentRunId } : {}),
+      ...(data.repoPath ? { repoPath: data.repoPath } : {}),
+      ...(data.repoSource ? { repoSource: data.repoSource } : {}),
+      ...(data.repoUrl ? { repoUrl: data.repoUrl } : {}),
     });
   } catch (err) {
     console.error(`[persistRunToTieredStorage] Failed for run ${data.id}:`, (err as Error).message);

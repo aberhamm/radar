@@ -18,6 +18,8 @@ export interface LiveAnalysisState {
   progressPercent: number;
   /** Tool names currently executing (tool_start received, tool_call not yet) */
   pendingActions: string[];
+  /** Startup/status message (loading agent, pre-computation, pass boundaries) */
+  statusMessage: string;
 }
 
 /**
@@ -47,8 +49,32 @@ export function useLiveAnalysis(
     let switchSeen = false;
     let assembleOutputSeen = false;
     let pendingDeltaText = ''; // accumulates text_delta content for live typing
+    let statusMessage = '';
 
     for (const ev of events) {
+      // Startup status events (loading agent, starting analysis)
+      if (ev.type === 'status' && ev.result) {
+        statusMessage = String(ev.result);
+        continue;
+      }
+
+      // Pass boundary (multi-goal: between investigation passes)
+      if (ev.action === 'pass_boundary' && ev.result) {
+        if (currentReasoning) {
+          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+        }
+        turns.push({ reasoning: `Starting ${ev.result} pass`, activities: [], phase: 'analyze' });
+        currentReasoning = '';
+        currentActivities = [];
+        statusMessage = `Running ${ev.result} pass...`;
+        continue;
+      }
+
+      // Clear status once real investigation events arrive
+      if (statusMessage && (ev.type === 'text_response' || ev.type === 'tool_call')) {
+        statusMessage = '';
+      }
+
       // Model switch (may arrive as both tool_call and model_switch — dedupe)
       if (ev.action === 'switch_to_fast_model' || ev.type === 'model_switch') {
         if (!switchSeen) {
@@ -232,6 +258,7 @@ export function useLiveAnalysis(
       scoreVisible,
       progressPercent,
       pendingActions,
+      statusMessage,
     };
   }, [events, runStatus, toolCalls, budget]);
 }

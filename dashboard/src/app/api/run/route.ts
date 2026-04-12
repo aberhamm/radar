@@ -116,11 +116,22 @@ export async function POST(req: NextRequest) {
   // Run agent asynchronously — don't await here
   (async () => {
     try {
+      // Startup progress: send status events so the UI knows what's happening
+      const emitStatus = (message: string) => {
+        sendStreamEvent(session.currentRun?.streamController ?? null, {
+          type: 'status', step: 0, action: 'startup', result: message, timestamp: new Date().toISOString(),
+        });
+      };
+
+      emitStatus('Loading agent runner...');
       const runAgent = await loadRunner();
+      emitStatus('Agent loaded');
 
       // Multi-goal: use orchestrator for goal='all'
       if (goal === 'all') {
+        emitStatus('Loading scorecard engine...');
         const computeScorecard = await loadScorecard();
+        emitStatus('Starting universal analysis (3 passes, 8 goals)...');
 
         const multiResult = await dashboardAnalyzeAll(
           runAgent as unknown as (opts: Record<string, unknown>) => Promise<RunResult>,
@@ -143,6 +154,24 @@ export async function POST(req: NextRequest) {
               if (run.events.length % 10 === 0) {
                 checkpointRun(run);
               }
+            },
+            onBudgetExhausted: async (state: { findings: number; toolCalls: number; budget: number }) => {
+              session.status = 'budget_paused';
+              const pauseData = { findings: state.findings, toolCalls: state.toolCalls, budget: state.budget };
+
+              if (session.currentRun) {
+                session.currentRun.budgetPausedData = pauseData;
+              }
+
+              sendStreamEvent(session.currentRun?.streamController ?? null, {
+                type: 'budget_paused', ...pauseData,
+              });
+
+              return new Promise<boolean>((resolve) => {
+                if (session.currentRun) {
+                  session.currentRun.budgetResolve = resolve;
+                }
+              });
             },
             abortSignal: abortController.signal,
           },
@@ -176,6 +205,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Single-goal: existing flow
+      emitStatus(`Starting ${goal} analysis...`);
       const result = await runAgent({
         repoPath: resolvedRepoPath,
         repoName,

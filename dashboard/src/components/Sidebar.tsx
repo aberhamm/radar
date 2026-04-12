@@ -135,6 +135,10 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
     const handleClick = () => {
       if (opts.isGroupHeader && opts.groupId) {
         toggleGroup(opts.groupId);
+        // Also load the multi-goal view in the main area
+        if (!compareMode) {
+          onSelectHistory(opts.groupId);
+        }
         return;
       }
       if (canCompare && onCompareSelect) {

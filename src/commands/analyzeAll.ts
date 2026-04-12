@@ -350,6 +350,9 @@ export async function handleAnalyzeAll(opts: {
       terminationReason: lastSuccessful.result.terminationReason,
       findings: allFindings,
       parentRunId,
+      repoPath,
+      repoSource,
+      repoUrl,
     }, allEvents);
   }
   console.log(`  Persisted ${ALL_GOALS.length} runs to tiered storage (parentRunId: ${parentRunId.slice(0, 8)}...)`);

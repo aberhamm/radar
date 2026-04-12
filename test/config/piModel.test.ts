@@ -5,6 +5,8 @@ describe('buildPiModel', () => {
   const origEnv = { ...process.env };
 
   beforeEach(() => {
+    // Default to portkey provider (existing behavior)
+    process.env.PROVIDER_TYPE = 'portkey';
     process.env.PORTKEY_API_KEY = 'test-key';
     process.env.PORTKEY_BASE_URL = 'https://test.example.com/v1';
     process.env.PORTKEY_PROVIDER = '@aws-bedrock-use2';
@@ -41,7 +43,7 @@ describe('buildPiModel', () => {
     expect(fastModel.cost!.output).toBeLessThan(model.cost!.output);
   });
 
-  it('throws when PORTKEY_API_KEY is missing', () => {
+  it('throws when required env vars are missing', () => {
     delete process.env.PORTKEY_API_KEY;
     expect(() => buildPiModel()).toThrow('PORTKEY_API_KEY is required');
   });
@@ -54,5 +56,23 @@ describe('buildPiModel', () => {
   it('accepts overrides', () => {
     const { model } = buildPiModel({ modelId: 'custom-model' });
     expect(model.id).toBe('custom-model');
+  });
+
+  it('includes provider type in model name', () => {
+    const { model } = buildPiModel();
+    expect(model.name).toContain('via portkey');
+  });
+
+  it('works with openai provider', () => {
+    process.env.PROVIDER_TYPE = 'openai';
+    process.env.OPENAI_API_KEY = 'sk-test';
+    delete process.env.AGENT_MODEL;
+    delete process.env.FAST_MODEL;
+
+    const { model, fastModel } = buildPiModel();
+    expect(model.id).toBe('gpt-4o');
+    expect(fastModel.id).toBe('gpt-4o-mini');
+    expect(model.name).toContain('via openai');
+    expect(model.headers!['Authorization']).toBe('Bearer sk-test');
   });
 });

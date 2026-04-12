@@ -293,6 +293,9 @@ export function checkpointRun(run: {
 
 /** Save a completed run to disk using tiered directory structure. */
 export function persistRun(record: RunRecord): void {
+  // Guard: never persist the meta 'all' goal — only individual goal children
+  if (record.goal === 'all') return;
+
   try {
     ensureOutputDir();
     const dirPath = runDirPath(record.id);
@@ -572,7 +575,7 @@ export function getSession(): AgentSession {
 }
 
 export function resetSession(): void {
-  const history = globalThis.__agentSession?.history ?? loadPersistedRuns();
+  const history = loadPersistedRuns();
   globalThis.__agentSession = {
     status: 'idle',
     currentRun: null,

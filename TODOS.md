@@ -217,14 +217,33 @@ Eng review of 6 parallelism strategies. 3 killed (fan-out, speculative, DAG), 3 
 - [ ] **Dashboard concurrent sessions** — Replace global singleton session (`globalThis.__agentSession`) with per-session isolation for multi-repo dashboard compare. Requires session store (Map or Redis), unique SSE stream per session. **P3** — only matters if dashboard gets multi-repo compare UI.
 - [ ] **Prompt cache hit rate monitoring** — Zero visibility into Portkey prompt cache hits (cachedTokens defaults to 0). If cache isn't hitting, fixing that alone could be 30-50% speedup. Check Portkey dashboard or add debug logging for cache_read_input_tokens. **P2** — potential high-impact optimization hiding behind zero visibility.
 
+## Perficient Go-to-Market (2026-04-12)
+
+CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-04-12-perficient-go-to-market.md`
+
+### Accepted (build these)
+
+- [x] **Provider abstraction** — `src/config/providerConfig.ts` supports `portkey`, `openai`, `azure-openai`, `generic` (any OpenAI-compatible endpoint). Auto-detects from env vars. 23 tests. Backward-compatible via re-export in `portkeyConfig.ts`. **P1** — done.
+- [ ] **Client-ready PDF export** — `--export-pdf` flag, `@react-pdf/renderer`, branded output with exec summary + scorecard + findings. **P1** — blocks client delivery.
+- [ ] **Executive summary** — 1-page non-technical lead prepended to brief and first PDF page. Overall grade, top 3 risks, top 3 strengths. **P1** — blocks sales demos.
+- [ ] **Generic platform mode** — `goal-audit-generic.md` rules + generic references. Works on any web framework, not just Sitecore/Optimizely. **P2** — expands addressable practice areas.
+- [ ] **Marketing positioning doc** — 1-page business-language doc for practice leads and sales. What Radar does, cost, time savings, engagement lifecycle fit. **P2** — blocks leadership awareness.
+- [ ] **Gauntlet on 5+ repos** — Run all goal types, catalog failures, fix + regress. Exit gate: zero crashes, zero hallucinations, <20% low-confidence. **P1** — blocks everything.
+
+### Deferred
+
+- [ ] **Hosted dashboard demo** — Deploy dashboard to internal URL with pre-loaded gauntlet runs. Practice leads browse results without installing anything. **P2** — depends on gauntlet completion.
+- [ ] **Dashboard design review** — Stale (>7 days, scored 3/10 initially). Run `/plan-design-review` before 2026-04-26 demo date. **P1** — dashboard is the primary interface.
+- [ ] **SOW generator** — Out of scope by design. Radar produces findings, not engagement scoping. Scope definition is the consultant's job.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 6 | CLEAR | mode: SELECTIVE_EXPANSION, 5 accepted, 1 deferred |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 7 | CLEAR | mode: SELECTIVE_EXPANSION, 7 proposals, 5 accepted, 1 deferred |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 5 | CLEAR (PLAN) | 12 issues, 1 critical gap (abort between passes) |
 | Design Review | `/plan-design-review` | UI/UX gaps | 1 | STALE (>7d) | score: 3/10 -> 8/10, 11 decisions |
 
 **UNRESOLVED:** 0
-**VERDICT:** ENG CLEARED — multi-goal dashboard review complete. 16 decisions resolved, 0 unresolved. CEO 26 commits stale, design >7 days stale (neither block).
+**VERDICT:** ENG CLEARED — Go-to-market CEO review complete. Provider abstraction critical finding. 5 cherry-picks accepted. Design review stale, recommend refresh before 2026-04-26 demo.

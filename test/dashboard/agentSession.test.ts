@@ -58,10 +58,8 @@ describe('agentSession — session management', () => {
     expect(first).toBe(second);
   });
 
-  it('resetSession() preserves existing history', () => {
+  it('resetSession() reloads history from disk', () => {
     const session = getSession();
-    const fakeRecord = makeRunRecord();
-    session.history.push(fakeRecord);
     session.status = 'running';
 
     resetSession();
@@ -70,9 +68,8 @@ describe('agentSession — session management', () => {
     expect(fresh.status).toBe('idle');
     expect(fresh.currentRun).toBeNull();
     expect(fresh.result).toBeNull();
-    // History should be preserved
-    expect(fresh.history.length).toBeGreaterThanOrEqual(1);
-    expect(fresh.history.some(r => r.id === 'test-run-1')).toBe(true);
+    // History reloaded from disk (clean state)
+    expect(Array.isArray(fresh.history)).toBe(true);
   });
 
   it('resetSession() loads persisted runs when no prior session exists', () => {

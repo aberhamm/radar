@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Finding, TransformedRunData } from '@/lib/runTransform';
 import { CATEGORIES } from '@/lib/runTransform';
 import { SAMPLE_ANALYSIS_TURNS, SAMPLE_FINDINGS } from '@/lib/sampleRunData';
@@ -42,7 +44,8 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
   const {
     phase, turns, typingText, activeTurnIndex, coveredTopics,
     examinedFiles, findings, scoreVisible, progressPercent, pendingActions,
-  } = isLive && liveState ? liveState : animState;
+    statusMessage,
+  } = isLive && liveState ? liveState : { ...animState, statusMessage: '' };
 
   // Findings for score panel: live findings grow over time, replay uses full set
   const scorePanelFindings = isLive ? findings : DATA_FINDINGS;
@@ -53,6 +56,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
   const streamRef = useRef<HTMLDivElement>(null);
   const filesScrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [verbose, setVerbose] = useState(true);
   const isAutoScrolling = useRef(false);
 
   // Run timer
@@ -158,7 +162,9 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                   />
                 )}
                 <span className="text-[11px] font-semibold text-label">
-                  {phase === 'idle' ? (isLive ? 'Starting' : 'Ready') : phase === 'analyzing' ? 'Analyzing' : phase === 'switching' ? 'Switching' : phase === 'recording' ? 'Recording' : phase === 'assembling' ? 'Assembling' : 'Complete'}
+                  {statusMessage
+                    ? statusMessage
+                    : phase === 'idle' ? (isLive ? 'Starting' : 'Ready') : phase === 'analyzing' ? 'Analyzing' : phase === 'switching' ? 'Switching' : phase === 'recording' ? 'Recording' : phase === 'assembling' ? 'Assembling' : 'Complete'}
                 </span>
                 {isLive && elapsed > 0 && (
                   <span className="text-[10px] font-mono text-tertiary-label">
@@ -222,6 +228,28 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                   </div>
                 );
               })()}
+
+              {/* Verbose toggle */}
+              <button
+                type="button"
+                onClick={() => setVerbose(v => !v)}
+                className="ml-auto text-[10px] font-medium text-tertiary-label hover:text-label transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0">
+                  {verbose ? (
+                    <>
+                      <path d="M8 3C4.5 3 1.5 8 1.5 8s3 5 6.5 5 6.5-5 6.5-5-3-5-6.5-5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
+                    </>
+                  ) : (
+                    <>
+                      <path d="M8 3C4.5 3 1.5 8 1.5 8s3 5 6.5 5 6.5-5 6.5-5-3-5-6.5-5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M3 13L13 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                    </>
+                  )}
+                </svg>
+                {verbose ? 'Verbose' : 'Compact'}
+              </button>
             </div>
             <div className="flex-1 relative overflow-hidden">
               <div
@@ -356,11 +384,13 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
 
                         {/* Turn content */}
                         <div className="flex-1 min-w-0">
-                          <p className={`text-[13px] leading-relaxed ${
+                          <div className={`md-content text-[13px] leading-relaxed ${
                             isWrite ? 'text-success' : 'text-secondary-label'
                           }`}>
-                            {turn.reasoning}
-                          </p>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {verbose ? turn.reasoning : (turn.reasoning.length > 150 ? turn.reasoning.slice(0, 150) + '\u2026' : turn.reasoning)}
+                            </ReactMarkdown>
+                          </div>
 
                           {hasActivities && (
                             <ActivityChipGroup activities={turn.activities} active={isActive} accentColor={accentColor} />
@@ -374,13 +404,13 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 {/* Currently typing */}
                 {typingText && (
                   <div className="py-2">
-                    <p className={`text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}>
-                      {typingText}
+                    <div className={`md-content text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{typingText}</ReactMarkdown>
                       <span
                         className="inline-block w-[2px] h-[14px] ml-0.5 align-text-bottom rounded-full"
                         style={{ background: accentColor, animation: 'pulse-dot 0.8s step-end infinite' }}
                       />
-                    </p>
+                    </div>
                   </div>
                 )}
 

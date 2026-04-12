@@ -28,7 +28,7 @@ function scoreColor(score: 'red' | 'yellow' | 'green'): string {
   return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
 }
 
-function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
+function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?: RunMetrics }) {
   return (
     <div className="mb-6">
       {/* Overall score */}
@@ -39,7 +39,7 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
           className="w-3 h-3 rounded-full shrink-0"
           style={{ background: scoreColor(scorecard.overallScore) }}
         />
-        <div>
+        <div className="flex-1">
           <span className="font-bold text-sm text-label">
             Overall: {scorecard.overallScore.toUpperCase()}
           </span>
@@ -47,6 +47,16 @@ function ScorecardGrid({ scorecard }: { scorecard: Scorecard }) {
             {scorecard.repoName} · {scorecard.goalType}
           </span>
         </div>
+        {metrics && (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm font-bold font-mono text-tint">
+              ${metrics.totalEstimatedCostUsd.toFixed(2)}
+            </span>
+            <span className="text-[10px] text-tertiary-label">
+              {(metrics.durationMs / 1000).toFixed(0)}s · {metrics.toolCalls} calls
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Category grid */}
@@ -298,7 +308,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
         <div key={activeTab} className="animate-slide-up flex-1 flex flex-col">
           {activeTab === 'report' && (
             <div className="max-w-[860px] pt-5 pb-8">
-              <ScorecardGrid scorecard={scorecard} />
+              <ScorecardGrid scorecard={scorecard} metrics={metrics} />
               <div className="md-content text-sm leading-relaxed">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefMarkdown}</ReactMarkdown>
               </div>

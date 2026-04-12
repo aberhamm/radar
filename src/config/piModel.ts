@@ -1,21 +1,23 @@
 /**
- * Pi Model configuration for Portkey gateway.
+ * Pi Model configuration — provider-agnostic.
  *
- * Builds a Pi-ai Model<'openai-completions'> that routes through the Portkey
- * gateway to Amazon Bedrock. Uses shared PortkeyConfig for connection details.
+ * Builds a Pi-ai Model<'openai-completions'> that routes through the
+ * configured provider (Portkey, OpenAI, Azure OpenAI, or any generic
+ * OpenAI-compatible endpoint). Provider selection is via PROVIDER_TYPE
+ * env var or auto-detection from available API keys.
  */
 
 import type { Model } from '@mariozechner/pi-ai';
-import { getPortkeyConfig } from './portkeyConfig.js';
+import { getProviderConfig, type ProviderOverrides } from './providerConfig.js';
 
 export interface PiModelConfig {
-  /** Portkey API key (required) */
+  /** API key (provider-specific: PORTKEY_API_KEY, OPENAI_API_KEY, etc.) */
   apiKey: string;
-  /** Portkey gateway base URL */
+  /** Base URL for the API endpoint */
   baseUrl: string;
-  /** Portkey provider routing header */
+  /** Portkey-specific: provider routing header */
   provider: string;
-  /** Bedrock model ID */
+  /** Model ID for the agent (investigation) model */
   modelId: string;
 }
 
@@ -31,21 +33,18 @@ export function buildPiModel(overrides?: Partial<PiModelConfig>): {
   fastModel: Model<'openai-completions'>;
   apiKey: string;
 } {
-  const config = getPortkeyConfig({
+  const config = getProviderConfig({
     apiKey: overrides?.apiKey,
     baseUrl: overrides?.baseUrl,
     provider: overrides?.provider,
     agentModelId: overrides?.modelId,
-  });
+  } as Partial<ProviderOverrides>);
 
   const sharedConfig = {
     api: 'openai-completions' as const,
-    provider: 'portkey',
+    provider: config.providerType,
     baseUrl: config.baseUrl,
-    headers: {
-      'x-portkey-api-key': config.apiKey,
-      'x-portkey-provider': config.provider,
-    },
+    headers: config.headers,
     reasoning: false,
     input: ['text'] as ('text' | 'image')[],
     compat: {
@@ -59,7 +58,7 @@ export function buildPiModel(overrides?: Partial<PiModelConfig>): {
   const model: Model<'openai-completions'> = {
     ...sharedConfig,
     id: config.agentModelId,
-    name: `${config.agentModelId} via Portkey`,
+    name: `${config.agentModelId} via ${config.providerType}`,
     cost: { input: 0.003, output: 0.015, cacheRead: 0.0003, cacheWrite: 0 },
     contextWindow: 200000,
     maxTokens: 8192,
@@ -68,7 +67,7 @@ export function buildPiModel(overrides?: Partial<PiModelConfig>): {
   const fastModel: Model<'openai-completions'> = {
     ...sharedConfig,
     id: config.fastModelId,
-    name: `${config.fastModelId} via Portkey (fast)`,
+    name: `${config.fastModelId} via ${config.providerType} (fast)`,
     cost: { input: 0.0008, output: 0.004, cacheRead: 0.00008, cacheWrite: 0 },
     contextWindow: 200000,
     maxTokens: 8192,
