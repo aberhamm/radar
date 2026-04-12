@@ -13,6 +13,7 @@ import { handleAnalyze } from './commands/analyze.js';
 import { handleAnalyzeAll } from './commands/analyzeAll.js';
 import { handleCompare } from './commands/compare.js';
 import { handleDiff } from './commands/diff.js';
+import { handleGauntlet } from './commands/gauntlet.js';
 
 // Load .env
 import 'dotenv/config';
@@ -29,6 +30,8 @@ Examples:
   $ radar analyze --repo ./my-repo --goal all --budget 100
   $ radar analyze --repo https://github.com/Sitecore/xmcloud-starter-js --verbose
   $ radar compare --repos ./repo-a ./repo-b
+  $ radar gauntlet
+  $ radar gauntlet --run --repos ./repo-a ./repo-b https://github.com/org/repo
   $ radar tools
   $ radar rules --validate
   $ radar dashboard --port 3001
@@ -146,6 +149,25 @@ program
   .action((runA: string, runB: string) => {
     const exitCode = handleDiff({ runA, runB });
     if (exitCode !== 0) process.exit(exitCode);
+  });
+
+program
+  .command('gauntlet')
+  .description('Run quality gauntlet across repos and goals, or view results')
+  .option('--run', 'Run the gauntlet (default: just print existing results)')
+  .option('--repos <paths...>', 'Repository paths or GitHub URLs to test')
+  .option('--goals <types>', 'Comma-separated goal types (default: onboarding,audit,security-review)')
+  .option('--budget <n>', 'Tool call budget per run', '45')
+  .option('--verbose', 'Show real-time agent reasoning and tool calls')
+  .option('--clear', 'Clear existing gauntlet results')
+  .action(async (opts) => {
+    try {
+      const exitCode = await handleGauntlet(opts);
+      if (exitCode !== 0) process.exit(exitCode);
+    } catch (err) {
+      console.error(`\nError: ${(err as Error).message}`);
+      process.exit(2);
+    }
   });
 
 program
