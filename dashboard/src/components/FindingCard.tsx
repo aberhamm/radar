@@ -26,6 +26,7 @@ export function FindingCard({ finding, index }: { finding: Finding; index?: numb
       <button
         type="button"
         onClick={hasDetail ? () => setExpanded(prev => !prev) : undefined}
+        aria-expanded={hasDetail ? expanded : undefined}
         className={`w-full text-left p-2.5 ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
       >
         <div className="flex items-center gap-1.5 mb-0.5">

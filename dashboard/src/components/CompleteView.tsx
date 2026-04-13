@@ -294,10 +294,12 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
 
       {/* Segmented control tab bar */}
       <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
-        <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5">
+        <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5" role="tablist" aria-label="Report sections">
           {tabs.map(tab => (
             <button
               key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-5 py-1.5 min-w-[72px] min-h-touch rounded-md text-[13px] font-medium transition-all cursor-pointer ${
                 activeTab === tab.id
@@ -357,7 +359,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
 
       {/* Tab content */}
       <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'events' ? '' : 'px-6'}`}>
-        <div key={activeTab} className="animate-slide-up flex-1 flex flex-col">
+        <div key={activeTab} role="tabpanel" aria-label={activeTab} className="animate-slide-up flex-1 flex flex-col">
           {activeTab === 'report' && (
             <div className="max-w-[860px] pt-5 pb-8">
               <ScorecardGrid scorecard={scorecard} metrics={metrics} />

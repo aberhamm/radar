@@ -406,10 +406,12 @@ export function CompareView({ data }: CompareViewProps) {
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Segmented control tab bar */}
       <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
-        <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5">
+        <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5" role="tablist" aria-label="Compare sections">
           {tabs.map(tab => (
             <button
               key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-5 py-1.5 min-w-[72px] rounded-md text-[13px] font-medium transition-all cursor-pointer ${
                 activeTab === tab.id
