@@ -133,6 +133,31 @@ export function transformRunData(
   for (const ev of events) {
     const ts = ev.timestamp ? new Date(ev.timestamp).getTime() : null;
 
+    // Budget plan / rebalance: synthetic events from budget planner
+    if (ev.action === 'budget_plan' || ev.action === 'budget_rebalance') {
+      if (currentReasoning && currentActivities.length > 0) {
+        turns.push({
+          reasoning: currentReasoning,
+          activities: currentActivities,
+          categoriesCovered: [...currentCategories],
+          duration: turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 1000,
+        });
+      }
+      const label = ev.action === 'budget_plan'
+        ? 'Budget plan computed'
+        : 'Specialist budgets rebalanced';
+      turns.push({
+        reasoning: label,
+        activities: [{ label: ev.action, files: [], detail: ev.result ?? '' }],
+        categoriesCovered: [],
+        duration: 300,
+      });
+      currentReasoning = '';
+      currentActivities = [];
+      currentCategories = new Set();
+      continue;
+    }
+
     // Pass boundary: synthetic event injected between multi-goal passes
     if (ev.action === 'pass_boundary') {
       // Flush current turn

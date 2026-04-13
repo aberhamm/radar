@@ -95,6 +95,9 @@ export interface RunnerConfig {
   /** Pre-populated state from a prior pass (for tiered investigation).
    *  Findings, filesRead, fileReadCache carry over. Budgets reset. */
   initialState?: Partial<AgentState>;
+  /** Pre-computed repo signals (app roots, package.json, file tree).
+   *  When provided, runAgent skips its own runPreCompute() call. */
+  preCompute?: PreComputeResult;
 }
 
 export interface StepEvent {
@@ -391,7 +394,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let preComputeContext = '';
   if (!config.resumeFrom) {
     try {
-      const preComputed = await runPreCompute(config.repoPath, config.appRoot);
+      const preComputed = config.preCompute ?? await runPreCompute(config.repoPath, config.appRoot);
       preComputeContext = formatPreComputeContext(preComputed);
       config.onStep?.({
         step: 0,

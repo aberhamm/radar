@@ -7,6 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { runAgent, runPreCompute, writeOutputFiles, type RunResult } from '../agent/runner.js';
+import { planBudget, rebalanceBudget } from '../agent/budgetPlanner.js';
 import { cloneRepo } from '../tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from '../tools/dependency/queryNpmVersions.js';
 import { formatVerboseStep } from '../output/verboseFormatter.js';
@@ -97,13 +98,24 @@ export async function handleAnalyzeAll(opts: {
     `  ${Object.keys(npmResult.versions).length} packages resolved${npmResult.fromCache ? ` (cached, ${npmResult.cacheAge})` : ''}`,
   );
 
-  // Budget allocation — core gets 70% because it must investigate AND record findings.
-  // Specialists get 15% each for targeted depth.
-  const coreBudget = Math.floor(totalBudget * 0.7);
-  const nextjsBudget = Math.floor(totalBudget * 0.15);
-  const a11yBudget = totalBudget - coreBudget - nextjsBudget;
+  // Pre-compute repo signals for budget planning (also reused by core pass)
+  console.log('Pre-computing repo signals...');
+  const preCompute = await runPreCompute(repoPath);
 
-  console.log(`\nStarting universal analysis (budget: ${coreBudget}+${nextjsBudget}+${a11yBudget}=${totalBudget})...\n`);
+  // Budget allocation — deterministic plan based on detected repo signals
+  const plan = planBudget(totalBudget, preCompute);
+  const coreBudget = plan.passes[0].budget;
+  let nextjsBudget = plan.passes[1].budget;
+  let a11yBudget = plan.passes[2].budget;
+  let skipNextjs = plan.passes[1].skip;
+  let skipA11y = plan.passes[2].skip;
+
+  const budgetSummary = plan.passes.map(p => p.skip ? `${p.name}: skip` : `${p.name}: ${p.budget}`).join(', ');
+  console.log(`\nBudget plan: ${budgetSummary} (total: ${totalBudget})`);
+  for (const p of plan.passes) {
+    console.log(`  ${p.name}: ${p.reason}`);
+  }
+  console.log('');
 
   const parentRunId = crypto.randomUUID();
   const passResults: PassResult[] = [];
@@ -111,6 +123,14 @@ export async function handleAnalyzeAll(opts: {
   const allInvestigationLogs: AgentState['investigationLog'] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allEvents: Array<Record<string, any>> = [];
+
+  // Emit budget plan event
+  allEvents.push({
+    step: -1,
+    action: 'budget_plan',
+    result: JSON.stringify({ passes: plan.passes, signals: plan.signals }),
+    timestamp: new Date().toISOString(),
+  });
 
   // --- Pass 1: Core investigation ---
   const coreStart = Date.now();
@@ -126,6 +146,7 @@ export async function handleAnalyzeAll(opts: {
       toolCallBudget: coreBudget,
       outputDir,
       verbose,
+      preCompute, // Reuse pre-computed signals — avoids redundant filesystem scans
       onStep: (step) => {
         allEvents.push(step);
         if (verbose) formatVerboseStep(step, '[Core]');
@@ -154,89 +175,125 @@ export async function handleAnalyzeAll(opts: {
     return 2;
   }
 
-  // --- Pass 2: Next.js specialist ---
-  allEvents.push({ step: -1, action: 'pass_boundary', result: 'Next.js Specialist', timestamp: new Date().toISOString() });
-  const nextjsStart = Date.now();
-  console.log(`\n[Next.js] Starting specialist pass (budget: ${nextjsBudget})...`);
-  try {
-    const nextjsResult = await runAgent({
-      repoPath,
-      repoName,
-      repoSource,
-      repoUrl,
-      goal: 'nextjs' as GoalType,
-      platform: platform !== 'unknown' ? platform : undefined,
-      toolCallBudget: nextjsBudget,
-      outputDir,
-      verbose,
-      initialState: sharedState,
-      onStep: (step) => {
-        allEvents.push(step);
-        if (verbose) formatVerboseStep(step, '[Next.js]');
-        else console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
-      },
+  // --- Post-core rebalance ---
+  const corePassResult = passResults[0]?.result;
+  if (corePassResult) {
+    const rebalance = rebalanceBudget(plan, corePassResult);
+    nextjsBudget = rebalance.adjustedPasses[1].budget;
+    a11yBudget = rebalance.adjustedPasses[2].budget;
+    skipNextjs = rebalance.adjustedPasses[1].skip;
+    skipA11y = rebalance.adjustedPasses[2].skip;
+
+    allEvents.push({
+      step: -1,
+      action: 'budget_rebalance',
+      result: JSON.stringify({
+        adjustedPasses: rebalance.adjustedPasses.map(p => ({ name: p.name, budget: p.budget, skip: p.skip, reason: p.reason })),
+        coreUtilization: rebalance.coreUtilization,
+        adjustmentReasons: rebalance.adjustmentReasons,
+      }),
+      timestamp: new Date().toISOString(),
     });
-    const nextjsDuration = Date.now() - nextjsStart;
-    passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, result: nextjsResult, durationMs: nextjsDuration });
-    allInvestigationLogs.push(...nextjsResult.state.investigationLog);
-    // Update shared state with new findings
-    sharedState = {
-      findings: nextjsResult.state.findings,
-      filesRead: nextjsResult.state.filesRead,
-      fileReadCache: nextjsResult.state.fileReadCache,
-      resolvedVersions: nextjsResult.state.resolvedVersions,
-      stackProfile: nextjsResult.state.stackProfile,
-      fetchedDocs: nextjsResult.state.fetchedDocs,
-      modelUsage: nextjsResult.state.modelUsage,
-    };
-    allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Next.js Specialist', toolCalls: nextjsResult.metrics.toolCalls, budget: nextjsBudget, terminationReason: nextjsResult.terminationReason }), timestamp: new Date().toISOString() });
-    console.log(`[Next.js] Done: ${nextjsResult.state.findings.length} total findings, ${nextjsResult.metrics.toolCalls}/${nextjsBudget} calls`);
-  } catch (err) {
-    const nextjsDuration = Date.now() - nextjsStart;
-    passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, error: (err as Error).message, durationMs: nextjsDuration });
-    console.warn(`[Next.js] Specialist failed (graceful degradation): ${(err as Error).message}`);
+
+    if (rebalance.adjustmentReasons[0] !== 'No adjustments needed — plan holds') {
+      console.log(`\nRebalanced: ${rebalance.adjustmentReasons.join('; ')}`);
+    }
+  }
+
+  // --- Pass 2: Next.js specialist ---
+  if (!skipNextjs && nextjsBudget > 0) {
+    allEvents.push({ step: -1, action: 'pass_boundary', result: 'Next.js Specialist', timestamp: new Date().toISOString() });
+    const nextjsStart = Date.now();
+    console.log(`\n[Next.js] Starting specialist pass (budget: ${nextjsBudget})...`);
+    try {
+      const nextjsResult = await runAgent({
+        repoPath,
+        repoName,
+        repoSource,
+        repoUrl,
+        goal: 'nextjs' as GoalType,
+        platform: platform !== 'unknown' ? platform : undefined,
+        toolCallBudget: nextjsBudget,
+        outputDir,
+        verbose,
+        initialState: sharedState,
+        onStep: (step) => {
+          allEvents.push(step);
+          if (verbose) formatVerboseStep(step, '[Next.js]');
+          else console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+        },
+      });
+      const nextjsDuration = Date.now() - nextjsStart;
+      passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, result: nextjsResult, durationMs: nextjsDuration });
+      allInvestigationLogs.push(...nextjsResult.state.investigationLog);
+      sharedState = {
+        findings: nextjsResult.state.findings,
+        filesRead: nextjsResult.state.filesRead,
+        fileReadCache: nextjsResult.state.fileReadCache,
+        resolvedVersions: nextjsResult.state.resolvedVersions,
+        stackProfile: nextjsResult.state.stackProfile,
+        fetchedDocs: nextjsResult.state.fetchedDocs,
+        modelUsage: nextjsResult.state.modelUsage,
+      };
+      allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Next.js Specialist', toolCalls: nextjsResult.metrics.toolCalls, budget: nextjsBudget, terminationReason: nextjsResult.terminationReason }), timestamp: new Date().toISOString() });
+      console.log(`[Next.js] Done: ${nextjsResult.state.findings.length} total findings, ${nextjsResult.metrics.toolCalls}/${nextjsBudget} calls`);
+    } catch (err) {
+      const nextjsDuration = Date.now() - nextjsStart;
+      passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, error: (err as Error).message, durationMs: nextjsDuration });
+      console.warn(`[Next.js] Specialist failed (graceful degradation): ${(err as Error).message}`);
+    }
+  } else {
+    console.log(`\n[Next.js] Skipped — ${plan.passes[1].reason}`);
+    passResults.push({ pass: 'Next.js Specialist', budget: 0, durationMs: 0 });
+    allEvents.push({ step: -1, action: 'pass_boundary', result: 'Next.js Specialist (skipped)', timestamp: new Date().toISOString() });
   }
 
   // --- Pass 3: Accessibility specialist ---
-  allEvents.push({ step: -1, action: 'pass_boundary', result: 'Accessibility Specialist', timestamp: new Date().toISOString() });
-  const a11yStart = Date.now();
-  console.log(`\n[A11y] Starting specialist pass (budget: ${a11yBudget})...`);
-  try {
-    const a11yResult = await runAgent({
-      repoPath,
-      repoName,
-      repoSource,
-      repoUrl,
-      goal: 'accessibility' as GoalType,
-      platform: platform !== 'unknown' ? platform : undefined,
-      toolCallBudget: a11yBudget,
-      outputDir,
-      verbose,
-      initialState: sharedState,
-      onStep: (step) => {
-        allEvents.push(step);
-        if (verbose) formatVerboseStep(step, '[A11y]');
-        else console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
-      },
-    });
-    const a11yDuration = Date.now() - a11yStart;
-    passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, result: a11yResult, durationMs: a11yDuration });
-    allInvestigationLogs.push(...a11yResult.state.investigationLog);
-    sharedState = {
-      findings: a11yResult.state.findings,
-      filesRead: a11yResult.state.filesRead,
-      fileReadCache: a11yResult.state.fileReadCache,
-      resolvedVersions: a11yResult.state.resolvedVersions,
-      stackProfile: a11yResult.state.stackProfile,
-      fetchedDocs: a11yResult.state.fetchedDocs,
-      modelUsage: a11yResult.state.modelUsage,
-    };
-    allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Accessibility Specialist', toolCalls: a11yResult.metrics.toolCalls, budget: a11yBudget, terminationReason: a11yResult.terminationReason }), timestamp: new Date().toISOString() });
-    console.log(`[A11y] Done: ${a11yResult.state.findings.length} total findings, ${a11yResult.metrics.toolCalls}/${a11yBudget} calls`);
-  } catch (err) {
-    const a11yDuration = Date.now() - a11yStart;
-    passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, error: (err as Error).message, durationMs: a11yDuration });
-    console.warn(`[A11y] Specialist failed (graceful degradation): ${(err as Error).message}`);
+  if (!skipA11y && a11yBudget > 0) {
+    allEvents.push({ step: -1, action: 'pass_boundary', result: 'Accessibility Specialist', timestamp: new Date().toISOString() });
+    const a11yStart = Date.now();
+    console.log(`\n[A11y] Starting specialist pass (budget: ${a11yBudget})...`);
+    try {
+      const a11yResult = await runAgent({
+        repoPath,
+        repoName,
+        repoSource,
+        repoUrl,
+        goal: 'accessibility' as GoalType,
+        platform: platform !== 'unknown' ? platform : undefined,
+        toolCallBudget: a11yBudget,
+        outputDir,
+        verbose,
+        initialState: sharedState,
+        onStep: (step) => {
+          allEvents.push(step);
+          if (verbose) formatVerboseStep(step, '[A11y]');
+          else console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+        },
+      });
+      const a11yDuration = Date.now() - a11yStart;
+      passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, result: a11yResult, durationMs: a11yDuration });
+      allInvestigationLogs.push(...a11yResult.state.investigationLog);
+      sharedState = {
+        findings: a11yResult.state.findings,
+        filesRead: a11yResult.state.filesRead,
+        fileReadCache: a11yResult.state.fileReadCache,
+        resolvedVersions: a11yResult.state.resolvedVersions,
+        stackProfile: a11yResult.state.stackProfile,
+        fetchedDocs: a11yResult.state.fetchedDocs,
+        modelUsage: a11yResult.state.modelUsage,
+      };
+      allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Accessibility Specialist', toolCalls: a11yResult.metrics.toolCalls, budget: a11yBudget, terminationReason: a11yResult.terminationReason }), timestamp: new Date().toISOString() });
+      console.log(`[A11y] Done: ${a11yResult.state.findings.length} total findings, ${a11yResult.metrics.toolCalls}/${a11yBudget} calls`);
+    } catch (err) {
+      const a11yDuration = Date.now() - a11yStart;
+      passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, error: (err as Error).message, durationMs: a11yDuration });
+      console.warn(`[A11y] Specialist failed (graceful degradation): ${(err as Error).message}`);
+    }
+  } else {
+    console.log(`\n[A11y] Skipped — ${plan.passes[2].reason}`);
+    passResults.push({ pass: 'Accessibility Specialist', budget: 0, durationMs: 0 });
+    allEvents.push({ step: -1, action: 'pass_boundary', result: 'Accessibility Specialist (skipped)', timestamp: new Date().toISOString() });
   }
 
   // Collect all findings from the latest shared state

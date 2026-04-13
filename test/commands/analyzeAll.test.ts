@@ -6,7 +6,7 @@ import type { Scorecard, CategoryScore, ScoreLevel } from '../../src/types/outpu
 // Mock all external dependencies before importing module under test
 vi.mock('../../src/agent/runner.js', () => ({
   runAgent: vi.fn(),
-  runPreCompute: vi.fn(),
+  runPreCompute: vi.fn().mockResolvedValue({}),
   writeOutputFiles: vi.fn().mockReturnValue([]),
 }));
 vi.mock('../../src/tools/repo/cloneRepo.js', () => ({
@@ -52,7 +52,7 @@ vi.mock('node:fs', async () => {
 });
 
 import { handleAnalyzeAll } from '../../src/commands/analyzeAll.js';
-import { runAgent } from '../../src/agent/runner.js';
+import { runAgent, runPreCompute } from '../../src/agent/runner.js';
 import { computeScorecard } from '../../src/output/scorecard.js';
 import { writeAllBriefs } from '../../src/output/goalBriefWriter.js';
 import { queryNpmVersions } from '../../src/tools/dependency/queryNpmVersions.js';
@@ -100,8 +100,16 @@ function makeRunResult(overrides: Record<string, unknown> = {}): RunResult {
     state: {
       goal: 'onboarding' as any,
       repo: { source: 'local' as const, localPath: FIXTURE_REPO, name: 'test' },
+      stackProfile: {
+        projectType: 'unknown', projectTypeConfidence: 'low',
+        framework: { name: 'Next.js', version: '14.2.3', routerType: 'app' },
+        cms: { platform: '', sdkPackages: [], integrationStyle: '' },
+        packageManager: 'npm', language: 'typescript', deploymentIndicators: [], monorepo: false,
+      },
       findings: [
         { id: 'F-001', category: 'stack', severity: 'medium', title: 'Test', description: '', evidence: [], tags: [] },
+        { id: 'F-002', category: 'nextjs', severity: 'medium', title: 'Next.js finding', description: '', evidence: [], tags: [] },
+        { id: 'F-003', category: 'accessibility', severity: 'medium', title: 'A11y finding', description: '', evidence: [], tags: [] },
       ],
       filesRead: new Set<string>(['package.json']),
       fileReadCache: new Map(),
@@ -133,6 +141,12 @@ describe('handleAnalyzeAll', () => {
     vi.clearAllMocks();
     // Default mocks
     vi.mocked(queryNpmVersions).mockResolvedValue({ versions: { next: '15.0.0' }, fromCache: true, cacheAge: '5m' } as any);
+    vi.mocked(runPreCompute).mockResolvedValue({
+      appRoots: {
+        roots: [{ path: '.', type: 'nextjs', hasPackageJson: true, framework: 'next', frameworkVersion: '14.2.3' }],
+        isMonorepo: false,
+      },
+    } as any);
     vi.mocked(runAgent).mockResolvedValue(makeRunResult());
     vi.mocked(computeScorecard).mockReturnValue(makeScorecard());
     vi.mocked(writeAllBriefs).mockResolvedValue([
@@ -216,16 +230,21 @@ describe('handleAnalyzeAll', () => {
 
   // --- Budget allocation ---
 
-  it('allocates 70%/15%/15% budget across passes', async () => {
+  it('allocates budget across passes based on detected frameworks', async () => {
     await handleAnalyzeAll({ ...baseOpts, budget: '100' });
 
-    // 3 runAgent calls: core (70), nextjs (15), a11y (15)
+    // 3 runAgent calls: core + nextjs + a11y (budget planner decides split)
     expect(runAgent).toHaveBeenCalledTimes(3);
 
     const calls = vi.mocked(runAgent).mock.calls;
-    expect(calls[0][0]).toMatchObject({ toolCallBudget: 70 });
-    expect(calls[1][0]).toMatchObject({ toolCallBudget: 15 });
-    expect(calls[2][0]).toMatchObject({ toolCallBudget: 15 });
+    const coreBudget = calls[0][0].toolCallBudget!;
+    const nextjsBudget = calls[1][0].toolCallBudget!;
+    const a11yBudget = calls[2][0].toolCallBudget!;
+    // All budgets should sum to total
+    expect(coreBudget + nextjsBudget + a11yBudget).toBe(100);
+    // Core should get the majority
+    expect(coreBudget).toBeGreaterThan(nextjsBudget);
+    expect(coreBudget).toBeGreaterThan(a11yBudget);
   });
 
   it('core pass uses universal goal', async () => {

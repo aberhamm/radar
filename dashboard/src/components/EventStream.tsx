@@ -57,7 +57,8 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
 
     if (ev.type === 'finding') {
       current.findings.push(ev);
-    } else if (ev.type === 'model_switch' || ev.type === 'budget_warning' || ev.type === 'assemble_output') {
+    } else if (ev.type === 'model_switch' || ev.type === 'budget_warning' || ev.type === 'assemble_output'
+               || ev.action === 'budget_plan' || ev.action === 'budget_rebalance') {
       current.special.push(ev);
     } else {
       current.toolCalls.push(ev);
@@ -253,8 +254,10 @@ function SpecialEvent({ event }: { event: StepEvent }) {
     model_switch: { color: '#0071e3', bg: 'rgba(0,113,227,0.06)', icon: '⇄' },
     budget_warning: { color: '#ff9500', bg: 'rgba(255,149,0,0.06)', icon: '!' },
     assemble_output: { color: '#34c759', bg: 'rgba(52,199,89,0.06)', icon: '✓' },
+    budget_plan: { color: '#5856d6', bg: 'rgba(88,86,214,0.06)', icon: '▤' },
+    budget_rebalance: { color: '#af52de', bg: 'rgba(175,82,222,0.06)', icon: '⇋' },
   };
-  const s = config[event.type ?? ''] ?? config.budget_warning;
+  const s = config[event.type ?? ''] ?? config[event.action ?? ''] ?? config.budget_warning;
 
   return (
     <div
