@@ -226,8 +226,9 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 - [x] **Provider abstraction** — `src/config/providerConfig.ts` supports `portkey`, `openai`, `azure-openai`, `generic` (any OpenAI-compatible endpoint). Auto-detects from env vars. 23 tests. Backward-compatible via re-export in `portkeyConfig.ts`. **P1** — done.
 - [ ] **Client-ready PDF export** — `--export-pdf` flag, `@react-pdf/renderer`, branded output with exec summary + scorecard + findings. **P1** — blocks client delivery.
 - [ ] **Executive summary** — 1-page non-technical lead prepended to brief and first PDF page. Overall grade, top 3 risks, top 3 strengths. **P1** — blocks sales demos.
-- [ ] **Generic platform mode** — `goal-audit-generic.md` rules + generic references. Works on any web framework, not just Sitecore/Optimizely. **P2** — expands addressable practice areas.
+- [x] **Generic platform mode** — `goal-audit-generic.md` rules + generic references + 7-category scorecard. Works on any web framework, not just Sitecore/Optimizely. Dashboard goal selector updated. Validated against vercel/commerce (YELLOW, 8 findings, $1.08). **P2** — done.
 - [ ] **Marketing positioning doc** — 1-page business-language doc for practice leads and sales. What Radar does, cost, time savings, engagement lifecycle fit. **P2** — blocks leadership awareness.
+- [ ] **Excessive monorepo root handling** — Repos like Refine have 254 app roots, all dumped into a flat `<select>` dropdown. UX is terrible at that scale. Needs: searchable/filterable combobox (or virtual-scrolled list), grouping by top-level directory, and a sensible cap (show top 20 by framework relevance, "show all" expander). Backend pre-compute already caps at 15 roots, but the UI picker shows everything. **P2** — not blocking but embarrassing for demos with large monorepos.
 - [ ] **Gauntlet on 5+ repos** — Run all goal types, catalog failures, fix + regress. Exit gate: zero crashes, zero hallucinations, <20% low-confidence. **P1** — blocks everything.
 
 ### Deferred
