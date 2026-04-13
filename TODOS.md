@@ -34,7 +34,7 @@ Demo talking points: 11 findings in ~8 min, ~$0.74/run (dual-model, 37% on Haiku
 - [x] **Secret redaction** — Implemented in `src/agent/redaction.ts`. Regex-based redaction for KEY, SECRET, TOKEN, PASSWORD patterns applied in runner.ts afterToolCall before results enter LLM context or investigation log.
 - [x] **Expanded secret redaction patterns** — Added: AWS access keys (AKIA/ASIA/AROA/AIDA), connection strings (jdbc/mongodb/postgres/mysql/redis/amqp), Bearer tokens, PEM private keys. 20 tests passing.
 - [x] **Optimizely rules** — Expanded `platform-optimizely.md` with Visual Builder, Content Graph, @remkoj ecosystem, env vars, package reference table, 16 issue patterns.
-- [ ] **Web search / fetch_url** — Currently stubbed. Implement with a real search API when needed for production use. **Deferred** — not blocking any current goal.
+- [x] **Web search / fetch_url** — `src/tools/web/webSearch.ts` (Brave Search API, graceful degradation without key) + `src/tools/web/fetchUrl.ts` (LRU cache, Turndown HTML→Markdown, redirect safety, SSRF protection). Both fully implemented. **P2** — done.
 - [x] **analyze_middleware** — Implemented in `src/tools/analysis/analyzeMiddleware.ts`, registered in piToolAdapter, classified in concurrency.ts, 2 tests passing.
 - [x] **E2e tests** — Full agent loop against fixture repo in `test/e2e/`. Asserts sections populated, scored scorecard, evidence-backed findings, output files written.
 - [x] **CLI polish** — Renamed to `radar`, added descriptive help text with examples, all flags documented.
@@ -121,8 +121,8 @@ Sourced from `github.com/garrytan/gstack` analysis. Domain knowledge, scoring ru
 
 - [x] **Secrets archaeology patterns** — Added "Secrets Archaeology" section to `goal-security-review.md` with 22 known credential prefixes (AWS, GitHub, Stripe, Slack, Google, SendGrid, Square, Facebook), grep regex patterns for scanning, and git history scanning guidance. 1 new test. **P2**
 - [ ] **QA issue taxonomy severity definitions** — Port 7-category taxonomy (Visual/UI, Functional, UX, Content, Performance, Console/Errors, Accessibility) with 4-level severity scale as calibration reference for finding severity. Source: `qa/references/issue-taxonomy.md`. **P3**
-- [ ] **Stack/framework auto-detection patterns** — Port Phase 0 detection patterns (package.json, Gemfile, go.mod, etc.) to enhance `detect_app_roots` tool. Source: CSO Phase 0. **P3**
-- [ ] **Scope drift detection** — Cross-reference actual code against stated intent (README, docs, PR descriptions) to find discrepancies. Useful for audit goal. Source: `review/SKILL.md` Step 1.5. **P3**
+- [x] **Stack/framework auto-detection patterns** — `detectAppRoots.ts` expanded with non-JS manifests (Gemfile, go.mod, requirements.txt, Cargo.toml, composer.json, .csproj/.sln), framework config maps (remix, svelte, nuxt, astro, angular), and plugin detection (prisma, tailwind, graphql, storybook). **P3** — done.
+- [x] **Scope drift detection** — `src/tools/analysis/detectScopeDrift.ts` (320+ lines). Registered as `detect_scope_drift` tool. Table-driven pattern matching against README/docs claims. **P3** — done.
 - [ ] **Parallel specialist dispatch with adaptive gating** — After initial analysis, spawn focused sub-analyses based on detected codebase characteristics. Auto-disable specialists that produce 0 findings after 10+ dispatches. Source: `review/SKILL.md` Step 4.5. **P3**
 
 ### Low Value (Park for Later)
@@ -224,20 +224,44 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 ### Accepted (build these)
 
 - [x] **Provider abstraction** — `src/config/providerConfig.ts` supports `portkey`, `openai`, `azure-openai`, `generic` (any OpenAI-compatible endpoint). Auto-detects from env vars. 23 tests. Backward-compatible via re-export in `portkeyConfig.ts`. **P1** — done.
-- [ ] **Client-ready PDF export** — `--export-pdf` flag, `@react-pdf/renderer`, branded output with exec summary + scorecard + findings. **P1** — blocks client delivery.
-- [ ] **Executive summary** — 1-page non-technical lead prepended to brief and first PDF page. Overall grade, top 3 risks, top 3 strengths. **P1** — blocks sales demos.
+- [ ] **Client-ready PDF export** — See Next Steps section for current status. **P1** — blocks client delivery.
+- [x] **Executive summary** — `src/output/executiveSummary.ts` renders deterministic exec summary from scorecard + metrics. Prepended to brief markdown. 14 tests. **P1** — done.
 - [x] **Generic platform mode** — `goal-audit-generic.md` rules + generic references + 7-category scorecard. Works on any web framework, not just Sitecore/Optimizely. Dashboard goal selector updated. Validated against vercel/commerce (YELLOW, 8 findings, $1.08). **P2** — done.
 - [ ] **Marketing positioning doc** — 1-page business-language doc for practice leads and sales. What Radar does, cost, time savings, engagement lifecycle fit. **P2** — blocks leadership awareness.
 - [ ] **Excessive monorepo root handling** — Repos like Refine have 254 app roots, all dumped into a flat `<select>` dropdown. UX is terrible at that scale. Needs: searchable/filterable combobox (or virtual-scrolled list), grouping by top-level directory, and a sensible cap (show top 20 by framework relevance, "show all" expander). Backend pre-compute already caps at 15 roots, but the UI picker shows everything. **P2** — not blocking but embarrassing for demos with large monorepos.
-- [ ] **Gauntlet on 5+ repos** — Run all goal types, catalog failures, fix + regress. Exit gate: zero crashes, zero hallucinations, <20% low-confidence. **P1** — blocks everything.
+- [x] **Gauntlet on 5+ repos** — 15 runs across 5 repos (xmcloud, optimizely, commerce, aem-guides-wknd, refine) × 3 goals. 100% crash-free, 100% hallucination-free, 100% confidence pass, 0 unverifiable evidence. Total: ~$20, ~90 min. Results in `output/gauntlet-results.jsonl`. **P1** — done 2026-04-12.
 
 ### Deferred
 
-- [ ] **Hosted dashboard demo** — Deploy dashboard to internal URL with pre-loaded gauntlet runs. Practice leads browse results without installing anything. **P2** — depends on gauntlet completion.
+- [ ] **Hosted dashboard demo** — Deploy dashboard to internal URL with pre-loaded gauntlet runs. Practice leads browse results without installing anything. **P2** — gauntlet done, unblocked.
 - [x] **Dashboard design review** — Refreshed 2026-04-12. Score: 5/10 → 7/10. 7 decisions made, 2 deferred. Build-now: tablet panel collapse, blockquote restyle. See decisions table below. **P1** — done (review), implementation pending.
-- [ ] **Dashboard design implementation** — Implement 7 design decisions from 2026-04-12 review: IdleView value prop hero, client-ready error states, goal default guidance, scoreboard layout, a11y baseline, exec summary banner, enhanced wordmark. Plus 2 build-now items (tablet panel collapse, blockquote restyle). **P1** — blocks demo readiness.
+- [x] **Dashboard design implementation** — All 9 items shipped in `1a506dc`: IdleView hero, exec summary banner, scoreboard layout, responsive panel collapse, client-ready error states, blockquote restyle, wordmark, a11y landmarks/touch targets, shared utils extraction. QA fix in `1a8c260` (stale closure in multi-goal view). **P1** — done 2026-04-12.
 - [x] **Dashboard DESIGN.md** — Created via `/design-consultation` on 2026-04-12. Precision Instrument aesthetic, Outfit + Instrument Serif + JetBrains Mono + system stack, Apple HIG tokens, brand-configurable tint layer for client theming. **P2** — done.
 - [ ] **SOW generator** — Out of scope by design. Radar produces findings, not engagement scoping. Scope definition is the consultant's job.
+
+## Next Steps (2026-04-13)
+
+Recent work: evidence verification with sourceContext, per-pass budget tracking, executive summary, gauntlet command, design system.
+
+### Ship blockers (before April 26 demo)
+
+- [x] **Gauntlet validation run** — 15 runs, 5 repos, 3 goals each. All pass gates. See `output/gauntlet-results.jsonl`. **P0** — done 2026-04-12.
+- [x] **Evidence quality audit** — 0 unverifiable evidence across all 15 gauntlet runs. Unsupported findings (description claims not in evidence): 22/143 total findings (~15%), mostly in security-review and audit goals. Prompt tuning opportunity but not blocking. **P1** — done (validated).
+- [ ] **Budget allocation tuning** — Current 70/15/15 split for Core/Next.js/A11y. After gauntlet, check which passes consistently exhaust budget vs finish early. Redistribute if specialists are starved. Consider making the split configurable via `--pass-budgets 70,15,15`. **P2** — data-driven, needs gauntlet results first.
+- [ ] **Client-ready PDF export** — `--export-pdf` flag with exec summary + scorecard + findings. Executive summary renderer is done, PDF renderer is not. **P1** — blocks client delivery.
+- [x] **Dashboard design implementation** — All 9 items shipped (`1a506dc`). **P1** — done 2026-04-12.
+
+### Post-demo improvements
+
+- [ ] **URL-based routing for dashboard** — CRITICAL gap found by /design-review (2026-04-13). Entire dashboard is ephemeral React state with zero URL routing. Users can't bookmark, share, or deep-link to runs/findings/evidence. Browser back/forward don't work. CI comments can't link to specific findings. Needs: Next.js app router routes (`/run/[id]`, `/run/[id]/finding/[fid]`, `/compare/[a]/[b]`), URL state sync, and pushState on navigation. **P1** — blocks consulting delivery (findings must be shareable artifacts).
+- [ ] **Sidebar section navigation** — HIGH gap from /design-review (2026-04-13). Sidebar only shows run history. When viewing a completed run, should show contextual section nav: jump to scorecard, category findings, evidence, cost. Collapsible "Sections" group above history list. **P1** — blocks usable report navigation.
+- [ ] **Cross-linking findings/evidence/reports** — HIGH gap from /design-review (2026-04-13). FindingCard file paths are display-only text (not clickable). Finding IDs not linkable. Scorecard categories don't link to filtered findings. Three disconnected renderings of the same data. **P1** — blocks consulting workflow (practice leads need to click through from summary to detail).
+- [ ] **Keyboard navigation for findings/sidebar** — MEDIUM gap from /design-review (2026-04-13). No J/K nav in sidebar or findings. CommandPalette can't target findings/sections. **P2** — needed for "precision instrument" UX.
+- [ ] **Breadcrumb navigation** — MEDIUM gap from /design-review (2026-04-13). ContextBar shows repo+goal but no breadcrumb trail through multi-goal > individual goal > report > finding. **P2** — depends on URL routing.
+- [ ] **Per-pass budget in dashboard BudgetPausedView** — Currently shows aggregate budget. Should show which pass exhausted and offer per-pass extension ("extend Next.js specialist by 15 calls?"). **P2** — nice-to-have for dashboard UX.
+- [ ] **Description-evidence coherence tuning** — `checkDescriptionEvidenceCoherence()` warns when claims (packages, versions) in description aren't in evidence. After gauntlet, check warning rate — if too noisy, tighten extraction regexes or add allowlist for common patterns. **P3** — calibration.
+- [ ] **Coherence warnings in dashboard** — Surface `recordFinding` coherence/no-evidence warnings in the FindingCard UI (yellow badge or footnote). Currently only in CLI output. **P3** — visibility.
+- [ ] **Auto-create issues from findings** — After a run completes, optionally create GitHub Issues (or Azure DevOps Work Items) from findings. Each finding becomes one issue with title, severity label, category label, file path, evidence snippet, and fingerprint in metadata for dedup on re-runs. CI adapters (`src/ci/github.ts`, `src/ci/azureDevops.ts`) already have API scaffolding. Needs: issue creation endpoints, fingerprint-based dedup (skip if issue with same fingerprint exists), configurable severity threshold (e.g. only high+critical), `--create-issues` CLI flag, and dashboard "Create Issues" button. **P2** — high-value for consulting delivery, turns findings into trackable work items automatically.
 
 ## GSTACK REVIEW REPORT
 
@@ -247,6 +271,7 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 5 | CLEAR (PLAN) | 12 issues, 1 critical gap (abort between passes) |
 | Design Review | `/plan-design-review` | UI/UX gaps | 2 | CLEAR (FULL) | score: 5/10 -> 7/10, 7 decisions, 2 build-now |
+| Design Review | `/design-review` | Sidebar nav + cross-linking | 1 | ISSUES_FOUND | 12 findings (1 critical, 3 high), 4 fixed, 8 deferred. Design: C, Slop: B |
 
-**UNRESOLVED:** 2 (sidebar date grouping, PDF layout — both non-blocking)
-**VERDICT:** ENG + DESIGN CLEARED — 7 design decisions made for April 26 demo. Implementation pending. DESIGN.md formalized via /design-consultation (2026-04-12).
+**UNRESOLVED:** URL routing (critical), sidebar section nav (high), cross-linking (high), breadcrumbs, keyboard nav
+**VERDICT:** ENG + DESIGN CLEARED for April 26 demo. Navigation architecture is the gap: all navigation is ephemeral state with zero URL routing. Fixed: border-l anti-pattern, flat nav compliance, dark mode colors, ARIA attributes.
