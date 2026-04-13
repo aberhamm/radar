@@ -12,6 +12,8 @@ interface SidebarProps {
   currentGoal?: string;
   isRunning: boolean;
   onSelectHistory: (id: string) => void;
+  /** Prefetch run data on hover so clicks are instant */
+  onPrefetch?: (id: string) => void;
   onNewRun: () => void;
   onClose: () => void;
   compareMode?: boolean;
@@ -151,7 +153,7 @@ export function groupByRepo(items: HistoryItem[]): RepoGroup[] {
   return repoGroups;
 }
 
-export function Sidebar({ open, history, activeRunId, currentRepoName, currentGoal, isRunning, onSelectHistory, onNewRun, onClose, compareMode, compareSelections = [], onToggleCompare, onCompareSelect, onCompare, hasMore, onLoadMore, activeTab, onSectionClick, showSections, compareHighlight }: SidebarProps) {
+export function Sidebar({ open, history, activeRunId, currentRepoName, currentGoal, isRunning, onSelectHistory, onPrefetch, onNewRun, onClose, compareMode, compareSelections = [], onToggleCompare, onCompareSelect, onCompare, hasMore, onLoadMore, activeTab, onSectionClick, showSections, compareHighlight }: SidebarProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const repoGroups = useMemo(() => groupByRepo(history), [history]);
@@ -227,6 +229,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
       <button
         key={h.id}
         onClick={handleClick}
+        onPointerEnter={() => onPrefetch?.(opts.isGroupHeader && opts.groupId ? opts.groupId : h.id)}
         disabled={isDisabledInCompare}
         aria-current={isActive && !compareMode ? 'true' : undefined}
         aria-selected={isSelected || undefined}

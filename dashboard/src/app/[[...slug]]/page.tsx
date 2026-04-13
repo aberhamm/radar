@@ -111,6 +111,15 @@ export default function DashboardPage() {
   const { urlView, pushUrl, replaceUrl } = useUrlState();
   const urlHandledRef = useRef(false);
 
+  // Cache loaded runs to avoid re-fetching on re-selection.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const runCacheRef = useRef(new Map<string, {
+    repoName: string; goal: string; startedAt: string;
+    result: any; // matches raw API JSON shape (lacks outputPaths that RunResult requires)
+  }>());
+  // Track in-flight prefetches to avoid duplicate requests
+  const prefetchingRef = useRef(new Set<string>());
+
   // Prepend sample run to history
   const fullHistory = useMemo(() => [SAMPLE_HISTORY_ITEM as HistoryItem, ...history], [history]);
 
@@ -487,9 +496,39 @@ export default function DashboardPage() {
       return;
     }
 
+    // Check cache first — runs are immutable, no need to re-fetch
+    const cached = runCacheRef.current.get(id);
+    if (cached) {
+      const runData: HistoryRunData = {
+        repoName: cached.repoName,
+        goal: cached.goal,
+        startedAt: cached.startedAt,
+        events: [],
+        result: cached.result,
+      };
+      setReplayData(runData);
+      setResult(cached.result);
+      setCurrentRun({
+        repoPath: '',
+        repoName: cached.repoName,
+        goal: cached.goal,
+        startedAt: new Date(cached.startedAt),
+        events: [],
+        toolCalls: cached.result.metrics?.toolCalls ?? 0,
+        budget: cached.result.metrics?.toolCalls ?? 45,
+      });
+      setBudgetPausedData(null);
+      setIsSampleReplay(false);
+      setSelectedRunId(id);
+      setStatus('complete');
+      setActiveTab('report');
+      pushUrl({ view: 'run', runId: id });
+      return;
+    }
+
     setHistoryLoading(true);
     try {
-      const r = await fetch(`/api/history/${encodeURIComponent(id)}`);
+      const r = await fetch(`/api/history/${encodeURIComponent(id)}?slim=1`);
       const data = await r.json();
       if (data.error || !data.result) {
         console.warn('[history] No result for run:', id, data.error);
@@ -497,6 +536,13 @@ export default function DashboardPage() {
         setSelectedRunId(id);
         return;
       }
+      // Cache the loaded run
+      runCacheRef.current.set(id, {
+        repoName: data.repoName,
+        goal: data.goal,
+        startedAt: data.startedAt,
+        result: data.result,
+      });
       const runData: HistoryRunData = {
         repoName: data.repoName,
         goal: data.goal,
@@ -527,6 +573,29 @@ export default function DashboardPage() {
       setHistoryLoading(false);
     }
   }, [compareMode, handleCompareSelect, history, pushUrl]);
+
+  // Prefetch a run on hover — fires the request and populates the cache
+  // so that the subsequent click is instant.
+  const handlePrefetch = useCallback((id: string) => {
+    if (id === SAMPLE_RUN_ID) return;
+    if (runCacheRef.current.has(id)) return;
+    if (prefetchingRef.current.has(id)) return;
+    prefetchingRef.current.add(id);
+    fetch(`/api/history/${encodeURIComponent(id)}?slim=1`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.result && !data.error) {
+          runCacheRef.current.set(id, {
+            repoName: data.repoName,
+            goal: data.goal,
+            startedAt: data.startedAt,
+            result: data.result,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => { prefetchingRef.current.delete(id); });
+  }, []);
 
   const handleViewReport = useCallback(() => {
     setStatus('complete');
@@ -729,6 +798,7 @@ export default function DashboardPage() {
           currentGoal={currentRun?.goal}
           isRunning={isRunningOrPaused}
           onSelectHistory={handleSelectHistory}
+          onPrefetch={handlePrefetch}
           onNewRun={handleNewRun}
           onClose={() => setSidebarOpen(false)}
           compareMode={compareMode}

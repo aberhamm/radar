@@ -374,7 +374,18 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
                 onClick={async () => {
                   setPdfExporting(true);
                   try {
-                    await exportReportPDF(scorecard, findings ?? [], metrics);
+                    // Lazy-load findings if not already present (slim mode defers them)
+                    let resolvedFindings = findings ?? [];
+                    if (resolvedFindings.length === 0 && runId) {
+                      try {
+                        const r = await fetch(`/api/history/${encodeURIComponent(runId)}`);
+                        const data = await r.json();
+                        if (data.result?.state?.findings) {
+                          resolvedFindings = data.result.state.findings;
+                        }
+                      } catch { /* proceed with empty findings */ }
+                    }
+                    await exportReportPDF(scorecard, resolvedFindings, metrics);
                   } catch (err) {
                     console.error('PDF export failed:', err);
                   } finally {

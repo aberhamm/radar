@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -84,7 +84,13 @@ export function useUrlState(): UseUrlStateReturn {
   const searchParams = useSearchParams();
   const selfNavigated = useRef(false);
 
-  const urlView = parseUrl(pathname, searchParams);
+  // Memoize urlView so it only changes when the URL actually changes.
+  // Without this, parseUrl() returns a new object reference every render,
+  // causing any useEffect([urlView]) to fire on every render — which
+  // creates an infinite loop when pushState URL updates arrive in a
+  // later React transition than the accompanying setState calls.
+  const searchStr = searchParams?.toString() ?? '';
+  const urlView = useMemo(() => parseUrl(pathname, searchParams), [pathname, searchStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pushUrl = useCallback((state: UrlView) => {
     const url = buildUrl(state);

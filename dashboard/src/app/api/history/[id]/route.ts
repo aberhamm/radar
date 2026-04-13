@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, loadRunEnvelope, loadRunFindings } from '@/lib/agentSession';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const slim = req.nextUrl.searchParams.get('slim') === '1';
   const session = getSession();
   const record = session.history.find(r => r.id === id);
 
@@ -26,7 +27,7 @@ export async function GET(
         metrics: record.result.metrics,
         terminationReason: record.result.terminationReason,
         briefMarkdown: record.result.briefMarkdown,
-        state: { findings: record.result.state?.findings ?? [] },
+        state: { findings: slim ? [] : (record.result.state?.findings ?? []) },
       },
     });
   }
@@ -37,7 +38,8 @@ export async function GET(
     return NextResponse.json({ error: 'Run data not found on disk' }, { status: 404 });
   }
 
-  const findings = loadRunFindings(record);
+  // Skip expensive findings load in slim mode (findings only needed for PDF export)
+  const findings = slim ? [] : loadRunFindings(record);
 
   return NextResponse.json({
     id: record.id,
