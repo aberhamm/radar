@@ -718,7 +718,7 @@ export default function DashboardPage() {
               <p className="text-sm text-secondary-label max-w-sm">{friendlyError(errorMessage)}</p>
               <button
                 onClick={handleNewRun}
-                className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+                className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
               >
                 Try Again
               </button>

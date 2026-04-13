@@ -409,7 +409,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
         className={`rounded-lg h-11 px-5 text-sm font-medium transition-all mt-1 ${
           buttonDisabled
             ? 'bg-elevated text-tertiary-label cursor-not-allowed'
-            : 'bg-tint text-white cursor-pointer hover:bg-[#0077ed] active:scale-[0.98]'
+            : 'bg-tint text-white cursor-pointer hover:brightness-110 active:scale-[0.98]'
         }`}
       >
         {buttonLabel}

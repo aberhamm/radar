@@ -292,7 +292,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                 className={`text-[10px] font-medium cursor-pointer transition-colors ${
                   compareMode
                     ? 'text-danger hover:text-[#ff2d20]'
-                    : 'text-tint hover:text-[#0077ed]'
+                    : 'text-tint hover:brightness-110'
                 }`}
               >
                 {compareMode ? 'Cancel' : 'Compare'}

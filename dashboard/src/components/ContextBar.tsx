@@ -88,13 +88,13 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
         <div className="flex items-center gap-2">
           <button
             onClick={() => onBudgetDecision(true)}
-            className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+            className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
           >
             Resume +50
           </button>
           <button
             onClick={() => onBudgetDecision(false)}
-            className="bg-elevated text-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[#e8e8ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
+            className="bg-elevated text-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
           >
             Finish Now
           </button>
@@ -118,7 +118,7 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
       {isReplaying && onViewReport && (
         <button
           onClick={onViewReport}
-          className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+          className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
         >
           View Report
         </button>
@@ -127,7 +127,7 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
       {isComplete && (
         <button
           onClick={onNewRun}
-          className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[#0077ed] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+          className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
         >
           New Run
         </button>
