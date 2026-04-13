@@ -26,7 +26,7 @@ interface AppRoot {
 
 interface IdleViewProps {
   initialRepoPath?: string;
-  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string) => void;
+  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string) => void;
   history?: HistoryRunItem[];
   compact?: boolean;
 }
@@ -252,13 +252,13 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
           ...(selectedRoot ? { appRoot: selectedRoot } : {}),
         }),
       });
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         setError(data.error || 'Failed to start run');
         setLoading(false);
         return;
       }
-      onStart(targetPath, goal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined);
+      onStart(targetPath, goal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined, data.runId);
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);

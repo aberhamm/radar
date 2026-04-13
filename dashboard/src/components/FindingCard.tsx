@@ -17,6 +17,8 @@ export function FindingCard({ finding, index }: { finding: Finding; index?: numb
 
   return (
     <div
+      id={`finding-${finding.id}`}
+      data-finding-category={finding.category ?? ''}
       className="rounded-lg overflow-hidden"
       style={{
         animation: `scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) ${(index ?? 0) * 60}ms both`,

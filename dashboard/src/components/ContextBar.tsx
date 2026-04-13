@@ -2,8 +2,16 @@
 
 import type { Scorecard } from '@/lib/agentSession';
 import { scoreColor } from '@/lib/utils';
+import type { Tab } from '@/lib/useUrlState';
 
 type ContextStatus = 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing';
+
+const TAB_LABELS: Record<Tab, string> = {
+  report: 'Report',
+  events: 'Events',
+  rules: 'Rules',
+  cost: 'Cost',
+};
 
 interface ContextBarProps {
   status: ContextStatus;
@@ -20,9 +28,11 @@ interface ContextBarProps {
   compareRunNames?: [string, string];
   compareSummary?: string;
   onExitCompare?: () => void;
+  /** Active tab for breadcrumb display */
+  activeTab?: Tab;
 }
 
-export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport, onViewReplay, onBudgetDecision, compareRunNames, compareSummary, onExitCompare }: ContextBarProps) {
+export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport, onViewReplay, onBudgetDecision, compareRunNames, compareSummary, onExitCompare, activeTab }: ContextBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
   const isReplaying = status === 'replaying';
@@ -74,11 +84,21 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
         </span>
       )}
 
-      {/* Goal — context, always last in the info group */}
+      {/* Goal — context */}
       {goal && (
         <span className="bg-[rgb(0_113_227/0.08)] rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
           {goal}
         </span>
+      )}
+
+      {/* Breadcrumb: section name (only for completed runs) */}
+      {isComplete && activeTab && (
+        <>
+          <span className="text-[11px] text-tertiary-label">/</span>
+          <span className="text-[11px] text-secondary-label font-medium">
+            {TAB_LABELS[activeTab]}
+          </span>
+        </>
       )}
 
       {/* Spacer */}

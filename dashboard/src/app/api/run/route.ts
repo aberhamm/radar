@@ -298,5 +298,5 @@ export async function POST(req: NextRequest) {
     abortController.abort();
   });
 
-  return NextResponse.json({ ok: true, repoName, goal });
+  return NextResponse.json({ ok: true, repoName, goal, runId });
 }

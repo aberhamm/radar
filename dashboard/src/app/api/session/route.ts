@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     })),
     hasMore: offset + records.length < totalCount,
     currentRun: session.currentRun ? {
+      id: session.currentRun.id,
       goal: session.currentRun.goal,
       repoName: session.currentRun.repoName,
       startedAt: session.currentRun.startedAt,

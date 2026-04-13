@@ -15,6 +15,7 @@ import {
 } from '@/lib/export';
 import { EventStream } from './EventStream';
 import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
+import type { Tab } from '@/lib/useUrlState';
 
 interface CompleteViewProps {
   briefMarkdown: string;
@@ -24,9 +25,11 @@ interface CompleteViewProps {
   goal: string;
   findings?: unknown[];
   runId?: string;
+  /** Controlled active tab (from URL state). */
+  activeTab?: Tab;
+  /** Callback when tab changes (syncs to URL). */
+  onTabChange?: (tab: Tab) => void;
 }
-
-type Tab = 'report' | 'events' | 'rules' | 'cost';
 
 // ─── Exec Summary Banner ───────────────────────────────────────
 
@@ -78,6 +81,17 @@ function ExecSummaryBanner({ scorecard, metrics }: { scorecard: Scorecard; metri
   );
 }
 
+function scrollToFinding(findingId: string) {
+  const el = document.getElementById(`finding-${findingId}`);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function scrollToCategory(category: string) {
+  // Find first finding element with data-category matching
+  const el = document.querySelector(`[data-finding-category="${category}"]`);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?: RunMetrics }) {
   return (
     <div className="mb-6">
@@ -114,9 +128,11 @@ function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?:
       {/* Category grid */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
         {scorecard.categories.map((cat: CategoryScore, i: number) => (
-          <div
+          <button
             key={`${cat.category}-${i}`}
-            className="bg-surface rounded-lg border border-separator shadow-sm p-3"
+            type="button"
+            onClick={() => scrollToCategory(cat.category)}
+            className="bg-surface rounded-lg border border-separator shadow-sm p-3 text-left cursor-pointer hover:border-tint/30 transition-colors"
           >
             <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-medium">
               {cat.category}
@@ -129,7 +145,7 @@ function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?:
                 {cat.findings.length} findings
               </span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -140,15 +156,17 @@ function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?:
             Top Risks
           </div>
           {scorecard.topRisks.slice(0, 3).map(risk => (
-            <div
+            <button
               key={risk.id}
-              className="bg-surface rounded-lg border border-separator shadow-sm p-3 mb-2 text-xs"
+              type="button"
+              onClick={() => scrollToFinding(risk.id)}
+              className="w-full text-left bg-surface rounded-lg border border-separator shadow-sm p-3 mb-2 text-xs cursor-pointer hover:border-danger/30 transition-colors"
             >
               <span className="text-danger font-bold mr-2">
                 [{risk.severity.toUpperCase()}]
               </span>
               <span className="text-label">{risk.title}</span>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -274,8 +292,9 @@ function CopiedToast({ visible }: { visible: boolean }) {
   );
 }
 
-export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId }: CompleteViewProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('report');
+export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId, activeTab: controlledTab, onTabChange }: CompleteViewProps) {
+  const [internalTab, setInternalTab] = useState<Tab>('report');
+  const activeTab = controlledTab ?? internalTab;
   const [copied, setCopied] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
   const [lazyEvents, setLazyEvents] = useState<StepEvent[] | null>(null);
@@ -284,7 +303,8 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
   const resolvedEvents = events.length > 0 ? events : lazyEvents ?? [];
 
   const handleTabChange = useCallback((tab: Tab) => {
-    setActiveTab(tab);
+    if (onTabChange) onTabChange(tab);
+    else setInternalTab(tab);
     if (tab === 'events' && events.length === 0 && !lazyEvents && !eventsLoading && runId) {
       setEventsLoading(true);
       fetch(`/api/history/${encodeURIComponent(runId)}/events`)
@@ -293,7 +313,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
         .catch(err => console.warn('[events] Failed to load:', err))
         .finally(() => setEventsLoading(false));
     }
-  }, [events, lazyEvents, eventsLoading, runId]);
+  }, [events, lazyEvents, eventsLoading, runId, onTabChange]);
 
   const flash = useCallback(() => {
     setCopied(true);

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { StepEvent, Scorecard, RunMetrics, RunResult, HistoryItem } from '@/lib/agentSession';
 import { transformRunData } from '@/lib/runTransform';
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
+import { useUrlState, buildUrl, type Tab } from '@/lib/useUrlState';
 import { ContextBar } from '@/components/ContextBar';
 import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -105,7 +106,10 @@ export default function DashboardPage() {
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [multiGoalData, setMultiGoalData] = useState<MultiGoalData | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<Tab>('report');
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
+  const { urlView, pushUrl, replaceUrl } = useUrlState();
+  const urlHandledRef = useRef(false);
 
   // Prepend sample run to history
   const fullHistory = useMemo(() => [SAMPLE_HISTORY_ITEM as HistoryItem, ...history], [history]);
@@ -117,7 +121,7 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // On mount, check session state
+  // On mount, check session state + handle initial URL
   useEffect(() => {
     fetch('/api/session')
       .then((r) => r.json())
@@ -137,17 +141,24 @@ export default function DashboardPage() {
               toolCalls: 0,
               budget: 45,
             });
+            setSelectedRunId(data.currentRun.id ?? null);
             setStatus(data.status);
             setIsSampleReplay(false);
+            // Push URL to match the running run
+            if (data.currentRun.id) {
+              pushUrl({ view: 'run', runId: data.currentRun.id });
+            }
             // Restore budget pause data so the overlay appears on reconnect
             if (data.status === 'budget_paused' && data.currentRun.budgetPausedData) {
               setBudgetPausedData(data.currentRun.budgetPausedData);
             }
+            urlHandledRef.current = true;
           }
         } else if (data.status === 'complete' && data.result) {
           setResult(data.result);
           setStatus('complete');
           setIsSampleReplay(false);
+          urlHandledRef.current = true;
         }
       })
       .catch((err) => {
@@ -156,9 +167,65 @@ export default function DashboardPage() {
       .finally(() => {
         setReady(true);
       });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleStart = useCallback((repoPath: string, goal: string, repoName?: string) => {
+  // After ready, handle URL-based initial navigation (deep link / shared URL)
+  useEffect(() => {
+    if (!ready || urlHandledRef.current) return;
+    urlHandledRef.current = true;
+
+    if (urlView.view === 'run' && urlView.runId) {
+      if (urlView.tab) setActiveTab(urlView.tab);
+      handleSelectHistory(urlView.runId);
+    } else if (urlView.view === 'compare') {
+      // Load compare directly from URL
+      (async () => {
+        setCompareLoading(true);
+        try {
+          const res = await fetch(`/api/compare?a=${encodeURIComponent(urlView.compareIds[0])}&b=${encodeURIComponent(urlView.compareIds[1])}`);
+          const data = await res.json();
+          if (res.ok) {
+            setCompareData(data as CompareData);
+            setStatus('comparing');
+          }
+        } catch (err) {
+          console.error('[url] Failed to load compare:', err);
+        } finally {
+          setCompareLoading(false);
+        }
+      })();
+    } else if (urlView.view === 'multi') {
+      handleSelectHistory(urlView.parentId);
+    }
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync URL when browser back/forward changes the pathname
+  useEffect(() => {
+    if (!ready) return;
+
+    // When URL changes externally (back/forward), sync internal state
+    if (urlView.view === 'idle' && status !== 'idle' && status !== 'running' && status !== 'budget_paused') {
+      setStatus('idle');
+      setResult(null);
+      setCurrentRun(null);
+      setReplayData(null);
+      setSelectedRunId(null);
+      setMultiGoalData(null);
+      setCompareData(null);
+    } else if (urlView.view === 'run' && urlView.runId && urlView.runId !== selectedRunId && status !== 'running') {
+      if (urlView.tab) setActiveTab(urlView.tab);
+      handleSelectHistory(urlView.runId);
+    }
+  }, [urlView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTabChange = useCallback((tab: Tab) => {
+    setActiveTab(tab);
+    if (selectedRunId) {
+      replaceUrl({ view: 'run', runId: selectedRunId, tab });
+    }
+  }, [selectedRunId, replaceUrl]);
+
+  const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string) => {
     const resolvedName = repoName ?? (repoPath.split(/[/\\]/).pop() || repoPath);
     setLastRepoPath(repoPath);
     setCurrentRun({
@@ -176,9 +243,15 @@ export default function DashboardPage() {
     setIsSampleReplay(false);
     setBudgetPausedData(null);
     setNewRunModal(false);
-    setSelectedRunId(null);
+    setSelectedRunId(runId ?? null);
     setMultiGoalData(null);
-  }, []);
+    setActiveTab('report');
+
+    // Push URL with runId so refresh reconnects
+    if (runId) {
+      pushUrl({ view: 'run', runId });
+    }
+  }, [pushUrl]);
 
   const handleNewEvent = useCallback((event: StepEvent) => {
     setCurrentRun((prev) => {
@@ -295,7 +368,9 @@ export default function DashboardPage() {
     setReplayData(null);
     setIsSampleReplay(false);
     setBudgetPausedData(null);
-  }, []);
+    setSelectedRunId(null);
+    pushUrl({ view: 'idle' });
+  }, [pushUrl]);
 
   const handleNewRun = useCallback(() => {
     setNewRunModal(true);
@@ -330,6 +405,7 @@ export default function DashboardPage() {
       setCompareData(data as CompareData);
       setStatus('comparing');
       setCompareMode(false);
+      pushUrl({ view: 'compare', compareIds: [compareSelections[0], compareSelections[1]] });
     } catch (err) {
       console.error('[compare] Fetch error:', err);
     } finally {
@@ -357,7 +433,8 @@ export default function DashboardPage() {
     setCompareData(null);
     setCompareSelections([]);
     setCompareMode(false);
-  }, []);
+    pushUrl({ view: 'idle' });
+  }, [pushUrl]);
 
   const handleSelectHistory = useCallback(async (id: string) => {
     // In compare mode, delegate to compare select
@@ -383,6 +460,7 @@ export default function DashboardPage() {
       setIsSampleReplay(true);
       setSelectedRunId(id);
       setStatus('replaying');
+      pushUrl({ view: 'run', runId: id });
       return;
     }
 
@@ -400,6 +478,7 @@ export default function DashboardPage() {
         setMultiGoalData(data as MultiGoalData);
         setSelectedRunId(id);
         setStatus('multigoal');
+        pushUrl({ view: 'multi', parentId: id });
       } catch (err) {
         console.error('[history] Failed to load group:', id, err);
       } finally {
@@ -440,12 +519,14 @@ export default function DashboardPage() {
       setIsSampleReplay(false);
       setSelectedRunId(id);
       setStatus('complete');
+      setActiveTab('report');
+      pushUrl({ view: 'run', runId: id });
     } catch (err) {
       console.error('[history] Failed to load run:', id, err);
     } finally {
       setHistoryLoading(false);
     }
-  }, [compareMode, handleCompareSelect, history]);
+  }, [compareMode, handleCompareSelect, history, pushUrl]);
 
   const handleViewReport = useCallback(() => {
     setStatus('complete');
@@ -635,6 +716,7 @@ export default function DashboardPage() {
           onViewReport={isSampleReplay || !result ? undefined : handleViewReport}
           onViewReplay={replayData && !isSampleReplay ? handleViewReplay : undefined}
           onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
+          activeTab={activeTab}
         />
       )}
 
@@ -656,6 +738,10 @@ export default function DashboardPage() {
           onCompare={handleCompare}
           hasMore={hasMoreHistory}
           onLoadMore={handleLoadMore}
+          activeTab={activeTab}
+          onSectionClick={handleTabChange}
+          showSections={(status === 'complete' || status === 'error') && !!result}
+          compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden relative" aria-label="Main content">
@@ -714,6 +800,8 @@ export default function DashboardPage() {
                 goal={currentRun.goal}
                 findings={result.state?.findings}
                 runId={selectedRunId ?? undefined}
+                activeTab={activeTab}
+                onTabChange={handleTabChange}
               />
             </div>
           )}

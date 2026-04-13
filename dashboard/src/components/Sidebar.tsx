@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import type { HistoryItem } from '@/lib/agentSession';
+import type { Tab } from '@/lib/useUrlState';
 
 interface SidebarProps {
   open: boolean;
@@ -20,83 +21,154 @@ interface SidebarProps {
   onCompare?: () => void;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  /** Active tab in CompleteView, for section nav highlighting */
+  activeTab?: Tab;
+  /** Callback when section nav item is clicked */
+  onSectionClick?: (tab: Tab) => void;
+  /** Whether a completed run is being viewed (shows section nav) */
+  showSections?: boolean;
+  /** Compare mode: IDs of the two runs being compared, for dual highlight */
+  compareHighlight?: [string, string] | null;
 }
 
-/** Group history items: entries with parentRunId collapse under a parent row. */
-function groupHistory(items: HistoryItem[]): Array<{
-  type: 'single' | 'group';
+// ─── Types for grouped history ──────────────────────────────────
+
+type ScoreLevel = 'red' | 'yellow' | 'green';
+
+interface MultiGoalGroup {
+  type: 'multigoal';
+  parentId: string;
   item: HistoryItem;
-  children?: HistoryItem[];
-  worstScore?: 'red' | 'yellow' | 'green' | null;
-}> {
-  const groups = new Map<string, HistoryItem[]>();
-  const singles: HistoryItem[] = [];
-
-  for (const item of items) {
-    if (item.parentRunId) {
-      const existing = groups.get(item.parentRunId) ?? [];
-      existing.push(item);
-      groups.set(item.parentRunId, existing);
-    } else {
-      singles.push(item);
-    }
-  }
-
-  const result: Array<{
-    type: 'single' | 'group';
-    item: HistoryItem;
-    children?: HistoryItem[];
-    worstScore?: 'red' | 'yellow' | 'green' | null;
-  }> = [];
-
-  // Interleave groups and singles by startedAt
-  const allEntries: Array<{ key: string; startedAt: string; isGroup: boolean }> = [];
-
-  for (const item of singles) {
-    allEntries.push({ key: item.id, startedAt: item.startedAt, isGroup: false });
-  }
-  for (const [parentId, children] of groups) {
-    const earliest = children.reduce((min, c) => c.startedAt < min ? c.startedAt : min, children[0].startedAt);
-    allEntries.push({ key: parentId, startedAt: earliest, isGroup: true });
-  }
-
-  // Sort newest first
-  allEntries.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-
-  for (const entry of allEntries) {
-    if (entry.isGroup) {
-      const children = groups.get(entry.key)!;
-      const scoreOrder: Record<string, number> = { red: 3, yellow: 2, green: 1 };
-      const worstScore = children.reduce<'red' | 'yellow' | 'green' | null>((worst, c) => {
-        if (!c.score) return worst;
-        if (!worst) return c.score;
-        return (scoreOrder[c.score] ?? 0) > (scoreOrder[worst] ?? 0) ? c.score : worst;
-      }, null);
-
-      // Use first child as the representative item for the group
-      const rep = children[0];
-      result.push({
-        type: 'group',
-        item: {
-          ...rep,
-          id: entry.key,       // Use parentRunId as the group ID
-          goal: 'all',
-        },
-        children,
-        worstScore,
-      });
-    } else {
-      const item = singles.find(s => s.id === entry.key)!;
-      result.push({ type: 'single', item });
-    }
-  }
-
-  return result;
+  children: HistoryItem[];
+  worstScore?: ScoreLevel | null;
 }
 
-export function Sidebar({ open, history, activeRunId, currentRepoName, currentGoal, isRunning, onSelectHistory, onNewRun, onClose, compareMode, compareSelections = [], onToggleCompare, onCompareSelect, onCompare, hasMore, onLoadMore }: SidebarProps) {
+interface SingleRun {
+  type: 'single';
+  item: HistoryItem;
+}
+
+type RunEntry = MultiGoalGroup | SingleRun;
+
+export interface RepoGroup {
+  repoName: string;
+  latestStartedAt: string;
+  runs: RunEntry[];
+  worstScore?: ScoreLevel | null;
+}
+
+const SCORE_ORDER: Record<string, number> = { red: 3, yellow: 2, green: 1 };
+
+function worstOf(a: ScoreLevel | null | undefined, b: ScoreLevel | null | undefined): ScoreLevel | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return (SCORE_ORDER[b] ?? 0) > (SCORE_ORDER[a] ?? 0) ? b : a;
+}
+
+/** Group history items by repo, then by parentRunId within each repo. */
+export function groupByRepo(items: HistoryItem[]): RepoGroup[] {
+  // Separate sample runs (not grouped by repo)
+  const sampleItems: HistoryItem[] = [];
+  const realItems: HistoryItem[] = [];
+  for (const item of items) {
+    if (item.id === '__sample__') sampleItems.push(item);
+    else realItems.push(item);
+  }
+
+  // Step 1: group by parentRunId (multi-goal groups)
+  const multiGoalGroups = new Map<string, HistoryItem[]>();
+  const ungrouped: HistoryItem[] = [];
+
+  for (const item of realItems) {
+    if (item.parentRunId) {
+      const existing = multiGoalGroups.get(item.parentRunId) ?? [];
+      existing.push(item);
+      multiGoalGroups.set(item.parentRunId, existing);
+    } else {
+      ungrouped.push(item);
+    }
+  }
+
+  // Step 2: build RunEntry list
+  const entries: RunEntry[] = [];
+
+  for (const item of ungrouped) {
+    // Check if this item IS a multi-goal parent (other items reference its id)
+    const isGroupParent = realItems.some(h => h.parentRunId === item.id);
+    if (isGroupParent) continue; // children will form the group
+    entries.push({ type: 'single', item });
+  }
+
+  for (const [parentId, children] of multiGoalGroups) {
+    const ws = children.reduce<ScoreLevel | null>((worst, c) => worstOf(worst, c.score as ScoreLevel | null), null);
+    const rep = children[0];
+    entries.push({
+      type: 'multigoal',
+      parentId,
+      item: { ...rep, id: parentId, goal: 'all' },
+      children,
+      worstScore: ws,
+    });
+  }
+
+  // Step 3: group by repoName
+  const repoMap = new Map<string, RunEntry[]>();
+  for (const entry of entries) {
+    const name = entry.item.repoName;
+    const existing = repoMap.get(name) ?? [];
+    existing.push(entry);
+    repoMap.set(name, existing);
+  }
+
+  // Step 4: build RepoGroup array, sorted by most recent first
+  const repoGroups: RepoGroup[] = [];
+  for (const [repoName, runs] of repoMap) {
+    const latest = runs.reduce((max, r) => {
+      const t = r.item.startedAt;
+      return t > max ? t : max;
+    }, '');
+    const ws = runs.reduce<ScoreLevel | null>((worst, r) => {
+      if (r.type === 'multigoal') return worstOf(worst, r.worstScore);
+      return worstOf(worst, r.item.score as ScoreLevel | null);
+    }, null);
+    repoGroups.push({ repoName, latestStartedAt: latest, runs, worstScore: ws });
+  }
+
+  repoGroups.sort((a, b) => b.latestStartedAt.localeCompare(a.latestStartedAt));
+
+  // Add sample runs as a special "group" at the end
+  if (sampleItems.length > 0) {
+    repoGroups.push({
+      repoName: sampleItems[0].repoName,
+      latestStartedAt: sampleItems[0].startedAt,
+      runs: sampleItems.map(item => ({ type: 'single' as const, item })),
+      worstScore: null,
+    });
+  }
+
+  return repoGroups;
+}
+
+export function Sidebar({ open, history, activeRunId, currentRepoName, currentGoal, isRunning, onSelectHistory, onNewRun, onClose, compareMode, compareSelections = [], onToggleCompare, onCompareSelect, onCompare, hasMore, onLoadMore, activeTab, onSectionClick, showSections, compareHighlight }: SidebarProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const grouped = useMemo(() => groupHistory(history), [history]);
+  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
+  const repoGroups = useMemo(() => groupByRepo(history), [history]);
+
+  // Auto-expand the most recent repo
+  useMemo(() => {
+    if (repoGroups.length > 0 && expandedRepos.size === 0) {
+      setExpandedRepos(new Set([repoGroups[0].repoName]));
+    }
+  }, [repoGroups.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleRepo = (repoName: string) => {
+    setExpandedRepos(prev => {
+      const next = new Set(prev);
+      if (next.has(repoName)) next.delete(repoName);
+      else next.add(repoName);
+      return next;
+    });
+  };
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroups(prev => {
@@ -257,7 +329,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                 )}
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <span
-                    className="w-1.5 h-1.5 rounded-full bg-[#34c759] shrink-0"
+                    className="w-1.5 h-1.5 rounded-full bg-success shrink-0"
                     style={{ animation: 'pulse-dot 2s ease-in-out infinite' }}
                   />
                   <span className="text-[10px] text-success font-medium">Running</span>
@@ -281,6 +353,35 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
             </div>
           )}
 
+          {/* Section navigation (visible when viewing a completed run) */}
+          {showSections && onSectionClick && (
+            <div className="px-4 pt-3 pb-2">
+              <div className="text-[10px] uppercase tracking-widest text-tertiary-label font-semibold mb-2">
+                Sections
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {([
+                  { id: 'report' as Tab, label: 'Report' },
+                  { id: 'events' as Tab, label: 'Events' },
+                  { id: 'rules' as Tab, label: 'Rules' },
+                  { id: 'cost' as Tab, label: 'Cost' },
+                ]).map(section => (
+                  <button
+                    key={section.id}
+                    onClick={() => onSectionClick(section.id)}
+                    className={`text-left rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors cursor-pointer ${
+                      activeTab === section.id
+                        ? 'bg-[rgb(0_113_227/0.08)] text-tint'
+                        : 'text-secondary-label hover:text-label hover:bg-surface'
+                    }`}
+                  >
+                    {section.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* History */}
           <div className="px-4 pt-3 pb-2 flex items-center justify-between">
             <div className="text-[10px] uppercase tracking-widest text-tertiary-label font-semibold">
@@ -301,33 +402,111 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4">
-            {grouped.length === 0 && (
+            {repoGroups.length === 0 && (
               <div className="text-xs text-tertiary-label py-3">
                 No previous runs
               </div>
             )}
             <div className="flex flex-col gap-1">
-              {grouped.map(entry => {
-                if (entry.type === 'single') {
-                  return renderHistoryRow(entry.item);
+              {repoGroups.map(repoGroup => {
+                const isSingleRunRepo = repoGroup.runs.length === 1 && repoGroup.runs[0].type === 'single';
+                const repoExpanded = expandedRepos.has(repoGroup.repoName);
+                const scoreDot = repoGroup.worstScore === 'red'
+                  ? 'bg-danger'
+                  : repoGroup.worstScore === 'yellow'
+                    ? 'bg-warning'
+                    : repoGroup.worstScore === 'green'
+                      ? 'bg-success'
+                      : null;
+
+                // Single-run repos render directly (no expand/collapse)
+                if (isSingleRunRepo) {
+                  const entry = repoGroup.runs[0] as SingleRun;
+                  const isCompareHighlighted = compareHighlight?.includes(entry.item.id);
+                  const badgeIndex = compareHighlight ? compareHighlight.indexOf(entry.item.id) : -1;
+                  return (
+                    <div key={entry.item.id} className="relative">
+                      {renderHistoryRow(entry.item)}
+                      {isCompareHighlighted && (
+                        <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-tint text-white text-[9px] font-bold flex items-center justify-center">
+                          {badgeIndex + 1}
+                        </span>
+                      )}
+                    </div>
+                  );
                 }
 
-                // Multi-goal group
-                const groupId = entry.item.id;
-                const expanded = expandedGroups.has(groupId);
+                // Multi-run repos get a collapsible header
                 return (
-                  <div key={groupId}>
-                    {renderHistoryRow(entry.item, {
-                      isGroupHeader: true,
-                      expanded,
-                      groupId,
-                      worstScore: entry.worstScore,
-                    })}
-                    {expanded && entry.children && (
-                      <div className="flex flex-col gap-0.5 mt-0.5">
-                        {entry.children.map(child =>
-                          renderHistoryRow(child, { isChild: true }),
-                        )}
+                  <div key={repoGroup.repoName}>
+                    <button
+                      onClick={() => toggleRepo(repoGroup.repoName)}
+                      className="w-full text-left rounded-lg p-2.5 min-h-touch transition-all hover:bg-surface cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <svg
+                          className={`w-3 h-3 text-tertiary-label shrink-0 transition-transform ${repoExpanded ? 'rotate-90' : ''}`}
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M4 2l4 4-4 4" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-semibold text-label truncate group-hover:text-label">
+                            {repoGroup.repoName}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-tertiary-label">
+                              {repoGroup.runs.length} run{repoGroup.runs.length !== 1 ? 's' : ''}
+                            </span>
+                            {scoreDot && (
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+
+                    {repoExpanded && (
+                      <div className="flex flex-col gap-0.5 mt-0.5 ml-2">
+                        {repoGroup.runs.map(entry => {
+                          if (entry.type === 'single') {
+                            const isCompareHighlighted = compareHighlight?.includes(entry.item.id);
+                            const badgeIndex = compareHighlight ? compareHighlight.indexOf(entry.item.id) : -1;
+                            return (
+                              <div key={entry.item.id} className="relative">
+                                {renderHistoryRow(entry.item, { isChild: true })}
+                                {isCompareHighlighted && (
+                                  <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-tint text-white text-[9px] font-bold flex items-center justify-center">
+                                    {badgeIndex + 1}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          // Multi-goal group within repo
+                          const groupId = entry.parentId;
+                          const expanded = expandedGroups.has(groupId);
+                          return (
+                            <div key={groupId}>
+                              {renderHistoryRow(entry.item, {
+                                isGroupHeader: true,
+                                expanded,
+                                groupId,
+                                worstScore: entry.worstScore,
+                                isChild: true,
+                              })}
+                              {expanded && entry.children && (
+                                <div className="flex flex-col gap-0.5 mt-0.5 ml-3">
+                                  {entry.children.map(child =>
+                                    renderHistoryRow(child, { isChild: true }),
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
