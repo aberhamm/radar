@@ -100,7 +100,7 @@ Six analysis goals, each with its own rules file and prompt:
 
 ```
 radar analyze --repo <path> [--goal <type>] [--platform <name>] [--budget <n>]
-              [--output <dir>] [--verbose] [--json] [--export]
+              [--output <dir>] [--verbose] [--json] [--export] [--export-pdf]
               [--github-output] [--pr <number>] [--dry-run]
 radar compare --repos <path1> <path2> [--goal <type>] [--budget <n>]
 radar diff <run-a.json> <run-b.json>
@@ -112,6 +112,7 @@ radar dashboard [--port <port>]
 Key flags:
 - `--json` — Compact CI summary to stdout (status, score, findings count, top risks, ciOperations)
 - `--export` — Full `FullExport` JSON to stdout (all findings, investigation log, metrics, sections)
+- `--export-pdf` — Generate client-ready PDF report (cover page, exec summary, scorecard, findings)
 - CI integration auto-detects platform (GitHub Actions / Azure DevOps) from env vars and runs PR comments, annotations, SARIF, labels, quality gates, and trend tracking automatically
 
 ## Testing

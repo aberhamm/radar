@@ -224,7 +224,7 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 ### Accepted (build these)
 
 - [x] **Provider abstraction** — `src/config/providerConfig.ts` supports `portkey`, `openai`, `azure-openai`, `generic` (any OpenAI-compatible endpoint). Auto-detects from env vars. 23 tests. Backward-compatible via re-export in `portkeyConfig.ts`. **P1** — done.
-- [ ] **Client-ready PDF export** — See Next Steps section for current status. **P1** — blocks client delivery.
+- [x] **Client-ready PDF export** — `src/output/pdfExport.ts` (pdfkit renderer: cover page, exec summary, scorecard table, findings detail). CLI `--export-pdf` flag + dashboard "Export PDF" button via `/api/export-pdf` route. 12 tests. **P1** — done 2026-04-13.
 - [x] **Executive summary** — `src/output/executiveSummary.ts` renders deterministic exec summary from scorecard + metrics. Prepended to brief markdown. 14 tests. **P1** — done.
 - [x] **Generic platform mode** — `goal-audit-generic.md` rules + generic references + 7-category scorecard. Works on any web framework, not just Sitecore/Optimizely. Dashboard goal selector updated. Validated against vercel/commerce (YELLOW, 8 findings, $1.08). **P2** — done.
 - [ ] **Marketing positioning doc** — 1-page business-language doc for practice leads and sales. What Radar does, cost, time savings, engagement lifecycle fit. **P2** — blocks leadership awareness.
@@ -241,18 +241,19 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 
 ## Next Steps (2026-04-13)
 
-Recent work: evidence verification with sourceContext, per-pass budget tracking, executive summary, gauntlet command, design system.
+Recent work: client-ready PDF export (CLI + dashboard), evidence verification with sourceContext, per-pass budget tracking, executive summary, gauntlet command, design system.
 
 ### Ship blockers (before April 26 demo)
 
 - [x] **Gauntlet validation run** — 15 runs, 5 repos, 3 goals each. All pass gates. See `output/gauntlet-results.jsonl`. **P0** — done 2026-04-12.
 - [x] **Evidence quality audit** — 0 unverifiable evidence across all 15 gauntlet runs. Unsupported findings (description claims not in evidence): 22/143 total findings (~15%), mostly in security-review and audit goals. Prompt tuning opportunity but not blocking. **P1** — done (validated).
 - [ ] **Budget allocation tuning** — Current 70/15/15 split for Core/Next.js/A11y. After gauntlet, check which passes consistently exhaust budget vs finish early. Redistribute if specialists are starved. Consider making the split configurable via `--pass-budgets 70,15,15`. **P2** — data-driven, needs gauntlet results first.
-- [ ] **Client-ready PDF export** — `--export-pdf` flag with exec summary + scorecard + findings. Executive summary renderer is done, PDF renderer is not. **P1** — blocks client delivery.
+- [x] **Client-ready PDF export** — `--export-pdf` flag + dashboard "Export PDF" button. pdfkit renderer with cover page, exec summary bar, scorecard table, findings by severity. 12 tests. **P1** — done 2026-04-13.
 - [x] **Dashboard design implementation** — All 9 items shipped (`1a506dc`). **P1** — done 2026-04-12.
 
 ### Post-demo improvements
 
+- [ ] **Run history should land on reports page** — Clicking a run in the history sidebar currently lands on the empty run page with the replay button. Should land on the overview/reports page instead. The replay ("View Run") button should be linked from the report page, not be the default landing. **P1** — core navigation UX, confusing first impression.
 - [ ] **URL-based routing for dashboard** — CRITICAL gap found by /design-review (2026-04-13). Entire dashboard is ephemeral React state with zero URL routing. Users can't bookmark, share, or deep-link to runs/findings/evidence. Browser back/forward don't work. CI comments can't link to specific findings. Needs: Next.js app router routes (`/run/[id]`, `/run/[id]/finding/[fid]`, `/compare/[a]/[b]`), URL state sync, and pushState on navigation. **P1** — blocks consulting delivery (findings must be shareable artifacts).
 - [ ] **Sidebar section navigation** — HIGH gap from /design-review (2026-04-13). Sidebar only shows run history. When viewing a completed run, should show contextual section nav: jump to scorecard, category findings, evidence, cost. Collapsible "Sections" group above history list. **P1** — blocks usable report navigation.
 - [ ] **Cross-linking findings/evidence/reports** — HIGH gap from /design-review (2026-04-13). FindingCard file paths are display-only text (not clickable). Finding IDs not linkable. Scorecard categories don't link to filtered findings. Three disconnected renderings of the same data. **P1** — blocks consulting workflow (practice leads need to click through from summary to detail).
