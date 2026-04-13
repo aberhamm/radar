@@ -49,6 +49,7 @@ program
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .option('--json', 'Output summary as JSON (for CI integration)')
   .option('--export', 'Output full JSON export to stdout')
+  .option('--export-pdf', 'Generate client-ready PDF report')
   .option('--github-output', 'Post results to GitHub (issue or PR comment)')
   .option('--pr <number>', 'PR number for ci-check goal comments', parseInt)
   .option('--resume <path>', 'Resume from a checkpoint file (path to .jsonl)')

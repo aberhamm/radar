@@ -8,6 +8,7 @@ import {
   copyToClipboard,
   buildReportMarkdown,
   exportReportMarkdown,
+  exportReportPDF,
   exportEventsCSV,
   exportCostCSV,
   costToMarkdown,
@@ -21,6 +22,7 @@ interface CompleteViewProps {
   metrics: RunMetrics;
   events: StepEvent[];
   goal: string;
+  findings?: unknown[];
 }
 
 type Tab = 'report' | 'events' | 'rules' | 'cost';
@@ -271,9 +273,10 @@ function CopiedToast({ visible }: { visible: boolean }) {
   );
 }
 
-export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }: CompleteViewProps) {
+export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings }: CompleteViewProps) {
   const [activeTab, setActiveTab] = useState<Tab>('report');
   const [copied, setCopied] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   const flash = useCallback(() => {
     setCopied(true);
@@ -326,6 +329,19 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal }
               <ExportButton
                 label="Export .md"
                 onClick={() => exportReportMarkdown(briefMarkdown, scorecard)}
+              />
+              <ExportButton
+                label={pdfExporting ? 'Exporting...' : 'Export PDF'}
+                onClick={async () => {
+                  setPdfExporting(true);
+                  try {
+                    await exportReportPDF(scorecard, findings ?? [], metrics);
+                  } catch (err) {
+                    console.error('PDF export failed:', err);
+                  } finally {
+                    setPdfExporting(false);
+                  }
+                }}
               />
             </>
           )}

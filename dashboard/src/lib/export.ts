@@ -4,6 +4,10 @@ import type { Scorecard, RunMetrics, StepEvent, CategoryScore } from './agentSes
 
 function downloadBlob(content: string, filename: string, mime: string) {
   const blob = new Blob([content], { type: mime });
+  downloadBlobObj(blob, filename);
+}
+
+function downloadBlobObj(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -147,4 +151,26 @@ export function costToMarkdown(metrics: RunMetrics): string {
 
 export function exportCostCSV(metrics: RunMetrics, repoName: string) {
   downloadBlob(costToCSV(metrics), `${repoName}-cost.csv`, 'text/csv');
+}
+
+// ── Report (PDF) ──────────────────────────────────────────────
+
+export async function exportReportPDF(
+  scorecard: Scorecard,
+  findings: unknown[],
+  metrics: RunMetrics,
+): Promise<void> {
+  const res = await fetch('/api/export-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scorecard, findings, metrics }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`PDF export failed: ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const slug = scorecard.repoName.replace(/[^a-zA-Z0-9-]/g, '-');
+  downloadBlobObj(blob, `${slug}-report.pdf`);
 }

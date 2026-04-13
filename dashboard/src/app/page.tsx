@@ -63,6 +63,7 @@ interface CompletedResult {
   metrics: RunMetrics;
   terminationReason: string;
   briefMarkdown: string;
+  state?: { findings: unknown[] };
 }
 
 interface HistoryRunData {
@@ -693,6 +694,7 @@ export default function DashboardPage() {
                 metrics={result.metrics}
                 events={currentRun.events}
                 goal={currentRun.goal}
+                findings={result.state?.findings}
               />
             </div>
           )}
