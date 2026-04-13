@@ -15,13 +15,14 @@ interface ContextBarProps {
   onStop: () => void;
   onNewRun: () => void;
   onViewReport?: () => void;
+  onViewReplay?: () => void;
   onBudgetDecision?: (extend: boolean) => void;
   compareRunNames?: [string, string];
   compareSummary?: string;
   onExitCompare?: () => void;
 }
 
-export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport, onBudgetDecision, compareRunNames, compareSummary, onExitCompare }: ContextBarProps) {
+export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onNewRun, onViewReport, onViewReplay, onBudgetDecision, compareRunNames, compareSummary, onExitCompare }: ContextBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
   const isReplaying = status === 'replaying';
@@ -125,12 +126,22 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
       )}
 
       {isComplete && (
-        <button
-          onClick={onNewRun}
-          className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
-        >
-          New Run
-        </button>
+        <div className="flex items-center gap-2">
+          {onViewReplay && (
+            <button
+              onClick={onViewReplay}
+              className="bg-elevated text-secondary-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:text-label hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
+            >
+              View Run
+            </button>
+          )}
+          <button
+            onClick={onNewRun}
+            className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+          >
+            New Run
+          </button>
+        </div>
       )}
 
       {isComparing && (

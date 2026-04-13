@@ -422,7 +422,7 @@ export default function DashboardPage() {
         repoName: data.repoName,
         goal: data.goal,
         startedAt: data.startedAt,
-        events: data.events ?? [],
+        events: [],
         result: data.result,
       };
       setReplayData(runData);
@@ -432,14 +432,14 @@ export default function DashboardPage() {
         repoName: data.repoName,
         goal: data.goal,
         startedAt: new Date(data.startedAt),
-        events: data.events ?? [],
-        toolCalls: data.events?.length ?? 0,
+        events: [],
+        toolCalls: data.result.metrics?.toolCalls ?? 0,
         budget: data.result.metrics?.toolCalls ?? 45,
       });
       setBudgetPausedData(null);
       setIsSampleReplay(false);
       setSelectedRunId(id);
-      setStatus('replaying');
+      setStatus('complete');
     } catch (err) {
       console.error('[history] Failed to load run:', id, err);
     } finally {
@@ -450,6 +450,23 @@ export default function DashboardPage() {
   const handleViewReport = useCallback(() => {
     setStatus('complete');
   }, []);
+
+  const handleViewReplay = useCallback(async () => {
+    if (selectedRunId && replayData && replayData.events.length === 0) {
+      try {
+        const r = await fetch(`/api/history/${encodeURIComponent(selectedRunId)}/events`);
+        const data = await r.json();
+        if (data.events) {
+          const updated = { ...replayData, events: data.events };
+          setReplayData(updated);
+          setCurrentRun(prev => prev ? { ...prev, events: data.events } : prev);
+        }
+      } catch (err) {
+        console.warn('[replay] Failed to load events:', err);
+      }
+    }
+    setStatus('replaying');
+  }, [selectedRunId, replayData]);
 
   /** Called when user clicks a goal card in MultiGoalView */
   const handleSelectGoalFromMulti = useCallback((goalId: string, _goal: string) => {
@@ -616,6 +633,7 @@ export default function DashboardPage() {
           onStop={handleStop}
           onNewRun={handleNewRun}
           onViewReport={isSampleReplay || !result ? undefined : handleViewReport}
+          onViewReplay={replayData && !isSampleReplay ? handleViewReplay : undefined}
           onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
         />
       )}
@@ -695,6 +713,7 @@ export default function DashboardPage() {
                 events={currentRun.events}
                 goal={currentRun.goal}
                 findings={result.state?.findings}
+                runId={selectedRunId ?? undefined}
               />
             </div>
           )}

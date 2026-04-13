@@ -23,6 +23,7 @@ interface CompleteViewProps {
   events: StepEvent[];
   goal: string;
   findings?: unknown[];
+  runId?: string;
 }
 
 type Tab = 'report' | 'events' | 'rules' | 'cost';
@@ -112,9 +113,9 @@ function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?:
 
       {/* Category grid */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
-        {scorecard.categories.map((cat: CategoryScore) => (
+        {scorecard.categories.map((cat: CategoryScore, i: number) => (
           <div
-            key={cat.category}
+            key={`${cat.category}-${i}`}
             className="bg-surface rounded-lg border border-separator shadow-sm p-3"
           >
             <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-medium">
@@ -273,10 +274,26 @@ function CopiedToast({ visible }: { visible: boolean }) {
   );
 }
 
-export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings }: CompleteViewProps) {
+export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId }: CompleteViewProps) {
   const [activeTab, setActiveTab] = useState<Tab>('report');
   const [copied, setCopied] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
+  const [lazyEvents, setLazyEvents] = useState<StepEvent[] | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
+  const resolvedEvents = events.length > 0 ? events : lazyEvents ?? [];
+
+  const handleTabChange = useCallback((tab: Tab) => {
+    setActiveTab(tab);
+    if (tab === 'events' && events.length === 0 && !lazyEvents && !eventsLoading && runId) {
+      setEventsLoading(true);
+      fetch(`/api/history/${encodeURIComponent(runId)}/events`)
+        .then(r => r.json())
+        .then(data => { if (data.events) setLazyEvents(data.events); })
+        .catch(err => console.warn('[events] Failed to load:', err))
+        .finally(() => setEventsLoading(false));
+    }
+  }, [events, lazyEvents, eventsLoading, runId]);
 
   const flash = useCallback(() => {
     setCopied(true);
@@ -303,7 +320,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
               key={tab.id}
               role="tab"
               aria-selected={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`px-5 py-1.5 min-w-[72px] min-h-touch rounded-md text-[13px] font-medium transition-all cursor-pointer ${
                 activeTab === tab.id
                   ? 'bg-surface text-label shadow-sm'
@@ -351,7 +368,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
           {activeTab === 'events' && (
             <ExportButton
               label="Export CSV"
-              onClick={() => exportEventsCSV(events, scorecard.repoName)}
+              onClick={() => exportEventsCSV(resolvedEvents, scorecard.repoName)}
             />
           )}
 
@@ -387,14 +404,18 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
 
           {activeTab === 'events' && (
             <div className="flex-1 flex flex-col">
-              <EventStream
-                events={events}
-                onNewEvent={() => {}}
-                onBudgetPaused={() => {}}
-                onRunComplete={() => {}}
-                onRunError={() => {}}
-                readonly
-              />
+              {eventsLoading ? (
+                <div className="p-6 text-tertiary-label text-sm">Loading events...</div>
+              ) : (
+                <EventStream
+                  events={resolvedEvents}
+                  onNewEvent={() => {}}
+                  onBudgetPaused={() => {}}
+                  onRunComplete={() => {}}
+                  onRunError={() => {}}
+                  readonly
+                />
+              )}
             </div>
           )}
 
