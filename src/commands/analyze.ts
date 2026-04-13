@@ -7,6 +7,7 @@ import { buildGoalPrompt } from '../agent/goalPrompts.js';
 import { cloneRepo } from '../tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from '../tools/dependency/queryNpmVersions.js';
 import { formatVerboseStep } from '../output/verboseFormatter.js';
+import { renderPdf } from '../output/pdfExport.js';
 import { detectCiPlatform } from '../ci/adapter.js';
 import { orchestrateCi } from '../ci/orchestrator.js';
 import type { GoalType } from '../types/state.js';
@@ -24,6 +25,7 @@ export async function handleAnalyze(opts: {
   verbose?: boolean;
   json?: boolean;
   export?: boolean;
+  exportPdf?: boolean;
   githubOutput?: boolean;
   pr?: number;
   resume?: string;
@@ -225,6 +227,19 @@ export async function handleAnalyze(opts: {
   for (const p of result.outputPaths) {
     console.log(`  ✓ ${p}`);
   }
+
+  // PDF export
+  if (opts.exportPdf) {
+    const slug = repoName.replace(/[^a-zA-Z0-9-]/g, '-');
+    const pdfPath = path.join(outputDir, `${slug}-report.pdf`);
+    await renderPdf(pdfPath, {
+      scorecard: result.scorecard,
+      findings: result.state.findings,
+      metrics: result.metrics,
+    });
+    console.log(`  ✓ ${pdfPath} (PDF)`);
+  }
+
   // Show checkpoint path if one was written
   const checkpointFile = path.join(outputDir, `${repoName.replace(/[^a-zA-Z0-9_-]/g, '-')}-checkpoint.jsonl`);
   if (fs.existsSync(checkpointFile)) {
