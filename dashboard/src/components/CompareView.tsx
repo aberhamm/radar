@@ -74,8 +74,8 @@ function deltaLabel(a?: ScoreLevel, b?: ScoreLevel): { text: string; color: stri
   if (!a || !b) return { text: '--', color: 'var(--color-tertiary-label)' };
   if (a === b) return { text: '=', color: 'var(--color-tertiary-label)' };
   const diff = SCORE_NUMERIC[b] - SCORE_NUMERIC[a];
-  if (diff > 0) return { text: `+${diff}`, color: '#34c759' };
-  return { text: `${diff}`, color: '#ff3b30' };
+  if (diff > 0) return { text: `+${diff}`, color: 'var(--color-success)' };
+  return { text: `${diff}`, color: 'var(--color-danger)' };
 }
 
 type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -272,13 +272,13 @@ function FindingsTab({ data }: { data: CompareData }) {
       <DiffSection
         label="New Findings"
         findings={diff.newFindings}
-        borderColor="#34c759"
+        borderColor="var(--color-success)"
         defaultOpen
       />
       <DiffSection
         label="Resolved Findings"
         findings={diff.resolvedFindings}
-        borderColor="#ff3b30"
+        borderColor="var(--color-danger)"
         defaultOpen
       />
       <DiffSection

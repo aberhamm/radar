@@ -88,11 +88,11 @@ function parseFinding(ev: StepEvent): { id: string; category: string; severity: 
 
 function severityColor(sev: string): string {
   switch (sev) {
-    case 'critical': return '#ff3b30';
-    case 'high': return '#ff3b30';
-    case 'medium': return '#ff9500';
-    case 'low': return '#34c759';
-    default: return '#86868b';
+    case 'critical': return 'var(--color-danger)';
+    case 'high': return 'var(--color-danger)';
+    case 'medium': return 'var(--color-warning)';
+    case 'low': return 'var(--color-success)';
+    default: return 'var(--color-tertiary-label)';
   }
 }
 

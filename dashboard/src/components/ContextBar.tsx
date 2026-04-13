@@ -51,7 +51,7 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
               className="h-full rounded-full transition-all duration-300"
               style={{
                 width: `${Math.min(100, (toolCalls / budget) * 100)}%`,
-                background: toolCalls / budget > 0.8 ? '#ff3b30' : toolCalls / budget > 0.6 ? '#ff9500' : '#0071e3',
+                background: toolCalls / budget > 0.8 ? 'var(--color-danger)' : toolCalls / budget > 0.6 ? 'var(--color-warning)' : 'var(--color-tint)',
               }}
             />
           </div>

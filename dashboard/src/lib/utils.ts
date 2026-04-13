@@ -8,15 +8,15 @@ export function cn(...inputs: (string | false | null | undefined)[]): string {
 export type ScoreLevel = 'red' | 'yellow' | 'green';
 
 export function scoreColor(score: string): string {
-  return score === 'red' ? '#ff3b30' : score === 'yellow' ? '#ff9500' : '#34c759';
+  return score === 'red' ? 'var(--color-danger)' : score === 'yellow' ? 'var(--color-warning)' : 'var(--color-success)';
 }
 
 export function scoreBg(score: string): string {
   return score === 'red'
-    ? 'rgba(255,59,48,0.06)'
+    ? 'color-mix(in srgb, var(--color-danger) 6%, transparent)'
     : score === 'yellow'
-      ? 'rgba(255,149,0,0.06)'
-      : 'rgba(52,199,89,0.06)';
+      ? 'color-mix(in srgb, var(--color-warning) 6%, transparent)'
+      : 'color-mix(in srgb, var(--color-success) 6%, transparent)';
 }
 
 export function scoreToGrade(score: string): string {

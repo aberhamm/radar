@@ -14,12 +14,12 @@ interface StatsPanelProps {
 
 function severityColor(severity: string): string {
   switch (severity) {
-    case 'critical': return '#ff3b30';
-    case 'high': return '#ff3b30';
-    case 'medium': return '#ff9500';
-    case 'low': return '#34c759';
-    case 'info': return '#86868b';
-    default: return '#86868b';
+    case 'critical': return 'var(--color-danger)';
+    case 'high': return 'var(--color-danger)';
+    case 'medium': return 'var(--color-warning)';
+    case 'low': return 'var(--color-success)';
+    case 'info': return 'var(--color-tertiary-label)';
+    default: return 'var(--color-tertiary-label)';
   }
 }
 
@@ -89,7 +89,7 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
             className="h-full rounded-full transition-all duration-300"
             style={{
               width: `${pct}%`,
-              background: pct > 80 ? '#ff3b30' : pct > 60 ? '#ff9500' : '#0071e3',
+              background: pct > 80 ? 'var(--color-danger)' : pct > 60 ? 'var(--color-warning)' : 'var(--color-tint)',
             }}
           />
         </div>
