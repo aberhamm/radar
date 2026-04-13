@@ -97,7 +97,7 @@ export function computeScorecard(
     const summary = buildCategorySummary(displayName, categoryFindings, score);
 
     categories.push({
-      category: findingCategories[0], // primary category for the type
+      category: displayName,
       score,
       findings: categoryFindings,
       summary,

@@ -43,7 +43,7 @@ describe('computeScorecard', () => {
     ];
     const sc = computeScorecard('test-repo', 'audit', findings);
     // Security & Configuration category should be red
-    const secCat = sc.categories.find((c) => c.category === 'security');
+    const secCat = sc.categories.find((c) => c.category === 'Security & Configuration');
     expect(secCat?.score).toBe('red');
   });
 
@@ -83,17 +83,17 @@ describe('computeScorecard', () => {
   it('nextjs scorecard has framework-specific category names', () => {
     const sc = computeScorecard('test-repo', 'nextjs', []);
     const primaryCategories = sc.categories.map((c) => c.category);
-    expect(primaryCategories).toContain('routing');
-    expect(primaryCategories).toContain('data-fetching');
-    expect(primaryCategories).toContain('performance');
-    expect(primaryCategories).toContain('configuration');
-    expect(primaryCategories).toContain('dependencies');
+    expect(primaryCategories).toContain('Router Architecture');
+    expect(primaryCategories).toContain('Data Fetching');
+    expect(primaryCategories).toContain('Performance');
+    expect(primaryCategories).toContain('Configuration');
+    expect(primaryCategories).toContain('Dependencies');
   });
 
   it('nextjs scorecard scores findings in performance category', () => {
     const findings = [makeFinding({ severity: 'high', category: 'performance' })];
     const sc = computeScorecard('test-repo', 'nextjs', findings);
-    const perfCat = sc.categories.find((c) => c.category === 'performance');
+    const perfCat = sc.categories.find((c) => c.category === 'Performance');
     expect(perfCat?.score).toBe('yellow');
   });
 
@@ -116,7 +116,7 @@ describe('computeScorecard', () => {
     const findings = [makeFinding({ severity: 'medium', category: 'aria' })];
     const sc = computeScorecard('test-repo', 'accessibility', findings);
     // Dynamic Content maps to ['aria', 'accessibility']
-    const dynamicCat = sc.categories.find((c) => c.category === 'aria');
+    const dynamicCat = sc.categories.find((c) => c.category === 'Dynamic Content');
     expect(dynamicCat).toBeDefined();
     expect(dynamicCat?.findings.length).toBe(1);
   });
@@ -160,13 +160,11 @@ describe('computeScorecard', () => {
   it('security-review scorecard has security-specific category names', () => {
     const sc = computeScorecard('test-repo', 'security-review', []);
     const primaryCategories = sc.categories.map((c) => c.category);
-    // First category maps to 'security'
-    expect(primaryCategories[0]).toBe('security');
-    // Third category maps to 'configuration' (Security Headers)
-    expect(primaryCategories[2]).toBe('configuration');
-    // Fourth category maps to 'dependencies' (Dependency Security)
-    expect(primaryCategories[3]).toBe('dependencies');
-    // Fifth category maps to 'security' (Input Validation)
-    expect(primaryCategories[4]).toBe('security');
+    expect(primaryCategories[0]).toBe('Secrets & Environment');
+    expect(primaryCategories[1]).toBe('Authentication & Authorization');
+    expect(primaryCategories[2]).toBe('Security Headers');
+    expect(primaryCategories[3]).toBe('Dependency Security');
+    expect(primaryCategories[4]).toBe('Input Validation');
+    expect(primaryCategories[5]).toBe('Data Exposure');
   });
 });

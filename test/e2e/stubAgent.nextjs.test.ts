@@ -151,11 +151,11 @@ describe('E2e: Pi Agent nextjs goal', () => {
   it('scorecard has all 7 nextjs display categories', () => {
     expect(result.scorecard.categories.length).toBe(7);
     const primaryCategories = result.scorecard.categories.map((c) => c.category);
-    expect(primaryCategories).toContain('routing');
-    expect(primaryCategories).toContain('data-fetching');
-    expect(primaryCategories).toContain('performance');
-    expect(primaryCategories).toContain('configuration');
-    expect(primaryCategories).toContain('dependencies');
+    expect(primaryCategories).toContain('Router Architecture');
+    expect(primaryCategories).toContain('Data Fetching');
+    expect(primaryCategories).toContain('Performance');
+    expect(primaryCategories).toContain('Configuration');
+    expect(primaryCategories).toContain('Dependencies');
   });
 
   it('records 8+ findings', () => {

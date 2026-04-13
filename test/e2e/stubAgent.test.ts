@@ -169,13 +169,13 @@ describe('E2e: Pi Agent with faux provider', () => {
   it('scorecard has all 7 display categories', () => {
     const categories = result.scorecard.categories.map((c) => c.category);
     expect(categories).toEqual([
-      'stack',
-      'cms-integration',
-      'preview-editing',
-      'security',
-      'architecture',
-      'dependencies',
-      'deployment',
+      'Stack & Framework',
+      'CMS Integration',
+      'Preview & Editing',
+      'Security & Configuration',
+      'Architecture',
+      'Dependencies',
+      'Deployment',
     ]);
   });
 

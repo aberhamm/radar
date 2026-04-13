@@ -187,6 +187,12 @@ program
 
     console.log(`Starting dashboard on port ${port}...`);
 
+    // Clean stale Turbopack dev cache to prevent 500 on cold start
+    const dotNextDev = path.join(dashboardDir, '.next', 'dev');
+    if (fs.existsSync(dotNextDev)) {
+      fs.rmSync(dotNextDev, { recursive: true, force: true });
+    }
+
     // Spawn next dev as a child process
     const child = spawn('npx', ['next', 'dev', '--port', String(port)], {
       cwd: dashboardDir,

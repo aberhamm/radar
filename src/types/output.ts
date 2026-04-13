@@ -2,13 +2,13 @@
  * Output schemas — scorecard, narrative brief, run metrics.
  */
 
-import type { Finding, FindingCategory } from './findings.js';
+import type { Finding } from './findings.js';
 import type { StackProfile } from './state.js';
 
 export type ScoreLevel = 'red' | 'yellow' | 'green';
 
 export interface CategoryScore {
-  category: FindingCategory;
+  category: string;
   score: ScoreLevel;
   findings: Finding[];
   summary: string;
