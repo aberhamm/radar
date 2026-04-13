@@ -58,6 +58,20 @@ export function useLiveAnalysis(
         continue;
       }
 
+      // Budget plan (multi-goal: before first pass)
+      if (ev.action === 'budget_plan' && ev.result) {
+        turns.push({ reasoning: 'Budget plan computed from repo signals', activities: [{ label: 'budget_plan', files: [], detail: ev.result }], phase: 'analyze' });
+        statusMessage = 'Budget allocated — starting Core pass...';
+        continue;
+      }
+
+      // Budget rebalance (multi-goal: after core, before specialists)
+      if (ev.action === 'budget_rebalance' && ev.result) {
+        turns.push({ reasoning: 'Specialist budgets adjusted based on core findings', activities: [{ label: 'budget_rebalance', files: [], detail: ev.result }], phase: 'analyze' });
+        statusMessage = 'Budgets rebalanced — starting specialist passes...';
+        continue;
+      }
+
       // Pass boundary (multi-goal: between investigation passes)
       if (ev.action === 'pass_boundary' && ev.result) {
         if (currentReasoning) {
