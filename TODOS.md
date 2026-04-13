@@ -241,7 +241,7 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 
 ## Next Steps (2026-04-13)
 
-Recent work: client-ready PDF export (CLI + dashboard), evidence verification with sourceContext, per-pass budget tracking, executive summary, gauntlet command, design system.
+Recent work: URL routing + sidebar nav + cross-linking (2026-04-13), client-ready PDF export, budget tuning validated, design system.
 
 ### Ship blockers (before April 26 demo)
 
@@ -253,7 +253,7 @@ Recent work: client-ready PDF export (CLI + dashboard), evidence verification wi
 
 ### Post-demo improvements
 
-- [ ] **Run history should land on reports page** — Clicking a run in the history sidebar currently lands on the empty run page with the replay button. Should land on the overview/reports page instead. The replay ("View Run") button should be linked from the report page, not be the default landing. **P1** — core navigation UX, confusing first impression.
+- [x] **Run history should land on reports page** — Fixed in `05046d7`. History clicks now land on reports page. **P1** — done 2026-04-13.
 - [x] **URL-based routing for dashboard** — CRITICAL gap found by /design-review (2026-04-13). Implemented catch-all route `[[...slug]]` + `useUrlState` hook with pushState/popstate sync. URL patterns: `/run/{id}`, `/run/{id}?tab=X`, `/compare/{a}/{b}`, `/multi/{parentId}`. API routes updated to expose runId. 23 unit tests. **P1** — done 2026-04-13.
 - [x] **Sidebar section navigation** — HIGH gap from /design-review (2026-04-13). Added "Sections" nav above history when viewing completed run. Sections sync with active tab via URL state. **P1** — done 2026-04-13.
 - [x] **Sidebar repo-level grouping** — HIGH gap from /design-review (2026-04-13). Extended `groupHistory()` → `groupByRepo()` with 3-level hierarchy: repo > multi-goal group > individual run. Most recent repo auto-expands. 7 unit tests. **P1** — done 2026-04-13.
@@ -279,4 +279,4 @@ Recent work: client-ready PDF export (CLI + dashboard), evidence verification wi
 | Design Review | `/design-review` | Sidebar nav + cross-linking | 1 | ISSUES_FOUND | 12 findings (1 critical, 3 high), 4 fixed, 8 deferred. Design: C, Slop: B |
 
 **UNRESOLVED:** Keyboard nav for findings/sidebar (P2)
-**VERDICT:** ENG + DESIGN CLEARED for April 26 demo. Navigation architecture is the gap: all navigation is ephemeral state with zero URL routing. Fixed: border-l anti-pattern, flat nav compliance, dark mode colors, ARIA attributes.
+**VERDICT:** ENG + DESIGN CLEARED for April 26 demo. Navigation architecture shipped (URL routing, sidebar nav, cross-linking, breadcrumbs). Fixed: border-l anti-pattern, flat nav compliance, dark mode colors, ARIA attributes.
