@@ -93,4 +93,23 @@ describe('groupByRepo', () => {
     const groups = groupByRepo(items);
     expect(groups[0].worstScore).toBe('green');
   });
+
+  it('filters out stale goal=all checkpoint entries that duplicate multi-goal groups', () => {
+    const items: HistoryItem[] = [
+      // Stale checkpoint entry: goal='all', no parentRunId, status in_progress
+      makeItem({ id: 'stale-parent', repoName: 'my-repo', goal: 'all', hasResult: false }),
+      // Actual child runs from the multi-goal orchestrator
+      makeItem({ id: 'child-1', repoName: 'my-repo', parentRunId: 'real-parent', goal: 'audit' }),
+      makeItem({ id: 'child-2', repoName: 'my-repo', parentRunId: 'real-parent', goal: 'security' }),
+      makeItem({ id: 'child-3', repoName: 'my-repo', parentRunId: 'real-parent', goal: 'nextjs' }),
+    ];
+    const groups = groupByRepo(items);
+    expect(groups).toHaveLength(1);
+    // Should only have the multigoal group, NOT a standalone 'all' entry
+    expect(groups[0].runs).toHaveLength(1);
+    expect(groups[0].runs[0].type).toBe('multigoal');
+    if (groups[0].runs[0].type === 'multigoal') {
+      expect(groups[0].runs[0].children).toHaveLength(3);
+    }
+  });
 });

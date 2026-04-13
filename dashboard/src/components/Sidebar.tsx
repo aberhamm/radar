@@ -96,6 +96,8 @@ export function groupByRepo(items: HistoryItem[]): RepoGroup[] {
     // Check if this item IS a multi-goal parent (other items reference its id)
     const isGroupParent = realItems.some(h => h.parentRunId === item.id);
     if (isGroupParent) continue; // children will form the group
+    // Skip stale 'all' checkpoint entries — the real data lives in the multi-goal group
+    if (item.goal === 'all') continue;
     entries.push({ type: 'single', item });
   }
 
@@ -181,7 +183,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
 
   const renderHistoryRow = (
     h: HistoryItem,
-    opts: { isChild?: boolean; isGroupHeader?: boolean; expanded?: boolean; groupId?: string; worstScore?: 'red' | 'yellow' | 'green' | null } = {},
+    opts: { isChild?: boolean; isGroupHeader?: boolean; expanded?: boolean; groupId?: string; worstScore?: 'red' | 'yellow' | 'green' | null; childCount?: number } = {},
   ) => {
     const d = new Date(h.startedAt);
     const time = d.toLocaleString(undefined, {
@@ -206,9 +208,10 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
 
     const handleClick = () => {
       if (opts.isGroupHeader && opts.groupId) {
+        const wasExpanded = expandedGroups.has(opts.groupId);
         toggleGroup(opts.groupId);
-        // Also load the multi-goal view in the main area
-        if (!compareMode) {
+        // Only navigate to multi-goal view when expanding, not collapsing
+        if (!wasExpanded && !compareMode) {
           onSelectHistory(opts.groupId);
         }
         return;
@@ -265,29 +268,50 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
             </svg>
           )}
           <div className="flex-1 min-w-0">
-            <div className={`text-[13px] truncate transition-colors ${
-              isSelected ? 'font-bold text-tint' : isActive && !compareMode ? 'font-bold text-label' : 'font-semibold text-label group-hover:text-label'
-            }`}>
-              {h.repoName}
-            </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              {!opts.isChild && (
-                <span className="text-[11px] text-tertiary-label">{time}</span>
-              )}
-              <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium truncate max-w-[100px] ${
-                isSelected
-                  ? 'bg-[rgb(0_113_227/0.12)] text-tint'
-                  : 'bg-elevated text-secondary-label'
-              }`}>
-                {h.goal}
-              </span>
-              {scoreDot && (
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
-              )}
-              {opts.isGroupHeader && (
-                <span className="text-[10px] text-tertiary-label">8 goals</span>
-              )}
-            </div>
+            {opts.isChild ? (
+              <>
+                {/* Child row: goal is primary, repo name already shown by parent */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-[12px] truncate transition-colors ${
+                    isSelected ? 'font-bold text-tint' : isActive && !compareMode ? 'font-semibold text-label' : 'font-medium text-label group-hover:text-label'
+                  }`}>
+                    {h.goal}
+                  </span>
+                  {opts.isGroupHeader && opts.childCount && (
+                    <span className="text-[10px] text-tertiary-label">({opts.childCount} goals)</span>
+                  )}
+                  {scoreDot && (
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
+                  )}
+                </div>
+                <div className="text-[10px] text-tertiary-label mt-0.5">{time}</div>
+              </>
+            ) : (
+              <>
+                {/* Top-level row: repo name is primary */}
+                <div className={`text-[13px] truncate transition-colors ${
+                  isSelected ? 'font-bold text-tint' : isActive && !compareMode ? 'font-bold text-label' : 'font-semibold text-label group-hover:text-label'
+                }`}>
+                  {h.repoName}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[11px] text-tertiary-label">{time}</span>
+                  <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium truncate max-w-[100px] ${
+                    isSelected
+                      ? 'bg-[rgb(0_113_227/0.12)] text-tint'
+                      : 'bg-elevated text-secondary-label'
+                  }`}>
+                    {h.goal}
+                  </span>
+                  {scoreDot && (
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
+                  )}
+                  {opts.isGroupHeader && opts.childCount && (
+                    <span className="text-[10px] text-tertiary-label">{opts.childCount} goals</span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </button>
@@ -410,6 +434,8 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
             <div className="flex flex-col gap-1">
               {repoGroups.map(repoGroup => {
                 const isSingleRunRepo = repoGroup.runs.length === 1 && repoGroup.runs[0].type === 'single';
+                // When a repo has exactly one multi-goal group, flatten: show goals directly under repo header
+                const isSoleMultiGoal = repoGroup.runs.length === 1 && repoGroup.runs[0].type === 'multigoal';
                 const repoExpanded = expandedRepos.has(repoGroup.repoName);
                 const scoreDot = repoGroup.worstScore === 'red'
                   ? 'bg-danger'
@@ -431,6 +457,55 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                         <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-tint text-white text-[9px] font-bold flex items-center justify-center">
                           {badgeIndex + 1}
                         </span>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Sole multi-goal group: flatten — repo header expands directly to goal children
+                if (isSoleMultiGoal) {
+                  const entry = repoGroup.runs[0] as MultiGoalGroup;
+                  return (
+                    <div key={repoGroup.repoName}>
+                      <button
+                        onClick={() => {
+                          const wasExpanded = expandedRepos.has(repoGroup.repoName);
+                          toggleRepo(repoGroup.repoName);
+                          // Only navigate to multi-goal view when expanding, not collapsing
+                          if (!wasExpanded && !compareMode) onSelectHistory(entry.parentId);
+                        }}
+                        className="w-full text-left rounded-lg p-2.5 min-h-touch transition-all hover:bg-surface cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <svg
+                            className={`w-3 h-3 text-tertiary-label shrink-0 transition-transform ${repoExpanded ? 'rotate-90' : ''}`}
+                            viewBox="0 0 12 12"
+                            fill="currentColor"
+                          >
+                            <path d="M4 2l4 4-4 4" />
+                          </svg>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold text-label truncate group-hover:text-label">
+                              {repoGroup.repoName}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] text-tertiary-label">
+                                {entry.children.length} goals
+                              </span>
+                              {scoreDot && (
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+
+                      {repoExpanded && (
+                        <div className="flex flex-col gap-0.5 mt-0.5 ml-2">
+                          {entry.children.map(child =>
+                            renderHistoryRow(child, { isChild: true }),
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -496,6 +571,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                                 groupId,
                                 worstScore: entry.worstScore,
                                 isChild: true,
+                                childCount: entry.children.length,
                               })}
                               {expanded && entry.children && (
                                 <div className="flex flex-col gap-0.5 mt-0.5 ml-3">

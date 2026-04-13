@@ -272,6 +272,9 @@ function writeFindings(dirPath: string, findings: unknown[]): void {
 export function checkpointRun(run: {
   id: string; goal: string; repoName: string; startedAt: Date; events: StepEvent[];
 }): void {
+  // Never checkpoint the meta 'all' goal — only individual goal children get indexed
+  if (run.goal === 'all') return;
+
   try {
     ensureOutputDir();
     const dirPath = runDirPath(run.id);

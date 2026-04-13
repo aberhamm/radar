@@ -123,7 +123,7 @@ Sourced from `github.com/garrytan/gstack` analysis. Domain knowledge, scoring ru
 - [ ] **QA issue taxonomy severity definitions** — Port 7-category taxonomy (Visual/UI, Functional, UX, Content, Performance, Console/Errors, Accessibility) with 4-level severity scale as calibration reference for finding severity. Source: `qa/references/issue-taxonomy.md`. **P3**
 - [x] **Stack/framework auto-detection patterns** — `detectAppRoots.ts` expanded with non-JS manifests (Gemfile, go.mod, requirements.txt, Cargo.toml, composer.json, .csproj/.sln), framework config maps (remix, svelte, nuxt, astro, angular), and plugin detection (prisma, tailwind, graphql, storybook). **P3** — done.
 - [x] **Scope drift detection** — `src/tools/analysis/detectScopeDrift.ts` (320+ lines). Registered as `detect_scope_drift` tool. Table-driven pattern matching against README/docs claims. **P3** — done.
-- [ ] **Parallel specialist dispatch with adaptive gating** — After initial analysis, spawn focused sub-analyses based on detected codebase characteristics. Auto-disable specialists that produce 0 findings after 10+ dispatches. Source: `review/SKILL.md` Step 4.5. **P3**
+- [x] **Adaptive specialist gating** — Budget planner (`src/agent/budgetPlanner.ts`) skips irrelevant specialist passes based on pre-computed app roots and post-core findings. Parallel dispatch deferred (sequential is fine for 2-3 passes). Source: `review/SKILL.md` Step 4.5. **P3** — done 2026-04-13 (skip logic); parallel dispatch deferred.
 
 ### Low Value (Park for Later)
 
@@ -241,13 +241,13 @@ CEO plan: `~/.gstack/projects/aberhamm-repo-audit-delivery-agent/ceo-plans/2026-
 
 ## Next Steps (2026-04-13)
 
-Recent work: URL routing + sidebar nav + cross-linking (2026-04-13), client-ready PDF export, budget tuning validated, design system.
+Recent work: deterministic budget planning + post-core rebalancing (`ef10a36`), URL routing + sidebar nav + cross-linking (2026-04-13), client-ready PDF export, design system.
 
 ### Ship blockers (before April 26 demo)
 
 - [x] **Gauntlet validation run** — 15 runs, 5 repos, 3 goals each. All pass gates. See `output/gauntlet-results.jsonl`. **P0** — done 2026-04-12.
 - [x] **Evidence quality audit** — 0 unverifiable evidence across all 15 gauntlet runs. Unsupported findings (description claims not in evidence): 22/143 total findings (~15%), mostly in security-review and audit goals. Prompt tuning opportunity but not blocking. **P1** — done (validated).
-- [x] **Budget allocation tuning** — Analyzed 10 `--goal all` runs (session-costs.jsonl). 60/20/20 split (90/30/30 of 150) is correct: specialists use 53-80% of budget (avg 17.5 NJS, 17.8 A11y of 30), never starved. Core uses 68-98% (one 119% outlier on xmcloud, handled by rebalancer). No change needed. **P2** — done 2026-04-13.
+- [x] **Budget allocation tuning** — Replaced hard-coded 70/15/15 split with deterministic `planBudget()` + `rebalanceBudget()` in `src/agent/budgetPlanner.ts`. Pre-pass plan uses detected app roots (skip Next.js on non-Next.js repos, skip a11y on backend-only). Post-core rebalance adjusts based on stackProfile, finding categories, and utilization. Emits `budget_plan` and `budget_rebalance` events visible in dashboard timeline. 16 unit tests. **P2** — done 2026-04-13.
 - [x] **Client-ready PDF export** — `--export-pdf` flag + dashboard "Export PDF" button. pdfkit renderer with cover page, exec summary bar, scorecard table, findings by severity. 12 tests. **P1** — done 2026-04-13.
 - [x] **Dashboard design implementation** — All 9 items shipped (`1a506dc`). **P1** — done 2026-04-12.
 
@@ -260,7 +260,7 @@ Recent work: URL routing + sidebar nav + cross-linking (2026-04-13), client-read
 - [x] **Cross-linking findings/evidence/reports** — HIGH gap from /design-review (2026-04-13). Scorecard categories now scroll to first finding of that category. topRisks link to finding cards. FindingCard has `id` and `data-finding-category` attributes. **P1** — done 2026-04-13.
 - [ ] **Keyboard navigation for findings/sidebar** — MEDIUM gap from /design-review (2026-04-13). No J/K nav in sidebar or findings. CommandPalette can't target findings/sections. **P2** — needed for "precision instrument" UX.
 - [x] **Breadcrumb navigation** — MEDIUM gap from /design-review (2026-04-13). ContextBar now shows `repo / goal / Section` breadcrumb trail when viewing completed runs. Tab label syncs with active tab via URL state. **P2** — done 2026-04-13.
-- [ ] **Per-pass budget in dashboard BudgetPausedView** — Currently shows aggregate budget. Should show which pass exhausted and offer per-pass extension ("extend Next.js specialist by 15 calls?"). **P2** — nice-to-have for dashboard UX.
+- [ ] **Per-pass budget extension in BudgetPausedView** — Budget plan/rebalance events now visible in timeline (`budget_plan`, `budget_rebalance`). Still missing: BudgetPausedView should show which pass exhausted and offer per-pass extension ("extend Next.js specialist by 15 calls?"). **P3** — nice-to-have, budget visibility already improved.
 - [ ] **Description-evidence coherence tuning** — `checkDescriptionEvidenceCoherence()` warns when claims (packages, versions) in description aren't in evidence. After gauntlet, check warning rate — if too noisy, tighten extraction regexes or add allowlist for common patterns. **P3** — calibration.
 - [ ] **Coherence warnings in dashboard** — Surface `recordFinding` coherence/no-evidence warnings in the FindingCard UI (yellow badge or footnote). Currently only in CLI output. **P3** — visibility.
 - [ ] **Playwright E2E tests for dashboard routing** — URL routing now works via pushState but has no E2E coverage. Needs: Playwright tests for click run → URL updates, refresh at `/run/{id}` → same run loads, browser back → previous view, share URL in new tab → run loads. **P3** — deferred, unit tests cover pure logic.
