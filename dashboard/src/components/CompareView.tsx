@@ -243,7 +243,11 @@ function DiffSection({
       {open && (
         <div className="flex flex-col gap-1.5 pl-1">
           {findings.map(f => (
-            <div key={f.id} className="border-l-2 pl-2" style={{ borderColor }}>
+            <div
+              key={f.id}
+              className="rounded-lg pl-3"
+              style={{ background: `color-mix(in srgb, ${borderColor} 8%, transparent)` }}
+            >
               <FindingCard finding={f} />
             </div>
           ))}

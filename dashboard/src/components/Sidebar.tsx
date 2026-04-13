@@ -153,16 +153,16 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
         key={h.id}
         onClick={handleClick}
         disabled={isDisabledInCompare}
-        className={`text-left rounded-lg p-2.5 min-h-touch transition-all group border-l-2 w-full ${
+        className={`text-left rounded-lg p-2.5 min-h-touch transition-all group w-full ${
           opts.isChild ? 'pl-5' : ''
         } ${
           isDisabledInCompare
-            ? 'border-transparent opacity-40 cursor-not-allowed'
+            ? 'opacity-40 cursor-not-allowed'
             : isSelected
-              ? 'bg-[rgb(0_113_227/0.12)] border-tint shadow-sm cursor-pointer'
+              ? 'bg-[rgb(0_113_227/0.08)] cursor-pointer'
               : isActive && !compareMode
-                ? 'bg-[rgb(0_113_227/0.1)] border-tint shadow-sm cursor-pointer'
-                : 'border-transparent hover:bg-surface hover:shadow-sm cursor-pointer'
+                ? 'cursor-pointer'
+                : 'hover:bg-surface cursor-pointer'
         }`}
       >
         <div className="flex items-center gap-2">
@@ -191,8 +191,8 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
             </svg>
           )}
           <div className="flex-1 min-w-0">
-            <div className={`text-[13px] font-semibold truncate transition-colors ${
-              isSelected ? 'text-tint' : isActive && !compareMode ? 'text-tint' : 'text-label group-hover:text-tint'
+            <div className={`text-[13px] truncate transition-colors ${
+              isSelected ? 'font-bold text-tint' : isActive && !compareMode ? 'font-bold text-label' : 'font-semibold text-label group-hover:text-label'
             }`}>
               {h.repoName}
             </div>
@@ -201,9 +201,9 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                 <span className="text-[11px] text-tertiary-label">{time}</span>
               )}
               <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium truncate max-w-[100px] ${
-                isSelected || (isActive && !compareMode)
-                  ? 'bg-[rgb(0_113_227/0.15)] text-tint'
-                  : 'bg-[rgb(0_113_227/0.08)] text-tint'
+                isSelected
+                  ? 'bg-[rgb(0_113_227/0.12)] text-tint'
+                  : 'bg-elevated text-secondary-label'
               }`}>
                 {h.goal}
               </span>

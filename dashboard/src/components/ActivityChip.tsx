@@ -128,11 +128,11 @@ export function ActivityChipGroup({
       {expandedActivity && (expandedActivity.files.length > 0 || expandedActivity.detail) && (
         <div
           key={expandedIndex}
-          className="mt-2 pl-3 border-l-2 space-y-1.5"
+          className="mt-2 pl-3 rounded-md space-y-1.5"
           style={{
-            borderColor: active
-              ? `color-mix(in srgb, ${accentColor} 20%, transparent)`
-              : 'var(--color-separator)',
+            background: active
+              ? `color-mix(in srgb, ${accentColor} 5%, transparent)`
+              : 'color-mix(in srgb, var(--color-separator) 15%, transparent)',
             animation: 'expand-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
             transformOrigin: 'top',
           }}
