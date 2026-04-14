@@ -204,7 +204,27 @@ export default function DashboardPage() {
         }
       })();
     } else if (urlView.view === 'multi') {
-      handleSelectHistory(urlView.parentId);
+      // Fetch group data directly — don't rely on handleSelectHistory which
+      // needs history[] populated to detect group parents. On direct URL
+      // navigation, history may still be empty due to stale closure.
+      (async () => {
+        setHistoryLoading(true);
+        try {
+          const r = await fetch(`/api/history/group/${encodeURIComponent(urlView.parentId)}`);
+          const data = await r.json();
+          if (data.error) {
+            console.warn('[url] Failed to load multi-goal group:', urlView.parentId, data.error);
+            return;
+          }
+          setMultiGoalData(data as MultiGoalData);
+          setSelectedRunId(urlView.parentId);
+          setStatus('multigoal');
+        } catch (err) {
+          console.error('[url] Failed to load multi-goal group:', urlView.parentId, err);
+        } finally {
+          setHistoryLoading(false);
+        }
+      })();
     }
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
