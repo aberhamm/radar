@@ -465,30 +465,23 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                   );
                 }
 
-                // Sole multi-goal group: flatten — repo header expands directly to goal children
+                // Sole multi-goal group: single clickable row, no child expansion
                 if (isSoleMultiGoal) {
                   const entry = repoGroup.runs[0] as MultiGoalGroup;
+                  const isActive = activeRunId === entry.parentId;
                   return (
                     <div key={repoGroup.repoName}>
                       <button
                         onClick={() => {
-                          const wasExpanded = expandedRepos.has(repoGroup.repoName);
-                          toggleRepo(repoGroup.repoName);
-                          // Only navigate to multi-goal view when expanding, not collapsing
-                          if (!wasExpanded && !compareMode) onSelectHistory(entry.parentId);
+                          if (!compareMode) onSelectHistory(entry.parentId);
                         }}
-                        className="w-full text-left rounded-lg p-2.5 min-h-touch transition-all hover:bg-surface cursor-pointer group"
+                        className={`w-full text-left rounded-lg p-2.5 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
+                          isActive ? 'bg-tint/8' : ''
+                        }`}
                       >
                         <div className="flex items-center gap-2">
-                          <svg
-                            className={`w-3 h-3 text-tertiary-label shrink-0 transition-transform ${repoExpanded ? 'rotate-90' : ''}`}
-                            viewBox="0 0 12 12"
-                            fill="currentColor"
-                          >
-                            <path d="M4 2l4 4-4 4" />
-                          </svg>
                           <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-semibold text-label truncate group-hover:text-label">
+                            <div className={`text-[13px] font-semibold truncate ${isActive ? 'text-tint' : 'text-label group-hover:text-label'}`}>
                               {repoGroup.repoName}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
@@ -502,14 +495,6 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                           </div>
                         </div>
                       </button>
-
-                      {repoExpanded && (
-                        <div className="flex flex-col gap-0.5 mt-0.5 ml-2">
-                          {entry.children.map(child =>
-                            renderHistoryRow(child, { isChild: true }),
-                          )}
-                        </div>
-                      )}
                     </div>
                   );
                 }
@@ -563,26 +548,18 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                             );
                           }
 
-                          // Multi-goal group within repo
+                          // Multi-goal group within repo — navigate directly, no child expansion
                           const groupId = entry.parentId;
-                          const expanded = expandedGroups.has(groupId);
                           return (
                             <div key={groupId}>
                               {renderHistoryRow(entry.item, {
                                 isGroupHeader: true,
-                                expanded,
+                                expanded: false,
                                 groupId,
                                 worstScore: entry.worstScore,
                                 isChild: true,
                                 childCount: entry.children.length,
                               })}
-                              {expanded && entry.children && (
-                                <div className="flex flex-col gap-0.5 mt-0.5 ml-3">
-                                  {entry.children.map(child =>
-                                    renderHistoryRow(child, { isChild: true }),
-                                  )}
-                                </div>
-                              )}
                             </div>
                           );
                         })}

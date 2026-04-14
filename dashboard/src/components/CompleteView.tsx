@@ -14,6 +14,8 @@ import {
   costToMarkdown,
 } from '@/lib/export';
 import { EventStream } from './EventStream';
+import { FindingCard } from './FindingCard';
+import { normalizeFindings, type Finding } from '@/lib/runTransform';
 import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
 import type { Tab } from '@/lib/useUrlState';
 
@@ -81,18 +83,18 @@ function ExecSummaryBanner({ scorecard, metrics }: { scorecard: Scorecard; metri
   );
 }
 
-function scrollToFinding(findingId: string) {
+export function scrollToFinding(findingId: string) {
   const el = document.getElementById(`finding-${findingId}`);
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function scrollToCategory(category: string) {
+export function scrollToCategory(category: string) {
   // Find first finding element with data-category matching
   const el = document.querySelector(`[data-finding-category="${category}"]`);
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?: RunMetrics }) {
+export function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?: RunMetrics }) {
   return (
     <div className="mb-6">
       {/* Overall score */}
@@ -170,6 +172,128 @@ function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?:
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Findings Section (grouped by category) ──────────────────
+
+const SEV_ORDER: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
+
+export function FindingsSection({ findings, scorecard }: { findings: Finding[]; scorecard: Scorecard }) {
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
+
+  if (findings.length === 0) return null;
+
+  // Group by category, ordered by scorecard category order
+  const grouped = new Map<string, Finding[]>();
+  for (const f of findings) {
+    const cat = f.category || 'uncategorized';
+    if (!grouped.has(cat)) grouped.set(cat, []);
+    grouped.get(cat)!.push(f);
+  }
+
+  // Sort findings within each group by severity
+  for (const arr of grouped.values()) {
+    arr.sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0));
+  }
+
+  // Order categories by scorecard order, then remaining
+  const scorecardOrder: string[] = scorecard.categories.map(c => c.category);
+  const orderedCats = [
+    ...scorecardOrder.filter(c => grouped.has(c)),
+    ...[...grouped.keys()].filter(c => !scorecardOrder.includes(c)),
+  ];
+
+  const toggleCat = (cat: string) => {
+    setExpandedCats(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  const sevCounts = (items: Finding[]) => {
+    const counts: Record<string, number> = {};
+    for (const f of items) counts[f.severity] = (counts[f.severity] ?? 0) + 1;
+    return counts;
+  };
+
+  const sevDotColor = (sev: string) => {
+    switch (sev) {
+      case 'critical': case 'high': return 'var(--color-danger)';
+      case 'medium': return 'var(--color-warning)';
+      case 'low': return 'var(--color-success)';
+      default: return 'var(--color-tertiary-label)';
+    }
+  };
+
+  return (
+    <div className="mb-6">
+      <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold mb-3">
+        Findings ({findings.length})
+      </div>
+      <div className="flex flex-col gap-2">
+        {orderedCats.map(cat => {
+          const items = grouped.get(cat)!;
+          const isExpanded = expandedCats.has(cat);
+          const counts = sevCounts(items);
+          // Find scorecard score for this category
+          const catScore = scorecard.categories.find(c => c.category === cat);
+
+          return (
+            <div key={cat} className="rounded-lg border border-separator overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleCat(cat)}
+                className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-elevated/50 transition-colors cursor-pointer"
+              >
+                <svg
+                  width="8" height="8" viewBox="0 0 8 8" fill="none"
+                  className={`shrink-0 text-tertiary-label transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                >
+                  <path d="M3 2l2 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="text-[12px] font-semibold text-label flex-1">
+                  {cat}
+                </span>
+                {catScore && (
+                  <span
+                    className="text-[10px] font-bold uppercase"
+                    style={{ color: scoreColor(catScore.score) }}
+                  >
+                    {catScore.score}
+                  </span>
+                )}
+                <div className="flex items-center gap-1.5 ml-2">
+                  {(['critical', 'high', 'medium', 'low', 'info'] as const)
+                    .filter(s => counts[s])
+                    .map(s => (
+                      <span key={s} className="flex items-center gap-0.5">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: sevDotColor(s) }}
+                        />
+                        <span className="text-[10px] text-tertiary-label">{counts[s]}</span>
+                      </span>
+                    ))}
+                </div>
+                <span className="text-[10px] text-tertiary-label ml-1">
+                  {items.length}
+                </span>
+              </button>
+              {isExpanded && (
+                <div className="px-3 pb-3 space-y-1.5 border-t border-separator/50 pt-2">
+                  {items.map((f, i) => (
+                    <FindingCard key={`${f.id}-${i}`} finding={f} index={i} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -299,8 +423,29 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
   const [pdfExporting, setPdfExporting] = useState(false);
   const [lazyEvents, setLazyEvents] = useState<StepEvent[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [lazyFindings, setLazyFindings] = useState<Finding[] | null>(null);
+  const [findingsLoading, setFindingsLoading] = useState(false);
 
   const resolvedEvents = events.length > 0 ? events : lazyEvents ?? [];
+
+  // Normalize findings from props, or use lazy-loaded findings
+  const typedFindings: Finding[] = lazyFindings
+    ?? (findings && findings.length > 0 ? normalizeFindings(findings) : []);
+
+  // Lazy-load findings when slim mode returned empty array
+  useEffect(() => {
+    if (typedFindings.length === 0 && !findingsLoading && !lazyFindings && runId) {
+      setFindingsLoading(true);
+      fetch(`/api/history/${encodeURIComponent(runId)}`)
+        .then(r => r.json())
+        .then(data => {
+          const raw = data.result?.state?.findings;
+          if (raw && raw.length > 0) setLazyFindings(normalizeFindings(raw));
+        })
+        .catch(err => console.warn('[findings] Failed to load:', err))
+        .finally(() => setFindingsLoading(false));
+    }
+  }, [runId, typedFindings.length, findingsLoading, lazyFindings]);
 
   const handleTabChange = useCallback((tab: Tab) => {
     if (onTabChange) onTabChange(tab);
@@ -427,6 +572,12 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
           {activeTab === 'report' && (
             <div className="max-w-[860px] pt-5 pb-8">
               <ScorecardGrid scorecard={scorecard} metrics={metrics} />
+              {findingsLoading && (
+                <div className="text-[12px] text-tertiary-label mb-4">Loading findings...</div>
+              )}
+              {typedFindings.length > 0 && (
+                <FindingsSection findings={typedFindings} scorecard={scorecard} />
+              )}
               <div className="md-content text-sm leading-relaxed">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefMarkdown}</ReactMarkdown>
               </div>

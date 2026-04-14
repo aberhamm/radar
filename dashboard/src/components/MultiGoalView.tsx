@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Scorecard, RunMetrics, StepEvent } from '@/lib/agentSession';
-import { transformRunData, type TransformedRunData } from '@/lib/runTransform';
+import { transformRunData, type TransformedRunData, normalizeFindings, type Finding } from '@/lib/runTransform';
 import { AnalysisView } from './AnalysisView';
+import { ScorecardGrid, FindingsSection } from './CompleteView';
 import { scoreColor, scoreBg, scoreToGrade } from '@/lib/utils';
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -30,7 +33,6 @@ export interface MultiGoalData {
 
 interface MultiGoalViewProps {
   data: MultiGoalData;
-  onSelectGoal: (goalId: string, goal: string) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -65,13 +67,13 @@ function goalDescription(goal: string): string {
 
 // ─── Scoreboard ─────────────────────────────────────────────────
 
-function Scoreboard({ goals, onSelect }: { goals: MultiGoalGoal[]; onSelect: (id: string, goal: string) => void }) {
+function Scoreboard({ goals, onScrollTo }: { goals: MultiGoalGoal[]; onScrollTo: (goalId: string) => void }) {
   return (
     <div className="flex gap-1 overflow-x-auto pb-2">
       {goals.map(g => (
         <button
           key={g.id}
-          onClick={() => onSelect(g.id, g.goal)}
+          onClick={() => onScrollTo(g.id)}
           className="flex-1 min-w-[120px] text-center p-4 rounded-xl border border-separator hover:border-tint hover:shadow-md transition-all cursor-pointer group"
           style={{ background: scoreBg(g.scorecard.overallScore) }}
         >
@@ -96,7 +98,6 @@ function Scoreboard({ goals, onSelect }: { goals: MultiGoalGoal[]; onSelect: (id
 // ─── Top Risks ──────────────────────────────────────────────────
 
 function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
-  // Deduplicate top risks across all scorecards
   const seen = new Set<string>();
   const allRisks: Array<{ id: string; severity: string; title: string }> = [];
   for (const g of goals) {
@@ -146,13 +147,10 @@ interface PassInfo {
 }
 
 function PassBreakdown({ events }: { events: StepEvent[] }) {
-  // Count events per pass by looking at pass_boundary markers
-  // and read budget/outcome from pass_complete events
   const passes: PassInfo[] = [];
   let currentPass = 'Core';
   let currentCount = 0;
 
-  // Index pass_complete events by pass name for quick lookup
   const completions = new Map<string, { toolCalls: number; budget: number; terminationReason: string }>();
   for (const ev of events) {
     if (ev.action === 'pass_complete' && ev.result) {
@@ -221,12 +219,116 @@ function PassBreakdown({ events }: { events: StepEvent[] }) {
   );
 }
 
+// ─── Goal Section (collapsible per-goal report) ─────────────────
+
+function GoalSection({
+  goal,
+  isExpanded,
+  onToggle,
+  sectionRef,
+}: {
+  goal: MultiGoalGoal;
+  isExpanded: boolean;
+  onToggle: () => void;
+  sectionRef: (el: HTMLDivElement | null) => void;
+}) {
+  const [findings, setFindings] = useState<Finding[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const fetchedRef = useRef(false);
+
+  // Lazy-load findings on first expand
+  const handleToggle = useCallback(() => {
+    if (!isExpanded && !fetchedRef.current && goal.findingsCount > 0) {
+      fetchedRef.current = true;
+      setLoading(true);
+      fetch(`/api/history/${encodeURIComponent(goal.id)}/findings`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.findings?.length > 0) setFindings(normalizeFindings(data.findings));
+          else setFindings([]);
+        })
+        .catch(() => setFindings([]))
+        .finally(() => setLoading(false));
+    }
+    onToggle();
+  }, [isExpanded, goal.id, goal.findingsCount, onToggle]);
+
+  const gradeColor = scoreColor(goal.scorecard.overallScore);
+
+  return (
+    <div ref={sectionRef} className="rounded-xl border border-separator overflow-hidden">
+      {/* Collapsed header */}
+      <button
+        type="button"
+        onClick={handleToggle}
+        className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-elevated/50 transition-colors cursor-pointer"
+      >
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+          style={{ background: `color-mix(in srgb, ${gradeColor} 10%, transparent)` }}
+        >
+          <span className="text-[14px] font-bold font-brand" style={{ color: gradeColor }}>
+            {scoreToGrade(goal.scorecard.overallScore)}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-semibold text-label">
+            {goalDisplayName(goal.goal)}
+          </div>
+          <div className="text-[11px] text-tertiary-label">
+            {goalDescription(goal.goal)}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-[11px] text-tertiary-label">
+            {goal.findingsCount} findings
+          </span>
+          <span className="text-[11px] text-tertiary-label">
+            {goal.scorecard.categories.length} categories
+          </span>
+          <svg
+            width="10" height="10" viewBox="0 0 10 10" fill="none"
+            className={`text-tertiary-label transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          >
+            <path d="M2.5 4L5 6.5 7.5 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="px-4 pb-5 border-t border-separator/50 pt-4">
+          <ScorecardGrid scorecard={goal.scorecard} metrics={goal.metrics} />
+
+          {loading && (
+            <div className="text-[12px] text-tertiary-label mb-4">Loading findings...</div>
+          )}
+          {findings && findings.length > 0 && (
+            <FindingsSection findings={findings} scorecard={goal.scorecard} />
+          )}
+          {findings && findings.length === 0 && !loading && goal.findingsCount > 0 && (
+            <div className="text-[12px] text-tertiary-label mb-4">No detailed findings available.</div>
+          )}
+
+          {goal.briefMarkdown && (
+            <div className="md-content text-sm leading-relaxed mt-4">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{goal.briefMarkdown}</ReactMarkdown>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────
 
 type ViewMode = 'summary' | 'investigation';
 
-export function MultiGoalView({ data, onSelectGoal }: MultiGoalViewProps) {
+export function MultiGoalView({ data }: MultiGoalViewProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('summary');
+  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
+  const sectionRefs = useRef(new Map<string, HTMLDivElement>());
 
   // Transform events for AnalysisView replay
   const runData: TransformedRunData | undefined = data.events.length > 0
@@ -252,6 +354,24 @@ export function MultiGoalView({ data, onSelectGoal }: MultiGoalViewProps) {
     const s = g.scorecard.overallScore;
     return (scoreOrder[s] ?? 0) > (scoreOrder[worst] ?? 0) ? s : worst;
   }, 'green');
+
+  const toggleGoal = useCallback((goalId: string) => {
+    setExpandedGoals(prev => {
+      const next = new Set(prev);
+      if (next.has(goalId)) next.delete(goalId);
+      else next.add(goalId);
+      return next;
+    });
+  }, []);
+
+  const scrollToGoal = useCallback((goalId: string) => {
+    // Expand the section
+    setExpandedGoals(prev => new Set(prev).add(goalId));
+    // Scroll into view after DOM update
+    requestAnimationFrame(() => {
+      sectionRefs.current.get(goalId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -308,14 +428,32 @@ export function MultiGoalView({ data, onSelectGoal }: MultiGoalViewProps) {
       <div className="flex-1 overflow-y-auto">
         {viewMode === 'summary' && (
           <div className="px-6 py-5 max-w-4xl">
+            {/* Scoreboard overview */}
             <div className="mb-6">
               <h2 className="text-[15px] font-semibold text-label mb-3">Scoreboard</h2>
-              <Scoreboard goals={data.goals} onSelect={onSelectGoal} />
+              <Scoreboard goals={data.goals} onScrollTo={scrollToGoal} />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top risks + pass breakdown */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
               <TopRisks goals={data.goals} />
               <PassBreakdown events={data.events} />
+            </div>
+
+            {/* Per-goal sections */}
+            <div className="flex flex-col gap-3">
+              {data.goals.map(g => (
+                <GoalSection
+                  key={g.id}
+                  goal={g}
+                  isExpanded={expandedGoals.has(g.id)}
+                  onToggle={() => toggleGoal(g.id)}
+                  sectionRef={(el) => {
+                    if (el) sectionRefs.current.set(g.id, el);
+                    else sectionRefs.current.delete(g.id);
+                  }}
+                />
+              ))}
             </div>
           </div>
         )}

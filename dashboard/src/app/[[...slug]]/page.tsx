@@ -618,11 +618,6 @@ export default function DashboardPage() {
     setStatus('replaying');
   }, [selectedRunId, replayData]);
 
-  /** Called when user clicks a goal card in MultiGoalView */
-  const handleSelectGoalFromMulti = useCallback((goalId: string, _goal: string) => {
-    handleSelectHistory(goalId);
-  }, [handleSelectHistory]);
-
   const isRunningOrPaused = status === 'running' || status === 'budget_paused';
 
   // SSE connection for live runs (replaces EventStream inside RunningView)
@@ -856,7 +851,7 @@ export default function DashboardPage() {
 
           {status === 'multigoal' && multiGoalData && (
             <div key="multigoal" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
-              <MultiGoalView data={multiGoalData} onSelectGoal={handleSelectGoalFromMulti} />
+              <MultiGoalView data={multiGoalData} />
             </div>
           )}
 

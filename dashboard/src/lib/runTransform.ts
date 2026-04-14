@@ -108,6 +108,39 @@ export function sevBg(sev: string): string {
   }
 }
 
+// ─── Finding Normalizer ─────────────────────────────────────────
+
+/** Normalize raw finding objects (from API/storage) into typed Finding[] */
+export function normalizeFindings(raw: unknown[]): Finding[] {
+  const arr = raw as Array<{
+    id: string; severity: string; category: string; title: string;
+    description?: string; evidence?: Array<{
+      filePath: string; lineNumber?: number; snippet?: string;
+      description?: string; verificationStatus?: string;
+      sourceContext?: string; originalSnippet?: string;
+    }>;
+    investigationNote?: string; tags?: string[];
+  }>;
+  return arr.map(f => ({
+    id: f.id,
+    severity: f.severity as Finding['severity'],
+    category: f.category,
+    title: f.title,
+    evidenceFiles: (f.evidence ?? []).map(e => e.filePath),
+    evidence: (f.evidence ?? []).map(e => ({
+      filePath: e.filePath,
+      lineNumber: e.lineNumber,
+      snippet: e.snippet ?? '',
+      description: e.description ?? '',
+      verificationStatus: e.verificationStatus as EvidenceItem['verificationStatus'],
+      sourceContext: e.sourceContext,
+      originalSnippet: e.originalSnippet,
+    })),
+    note: f.investigationNote ?? f.description ?? '',
+    tags: f.tags ?? [],
+  }));
+}
+
 // ─── Transformer ────────────────────────────────────────────────
 
 export function transformRunData(
@@ -270,34 +303,7 @@ export function transformRunData(
   }
 
   // 2. Transform findings
-  const rawFindings = (result.state?.findings ?? []) as Array<{
-    id: string; severity: string; category: string; title: string;
-    description?: string; evidence?: Array<{
-      filePath: string; lineNumber?: number; snippet?: string;
-      description?: string; verificationStatus?: string;
-      sourceContext?: string; originalSnippet?: string;
-    }>;
-    investigationNote?: string; tags?: string[];
-  }>;
-
-  const findings: Finding[] = rawFindings.map(f => ({
-    id: f.id,
-    severity: f.severity as Finding['severity'],
-    category: f.category,
-    title: f.title,
-    evidenceFiles: (f.evidence ?? []).map(e => e.filePath),
-    evidence: (f.evidence ?? []).map(e => ({
-      filePath: e.filePath,
-      lineNumber: e.lineNumber,
-      snippet: e.snippet ?? '',
-      description: e.description ?? '',
-      verificationStatus: e.verificationStatus as EvidenceItem['verificationStatus'],
-      sourceContext: e.sourceContext,
-      originalSnippet: e.originalSnippet,
-    })),
-    note: f.investigationNote ?? f.description ?? '',
-    tags: f.tags ?? [],
-  }));
+  const findings = normalizeFindings((result.state?.findings ?? []) as unknown[]);
 
   // 3. Compute finding batches from batchId groupings in events
   const findingEvents = events.filter(e => e.action === 'record_finding');
