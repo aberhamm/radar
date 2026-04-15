@@ -15,6 +15,7 @@ import {
 } from '@/lib/export';
 import { EventStream } from './EventStream';
 import { FindingCard } from './FindingCard';
+import { FindingsLoadingSkeleton, RulesLoadingSkeleton, EventsLoadingSkeleton } from './Skeleton';
 import { normalizeFindings, type Finding } from '@/lib/runTransform';
 import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
 import type { Tab } from '@/lib/useUrlState';
@@ -371,7 +372,7 @@ function RulesTab({ goal }: { goal: string }) {
   }, [goal]);
 
   if (loading) {
-    return <div className="p-6 text-tertiary-label text-sm">Loading rules...</div>;
+    return <div className="p-6"><RulesLoadingSkeleton /></div>;
   }
 
   if (Object.keys(rules).length === 0) {
@@ -572,9 +573,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
           {activeTab === 'report' && (
             <div className="max-w-[860px] pt-5 pb-8">
               <ScorecardGrid scorecard={scorecard} metrics={metrics} />
-              {findingsLoading && (
-                <div className="text-[12px] text-tertiary-label mb-4">Loading findings...</div>
-              )}
+              {findingsLoading && <FindingsLoadingSkeleton />}
               {typedFindings.length > 0 && (
                 <FindingsSection findings={typedFindings} scorecard={scorecard} />
               )}
@@ -587,7 +586,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
           {activeTab === 'events' && (
             <div className="flex-1 flex flex-col">
               {eventsLoading ? (
-                <div className="p-6 text-tertiary-label text-sm">Loading events...</div>
+                <div className="p-6"><EventsLoadingSkeleton /></div>
               ) : (
                 <EventStream
                   events={resolvedEvents}

@@ -14,6 +14,7 @@ import { CompleteView } from '@/components/CompleteView';
 import { CompareView, type CompareData } from '@/components/CompareView';
 import { AnalysisView } from '@/components/AnalysisView';
 import { MultiGoalView, type MultiGoalData } from '@/components/MultiGoalView';
+import { RunLoadingSkeleton } from '@/components/Skeleton';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
 
@@ -402,10 +403,14 @@ export default function DashboardPage() {
   }, [pushUrl]);
 
   const handleNewRun = useCallback(() => {
-    setNewRunModal(true);
+    setStatus('idle');
+    setSelectedRunId(null);
     setCompareMode(false);
     setCompareSelections([]);
-  }, []);
+    setCompareData(null);
+    setNewRunModal(false);
+    pushUrl({ view: 'idle' });
+  }, [pushUrl]);
 
   const handleToggleCompareMode = useCallback(() => {
     setCompareMode(prev => !prev);
@@ -830,13 +835,19 @@ export default function DashboardPage() {
         />
 
         <main className="flex-1 flex flex-col overflow-hidden relative" aria-label="Main content">
-          {status === 'idle' && (
-            <div key="idle" className="animate-slide-up flex-1 flex flex-col">
-              <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} history={history} />
+          {(historyLoading || compareLoading) && (
+            <div key="loading" className="flex-1 flex flex-col overflow-hidden">
+              <RunLoadingSkeleton />
             </div>
           )}
 
-          {isRunningOrPaused && currentRun && (
+          {status === 'idle' && !historyLoading && !compareLoading && (
+            <div key="idle" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              <IdleView initialRepoPath={lastRepoPath} onStart={handleStart} history={history} historyReady={ready} />
+            </div>
+          )}
+
+          {isRunningOrPaused && currentRun && !historyLoading && (
             <div key="running" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <AnalysisView
                 isLive
@@ -863,19 +874,19 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {status === 'comparing' && compareData && (
+          {status === 'comparing' && compareData && !compareLoading && (
             <div key="comparing" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <CompareView data={compareData} />
             </div>
           )}
 
-          {status === 'multigoal' && multiGoalData && (
+          {status === 'multigoal' && multiGoalData && !historyLoading && (
             <div key="multigoal" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <MultiGoalView data={multiGoalData} />
             </div>
           )}
 
-          {(status === 'complete' || status === 'error') && result && currentRun && (
+          {(status === 'complete' || status === 'error') && result && currentRun && !historyLoading && (
             <div key="complete" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <CompleteView
                 briefMarkdown={result.briefMarkdown}
@@ -929,24 +940,11 @@ export default function DashboardPage() {
             onClick={() => setNewRunModal(false)}
           />
           <div className="relative z-10 w-full max-w-lg mx-4 animate-scale-in">
-            <IdleView compact initialRepoPath={lastRepoPath} onStart={handleStart} history={history} />
+            <IdleView compact initialRepoPath={lastRepoPath} onStart={handleStart} history={history} historyReady={ready} />
           </div>
         </div>
       )}
 
-      {(historyLoading || compareLoading) && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-canvas/60 backdrop-blur-sm">
-          <div className="flex items-center gap-3 bg-surface rounded-lg border border-separator shadow-sm px-5 py-3">
-            <div
-              className="w-4 h-4 border-2 border-tint border-t-transparent rounded-full"
-              style={{ animation: 'spin 0.6s linear infinite' }}
-            />
-            <span className="text-sm text-secondary-label font-medium">
-              {compareLoading ? 'Comparing runs...' : 'Loading run...'}
-            </span>
-          </div>
-        </div>
-      )}
 
       <CommandPalette
         open={paletteOpen}

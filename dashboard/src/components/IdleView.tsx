@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { StaggeredSpinner, HistoryLoadingSkeleton, CachedReposLoadingSkeleton } from '@/components/Skeleton';
 
 interface HistoryRunItem {
   id: string;
@@ -28,6 +29,7 @@ interface IdleViewProps {
   initialRepoPath?: string;
   onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string) => void;
   history?: HistoryRunItem[];
+  historyReady?: boolean;
   compact?: boolean;
 }
 
@@ -44,7 +46,7 @@ function isGitHubUrl(value: string): boolean {
   return trimmed.startsWith('http://') || trimmed.startsWith('https://');
 }
 
-export function IdleView({ initialRepoPath = '', onStart, history = [], compact = false }: IdleViewProps) {
+export function IdleView({ initialRepoPath = '', onStart, history = [], historyReady = true, compact = false }: IdleViewProps) {
   const [repoPath, setRepoPath] = useState(initialRepoPath);
   const [goal, setGoal] = useState('all');
   const [loading, setLoading] = useState(false);
@@ -58,6 +60,9 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
 
   // Cached repos from .repos/
   const [cachedRepos, setCachedRepos] = useState<CachedRepo[]>([]);
+  const [cachedReposReady, setCachedReposReady] = useState(false);
+  const [showAllCached, setShowAllCached] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
   // Pulling state for rerun (auto-pull git repos)
   const [rerunPulling, setRerunPulling] = useState(false);
@@ -80,7 +85,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
       .then(data => {
         if (data.repos) setCachedRepos(data.repos);
       })
-      .catch(() => { /* ignore */ });
+      .catch(() => { /* ignore */ })
+      .finally(() => setCachedReposReady(true));
   }, []);
 
   // Detect app roots for a repo path — called after clone or when a local path is ready
@@ -337,7 +343,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
       {/* Monorepo root picker */}
       {detectingRoots && (
         <div className="flex items-center gap-2 px-1 py-1">
-          <div className="w-3 h-3 border-2 border-tint border-t-transparent rounded-full animate-spin" />
+          <StaggeredSpinner size={14} />
           <span className="text-xs text-tertiary-label">Detecting app roots...</span>
         </div>
       )}
@@ -464,12 +470,15 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
         </div>
       </div>
 
-      {/* Cached repos */}
-      {cachedRepos.length > 0 && !isCloned && !isCloning && !loading && (
+      {/* Cached repos — skeleton while loading */}
+      {!cachedReposReady && !isCloned && !isCloning && !loading && (
+        <CachedReposLoadingSkeleton />
+      )}
+      {cachedReposReady && cachedRepos.length > 0 && !isCloned && !isCloning && !loading && (
         <div className="px-6 pb-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
           <h2 className="text-[13px] font-semibold text-label mb-3">Previously Pulled</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {cachedRepos.map(r => (
+            {(showAllCached ? cachedRepos : cachedRepos.slice(0, 3)).map(r => (
               <button
                 key={r.localPath}
                 type="button"
@@ -493,15 +502,27 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
               </button>
             ))}
           </div>
+          {cachedRepos.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setShowAllCached(v => !v)}
+              className="mt-2 text-[12px] text-tertiary-label hover:text-secondary-label transition-colors cursor-pointer"
+            >
+              {showAllCached ? 'Show less' : `${cachedRepos.length - 3} more...`}
+            </button>
+          )}
         </div>
       )}
 
-      {/* Recent runs */}
-      {history.length > 0 && !isCloned && !isCloning && !loading && !rerunPulling && (
+      {/* Recent runs — skeleton while loading, real cards once ready */}
+      {!historyReady && !isCloned && !isCloning && !loading && !rerunPulling && (
+        <HistoryLoadingSkeleton />
+      )}
+      {historyReady && history.length > 0 && !isCloned && !isCloning && !loading && !rerunPulling && (
         <div className="px-6 pb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
           <h2 className="text-[13px] font-semibold text-label mb-3">Recent Runs</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {history.map(run => (
+            {(showAllHistory ? history : history.slice(0, 3)).map(run => (
               <button
                 key={run.id}
                 type="button"
@@ -528,6 +549,15 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], compact 
               </button>
             ))}
           </div>
+          {history.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setShowAllHistory(v => !v)}
+              className="mt-2 text-[12px] text-tertiary-label hover:text-secondary-label transition-colors cursor-pointer"
+            >
+              {showAllHistory ? 'Show less' : `${history.length - 3} more...`}
+            </button>
+          )}
         </div>
       )}
     </div>

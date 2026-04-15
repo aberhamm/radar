@@ -7,6 +7,7 @@ import type { Scorecard, RunMetrics, StepEvent } from '@/lib/agentSession';
 import { transformRunData, type TransformedRunData, normalizeFindings, type Finding } from '@/lib/runTransform';
 import { AnalysisView } from './AnalysisView';
 import { ScorecardGrid, FindingsSection } from './CompleteView';
+import { FindingsLoadingSkeleton } from './Skeleton';
 import { scoreColor, scoreBg, scoreToGrade } from '@/lib/utils';
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -300,9 +301,7 @@ function GoalSection({
         <div className="px-4 pb-5 border-t border-separator/50 pt-4">
           <ScorecardGrid scorecard={goal.scorecard} metrics={goal.metrics} />
 
-          {loading && (
-            <div className="text-[12px] text-tertiary-label mb-4">Loading findings...</div>
-          )}
+          {loading && <FindingsLoadingSkeleton />}
           {findings && findings.length > 0 && (
             <FindingsSection findings={findings} scorecard={goal.scorecard} />
           )}

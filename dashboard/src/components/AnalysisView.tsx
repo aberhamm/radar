@@ -12,6 +12,7 @@ import { ActivityChipGroup } from '@/components/ActivityChip';
 import { FindingCard } from '@/components/FindingCard';
 import { FileTree } from '@/components/FileTree';
 import { BudgetPausedView } from '@/components/BudgetPausedView';
+import { StaggeredSpinner } from '@/components/Skeleton';
 
 // ─── Props ──────────────────────────────────────────────────────
 
@@ -293,10 +294,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 {/* Live: waiting for first event */}
                 {isLive && turns.length === 0 && !typingText && (
                   <div className="flex flex-col items-center justify-center gap-3 pt-24 text-center animate-slide-up">
-                    <div
-                      className="w-5 h-5 border-2 border-tint border-t-transparent rounded-full"
-                      style={{ animation: 'spin 0.6s linear infinite' }}
-                    />
+                    <StaggeredSpinner color={accentColor} size={22} />
                     <div>
                       <div className="text-sm font-medium text-secondary-label">
                         {pendingActions.length > 0

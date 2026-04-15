@@ -61,7 +61,8 @@ describe('listRuleFiles', () => {
     expect(files).toContain('goal-accessibility.md');
     expect(files).toContain('goal-component-map.md');
     expect(files).toContain('goal-universal.md');
-    expect(files.length).toBe(12);
+    expect(files).toContain('goal-audit-generic.md');
+    expect(files.length).toBe(13);
   });
 });
 
