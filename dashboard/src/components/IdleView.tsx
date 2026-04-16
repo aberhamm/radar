@@ -535,7 +535,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
                 </svg>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-label font-medium truncate">
-                    {run.repoName}
+                    {run.repoName}{' '}
                     <span className="ml-1.5 text-[11px] text-tertiary-label font-normal">{run.goal}</span>
                   </div>
                   <div className="text-[11px] text-quaternary-label truncate">

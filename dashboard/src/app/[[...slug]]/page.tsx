@@ -127,11 +127,16 @@ export default function DashboardPage() {
   // Prepend sample run to history
   const fullHistory = useMemo(() => [SAMPLE_HISTORY_ITEM as HistoryItem, ...history], [history]);
 
-  // Auto-open sidebar on desktop
+  // Auto-open sidebar on desktop, auto-close on mobile resize
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
-      setSidebarOpen(true);
-    }
+    if (typeof window === 'undefined') return;
+    if (window.innerWidth >= 1024) setSidebarOpen(true);
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handler = (e: MediaQueryListEvent) => {
+      if (!e.matches) setSidebarOpen(false);
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
   }, []);
 
   // On mount, check session state + handle initial URL
@@ -249,8 +254,7 @@ export default function DashboardPage() {
       setMultiGoalData(null);
       setCompareData(null);
     } else if (urlView.view === 'run' && urlView.runId && urlView.runId !== selectedRunId && status !== 'running') {
-      if (urlView.tab) setActiveTab(urlView.tab);
-      handleSelectHistory(urlView.runId);
+      handleSelectHistory(urlView.runId, urlView.tab);
     }
   }, [urlView]); // eslint-disable-line react-hooks/exhaustive-deps
 
