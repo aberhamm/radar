@@ -186,7 +186,7 @@ function DetailPanel({
 // ─── AppSidebar ────────────────────────────────────────────────
 
 export function AppSidebar(props: SidebarProps) {
-  const [activeSection, setActiveSection] = useState<Section>('home');
+  const [activeSection, setActiveSection] = useState<Section>('history');
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const handleSectionClick = useCallback((section: Section) => {

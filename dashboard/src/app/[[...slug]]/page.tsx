@@ -739,6 +739,18 @@ export default function DashboardPage() {
         </span>
 
         <div className="ml-auto flex gap-2 items-center">
+          {/* New Analysis — always accessible from header */}
+          {!isRunningOrPaused && (
+            <button
+              onClick={handleNewRun}
+              className="flex items-center gap-1.5 h-7 rounded-md bg-tint text-white px-3 text-[12px] font-semibold cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              New Analysis
+            </button>
+          )}
           {/* Theme toggle */}
           <button
             onClick={cycleTheme}
