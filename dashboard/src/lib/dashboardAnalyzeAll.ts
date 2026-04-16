@@ -133,7 +133,7 @@ export async function dashboardAnalyzeAll(
     };
 
     // Post-core rebalance
-    const rebalance = rebalanceBudget(plan, coreResult as RunResult);
+    const rebalance = rebalanceBudget(plan, coreResult as any);
     nextjsBudget = rebalance.adjustedPasses[1].budget;
     a11yBudget = rebalance.adjustedPasses[2].budget;
     skipNextjs = rebalance.adjustedPasses[1].skip;

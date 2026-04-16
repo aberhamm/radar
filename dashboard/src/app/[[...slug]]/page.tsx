@@ -194,9 +194,12 @@ export default function DashboardPage() {
         try {
           const res = await fetch(`/api/compare?a=${encodeURIComponent(urlView.compareIds[0])}&b=${encodeURIComponent(urlView.compareIds[1])}`);
           const data = await res.json();
-          if (res.ok) {
+          if (res.ok && !data.error) {
             setCompareData(data as CompareData);
             setStatus('comparing');
+          } else {
+            console.warn('[url] Compare failed:', data.error);
+            pushUrl({ view: 'idle' });
           }
         } catch (err) {
           console.error('[url] Failed to load compare:', err);
@@ -566,7 +569,9 @@ export default function DashboardPage() {
       if (data.error || !data.result) {
         console.warn('[history] No result for run:', id, data.error);
         setHistoryLoading(false);
-        setSelectedRunId(id);
+        setSelectedRunId(null);
+        setStatus('idle');
+        pushUrl({ view: 'idle' });
         return;
       }
       // Cache the loaded run

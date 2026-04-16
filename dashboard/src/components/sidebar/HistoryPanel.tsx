@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { HistoryItem } from '@/lib/agentSession';
 import { groupByRepo, type SingleRun, type MultiGoalGroup } from '@/lib/historyGrouping';
 
@@ -39,8 +39,8 @@ export function HistoryPanel({
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const repoGroups = useMemo(() => groupByRepo(history), [history]);
 
-  // Auto-expand the most recent repo
-  useMemo(() => {
+  // Auto-expand the most recent repo on first load
+  useEffect(() => {
     if (repoGroups.length > 0 && expandedRepos.size === 0) {
       setExpandedRepos(new Set([repoGroups[0].repoName]));
     }

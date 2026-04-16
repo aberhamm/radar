@@ -17,7 +17,7 @@ export type ScoreLevel = 'red' | 'yellow' | 'green';
 // --- From src/types/output.ts ---
 
 export interface CategoryScore {
-  category: FindingCategory;
+  category: string;
   score: ScoreLevel;
   findings: unknown[];
   summary: string;
