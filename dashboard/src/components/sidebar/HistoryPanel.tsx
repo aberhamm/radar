@@ -150,6 +150,9 @@ export function HistoryPanel({
               <path d="M4 2l4 4-4 4" />
             </svg>
           )}
+          {!opts.isGroupHeader && !opts.isChild && (
+            <div className="w-3 shrink-0" />
+          )}
           <div className="flex-1 min-w-0">
             {opts.isChild ? (
               <>
@@ -270,6 +273,7 @@ export function HistoryPanel({
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
+                      <div className="w-3 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className={`text-[12px] font-semibold truncate ${isActive ? 'text-tint' : 'text-label group-hover:text-label'}`}>
                           {repoGroup.repoName}
