@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import type { Finding, FindingCategory, Severity, Evidence, DocRef } from '../../types/findings.js';
 import type { AgentState } from '../../types/state.js';
 import { verifyAndCorrectEvidence } from './verifyEvidence.js';
+import { computeFingerprint } from '../../ci/fingerprintUtils.js';
 
 export interface RecordFindingInput {
   finding: Finding;
@@ -78,18 +78,7 @@ function toDocRef(obj: unknown): DocRef | null {
   return { url: o.url, title: o.title, relevance: o.relevance };
 }
 
-/**
- * Compute a stable SHA-256 fingerprint for cross-run trend tracking.
- * Uses category + first evidence file path + normalized title so the same
- * logical finding produces the same fingerprint across runs even if
- * the description or severity changes.
- */
-function buildFingerprint(category: string, title: string, evidence: Evidence[]): string {
-  const normalizedTitle = title.toLowerCase().replace(/\s+/g, ' ').trim();
-  const firstFile = evidence.length > 0 ? evidence[0].filePath.replace(/\\/g, '/') : '';
-  const input = `${category}:${firstFile}:${normalizedTitle}`;
-  return createHash('sha256').update(input).digest('hex');
-}
+// Fingerprint computation is in src/ci/fingerprintUtils.ts (shared with diff.ts and githubIssues.ts)
 
 /**
  * Build a type-safe Finding from a validated object (must have passed isFindingLike).
@@ -114,7 +103,7 @@ function buildFinding(obj: Record<string, unknown>): Finding {
 
   const title = typeof obj.title === 'string' ? obj.title : '';
   const description = typeof obj.description === 'string' ? obj.description : '';
-  const fingerprint = buildFingerprint(obj.category as string, title, evidence);
+  const fingerprint = computeFingerprint(obj.category as string, title, evidence);
 
   return {
     id: obj.id as string,

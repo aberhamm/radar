@@ -20,6 +20,7 @@ export async function GET(
       id: record.id,
       goal: record.goal,
       repoName: record.repoName,
+      repoUrl: record.repoUrl,
       startedAt: record.startedAt,
       completedAt: record.completedAt,
       result: {
@@ -45,6 +46,7 @@ export async function GET(
     id: record.id,
     goal: record.goal,
     repoName: record.repoName,
+    repoUrl: record.repoUrl,
     startedAt: envelope.startedAt,
     completedAt: envelope.completedAt,
     result: {

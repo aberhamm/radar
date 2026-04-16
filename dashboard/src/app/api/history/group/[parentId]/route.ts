@@ -66,12 +66,14 @@ export async function GET(
   // Aggregate metrics
   const firstChild = children[0];
   const repoName = firstChild.repoName;
+  const repoUrl = firstChild.repoUrl;
   const startedAt = firstChild.startedAt;
   const completedAt = children[children.length - 1].completedAt ?? firstChild.completedAt;
 
   return NextResponse.json({
     parentId,
     repoName,
+    repoUrl,
     startedAt,
     completedAt,
     goals,

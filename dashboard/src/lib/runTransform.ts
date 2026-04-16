@@ -45,6 +45,10 @@ export interface Finding {
   evidence: EvidenceItem[];
   note: string;
   tags: string[];
+  /** SHA-256 fingerprint for cross-run tracking and GitHub issue dedup. */
+  fingerprint?: string;
+  /** Confidence 1-10 from agent investigation. */
+  confidence?: number;
 }
 
 export interface StreamTurn {
@@ -52,6 +56,8 @@ export interface StreamTurn {
   activities: Activity[];
   phase: 'analyze' | 'write';
   isSwitch?: boolean;
+  isPassBoundary?: boolean;
+  passName?: string;
 }
 
 export interface AnalysisTurn {
@@ -59,6 +65,9 @@ export interface AnalysisTurn {
   activities: Activity[];
   categoriesCovered: string[];
   duration: number;
+  isSwitch?: boolean;
+  isPassBoundary?: boolean;
+  passName?: string;
 }
 
 export interface TransformedRunData {
@@ -120,6 +129,7 @@ export function normalizeFindings(raw: unknown[]): Finding[] {
       sourceContext?: string; originalSnippet?: string;
     }>;
     investigationNote?: string; tags?: string[];
+    fingerprint?: string; confidence?: number;
   }>;
   return arr.map(f => ({
     id: f.id,
@@ -138,21 +148,102 @@ export function normalizeFindings(raw: unknown[]): Finding[] {
     })),
     note: f.investigationNote ?? f.description ?? '',
     tags: f.tags ?? [],
+    fingerprint: f.fingerprint,
+    confidence: f.confidence,
   }));
 }
 
 // ─── Transformer ────────────────────────────────────────────────
 
+/** Auto-flush investigation turns after this many tool calls. */
+const TOOL_CALLS_PER_TURN = 6;
+
+const DIR_TOOLS = new Set([
+  'list_directory', 'grep_pattern', 'find_files',
+  'analyze_route_structure', 'analyze_component_directives',
+  'analyze_middleware', 'analyze_env_usage',
+]);
+
+/** Human-readable verb for each tool action. */
+const ACTION_VERBS: Record<string, string> = {
+  read_file: 'Reading',
+  read_files_batch: 'Reading',
+  list_directory: 'Exploring',
+  find_files: 'Searching for',
+  grep_pattern: 'Searching for',
+  parse_package_json: 'Analyzing',
+  parse_tsconfig: 'Checking',
+  parse_next_config: 'Checking',
+  parse_env_file: 'Checking',
+  query_npm_versions: 'Querying',
+  compare_versions: 'Comparing',
+  analyze_middleware: 'Analyzing',
+  analyze_env_usage: 'Auditing',
+  analyze_route_structure: 'Mapping',
+  analyze_component_directives: 'Scanning',
+  check_gitignore: 'Checking',
+  detect_app_roots: 'Detecting',
+  detect_scope_drift: 'Checking',
+  get_specialist_prompts: 'Loading',
+  fetch_url: 'Fetching',
+};
+
+/** Build a readable description from a set of tool call activities. */
+function buildActivityDescription(activities: Activity[]): string {
+  const parts: string[] = [];
+  for (const a of activities) {
+    const verb = ACTION_VERBS[a.label] ?? 'Running';
+    const shortName = a.label.replace(/_/g, ' ');
+
+    // Show specific file/path targets
+    const targets = a.files
+      .map(f => f.split('/').filter(Boolean).slice(-2).join('/'))
+      .filter(Boolean);
+
+    if (targets.length > 0) {
+      const shown = targets.slice(0, 3).join(', ');
+      const extra = targets.length > 3 ? ` +${targets.length - 3} more` : '';
+      parts.push(`${verb} ${shown}${extra}`);
+    } else if (a.detail) {
+      parts.push(`${verb} ${shortName}: ${a.detail}`);
+    } else {
+      parts.push(`${verb} ${shortName}`);
+    }
+  }
+  return parts.join('. ') + '.';
+}
+
+/** Parse a tool_call event into an Activity. Does NOT merge with previous. */
+function parseToolActivity(ev: StepEvent): { activity: Activity; categories: string[] } {
+  let files: string[] = [];
+  let detail = '';
+  try {
+    const args = ev.args ? JSON.parse(ev.args) : {};
+    if (args.path && !DIR_TOOLS.has(ev.action)) files = [args.path];
+    else if (args.path) detail = args.path;
+    if (args.paths) files = args.paths;
+    if (args.filePath) files = [args.filePath];
+    if (args.pattern) detail = args.pattern;
+    if (args.packages) detail = Object.keys(args.packages).join(', ');
+  } catch { /* args not JSON */ }
+
+  const categories = ACTION_CATEGORY_HINTS[ev.action] ?? [];
+  return {
+    activity: { label: ev.action, files, detail },
+    categories,
+  };
+}
+
 export function transformRunData(
   events: StepEvent[],
   result: RunResult,
 ): TransformedRunData {
-  // 1. Group events into analysis turns by reasoning changes.
-  //    Multi-goal runs have multiple switch_to_fast_model events (one per pass)
-  //    and pass_boundary markers between passes. We treat switch events as
-  //    turn delimiters but continue processing (no bail-after-first-switch).
-  //    Post-switch "writing" events (record_finding, assemble_output) are
-  //    skipped since findings are already in the result object.
+  // Group events into analysis turns. Multi-goal runs have multiple passes
+  // separated by switch_to_fast_model and pass_boundary events.
+  //
+  // Key design: tool calls auto-flush every TOOL_CALLS_PER_TURN calls so that
+  // even passes with no intermediate reasoning (agent gives 1 sentence then
+  // runs 50 tools) produce granular, visible turns.
   const turns: AnalysisTurn[] = [];
   let currentReasoning = '';
   let currentActivities: Activity[] = [];
@@ -160,22 +251,34 @@ export function transformRunData(
   let inWritingPhase = false;
   let turnStartTime: number | null = null;
   let lastTimestamp: number | null = null;
+  let currentPassName = 'Core Investigation';
+  let toolCallCount = 0; // tool calls in current sub-turn
 
   const WRITING_ACTIONS = new Set(['record_finding', 'assemble_output']);
+
+  /** Flush accumulated activities into a turn. */
+  function flush(reasoning: string, duration?: number) {
+    if (currentActivities.length === 0 && !reasoning) return;
+    turns.push({
+      reasoning: reasoning || buildActivityDescription(currentActivities),
+      activities: currentActivities,
+      categoriesCovered: [...currentCategories],
+      duration: duration ?? (turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 1000),
+      passName: currentPassName,
+    });
+    currentActivities = [];
+    currentCategories = new Set();
+    toolCallCount = 0;
+    turnStartTime = lastTimestamp;
+  }
 
   for (const ev of events) {
     const ts = ev.timestamp ? new Date(ev.timestamp).getTime() : null;
 
     // Budget plan / rebalance: synthetic events from budget planner
     if (ev.action === 'budget_plan' || ev.action === 'budget_rebalance') {
-      if (currentReasoning && currentActivities.length > 0) {
-        turns.push({
-          reasoning: currentReasoning,
-          activities: currentActivities,
-          categoriesCovered: [...currentCategories],
-          duration: turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 1000,
-        });
-      }
+      if (currentActivities.length > 0) flush(currentReasoning);
+      currentReasoning = '';
       const label = ev.action === 'budget_plan'
         ? 'Budget plan computed'
         : 'Specialist budgets rebalanced';
@@ -184,122 +287,81 @@ export function transformRunData(
         activities: [{ label: ev.action, files: [], detail: ev.result ?? '' }],
         categoriesCovered: [],
         duration: 300,
+        passName: currentPassName,
       });
-      currentReasoning = '';
-      currentActivities = [];
-      currentCategories = new Set();
       continue;
     }
 
     // Pass boundary: synthetic event injected between multi-goal passes
     if (ev.action === 'pass_boundary') {
-      // Flush current turn
-      if (currentReasoning && currentActivities.length > 0) {
-        turns.push({
-          reasoning: currentReasoning,
-          activities: currentActivities,
-          categoriesCovered: [...currentCategories],
-          duration: turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 2000,
-        });
-      }
-      // Add a visual pass separator
-      const passName = ev.result ?? 'Next pass';
+      if (currentActivities.length > 0) flush(currentReasoning);
+      currentReasoning = '';
+      const passName = (ev.result as string) ?? 'Next pass';
+      currentPassName = passName;
       turns.push({
         reasoning: `Starting ${passName} investigation pass.`,
         activities: [{ label: 'pass_boundary', files: [], detail: passName }],
         categoriesCovered: [],
         duration: 500,
+        isPassBoundary: true,
+        passName,
       });
-      currentReasoning = '';
-      currentActivities = [];
-      currentCategories = new Set();
-      inWritingPhase = false; // new pass = back to investigation
+      inWritingPhase = false;
       continue;
     }
 
+    // Deduplicate: only process the tool_call event, not tool_start
+    if (ev.action === 'switch_to_fast_model' && ev.type !== 'tool_call') continue;
+
     if (ev.action === 'switch_to_fast_model') {
-      // Flush current turn
-      if (currentReasoning && currentActivities.length > 0) {
-        turns.push({
-          reasoning: currentReasoning,
-          activities: currentActivities,
-          categoriesCovered: [...currentCategories],
-          duration: turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 2000,
-        });
-      }
-      // Add the switch turn
+      if (currentActivities.length > 0) flush(currentReasoning);
+      currentReasoning = '';
       turns.push({
         reasoning: 'Analysis complete. Switching to fast model for writing.',
         activities: [{ label: 'switch_to_fast_model', files: [], detail: `${ev.step} tool calls used` }],
         categoriesCovered: [],
         duration: 1200,
+        isSwitch: true,
+        passName: currentPassName,
       });
       inWritingPhase = true;
-      currentReasoning = '';
-      currentActivities = [];
-      currentCategories = new Set();
       continue;
     }
 
     // Skip writing-phase events (findings/assembly handled via result object)
     if (inWritingPhase && WRITING_ACTIONS.has(ev.action)) continue;
 
-    if (ev.type === 'text_response' && ev.reasoning && ev.reasoning !== currentReasoning) {
-      // New reasoning = new turn. Flush previous.
-      if (currentReasoning && currentActivities.length > 0) {
-        turns.push({
-          reasoning: currentReasoning,
-          activities: currentActivities,
-          categoriesCovered: [...currentCategories],
-          duration: turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 2000,
-        });
+    if (ev.type === 'text_response') {
+      const reasoning = ev.fullReasoning || ev.reasoning;
+      if (reasoning && reasoning !== currentReasoning) {
+        // New reasoning = new turn. Flush accumulated tool calls.
+        if (currentActivities.length > 0) flush(currentReasoning);
+        currentReasoning = reasoning;
+        turnStartTime = ts;
       }
-      currentReasoning = ev.reasoning;
-      currentActivities = [];
-      currentCategories = new Set();
-      turnStartTime = ts;
     }
 
     if (ev.type === 'tool_call' && ev.action !== 'reasoning') {
-      // Parse args to extract file paths
-      // Only treat args.path as a file for tools that actually read files;
-      // tools like list_directory, grep_pattern, find_files use path for directories.
-      const DIR_TOOLS = new Set(['list_directory', 'grep_pattern', 'find_files', 'analyze_route_structure', 'analyze_component_directives', 'analyze_middleware', 'analyze_env_usage']);
-      let files: string[] = [];
-      let detail = '';
-      try {
-        const args = ev.args ? JSON.parse(ev.args) : {};
-        if (args.path && !DIR_TOOLS.has(ev.action)) files = [args.path];
-        if (args.paths) files = args.paths;
-        if (args.filePath) files = [args.filePath];
-        if (args.pattern) detail = args.pattern;
-        if (args.packages) detail = Object.keys(args.packages).join(', ');
-      } catch { /* args not JSON */ }
+      const { activity, categories } = parseToolActivity(ev);
+      currentActivities.push(activity);
+      categories.forEach(c => currentCategories.add(c));
+      toolCallCount++;
 
-      // Deduplicate: if same action already in this turn, merge
-      const existing = currentActivities.find(a => a.label === ev.action);
-      if (existing) {
-        existing.files.push(...files);
-      } else {
-        currentActivities.push({ label: ev.action, files, detail });
+      // Auto-flush: create a turn every N tool calls so the replay is granular.
+      // The first flush in a pass uses the agent's reasoning text; subsequent
+      // flushes get a description built from the tool calls.
+      if (toolCallCount >= TOOL_CALLS_PER_TURN) {
+        flush(currentReasoning);
+        currentReasoning = ''; // subsequent sub-turns use auto-generated description
       }
-
-      // Infer categories from action name
-      const hints = ACTION_CATEGORY_HINTS[ev.action];
-      if (hints) hints.forEach(c => currentCategories.add(c));
     }
 
     if (ts) lastTimestamp = ts;
   }
 
-  // Flush last turn if any
-  if (currentReasoning && currentActivities.length > 0) {
-    turns.push({
-      reasoning: currentReasoning,
-      activities: currentActivities,
-      categoriesCovered: [...currentCategories],
-      duration: turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 2000,
-    });
+  // Flush remaining
+  if (currentActivities.length > 0) {
+    flush(currentReasoning);
   }
 
   // 2. Transform findings
@@ -319,15 +381,13 @@ export function transformRunData(
     }
   }
 
-  // Ensure categories are distributed across turns
-  // Fill in uncovered categories from findings
+  // 4. Ensure categories are distributed across turns
   const allCoveredByTurns = new Set(turns.flatMap(t => t.categoriesCovered));
   const findingCategories = [...new Set(findings.map(f => f.category))];
   const uncovered = findingCategories.filter(c => !allCoveredByTurns.has(c));
-  // Spread uncovered categories across analysis turns
-  const invTurns = turns.filter(t => !t.activities.some(a => a.label === 'switch_to_fast_model'));
+  const regularTurns = turns.filter(t => !t.isSwitch && !t.isPassBoundary);
   uncovered.forEach((cat, i) => {
-    const turn = invTurns[i % invTurns.length];
+    const turn = regularTurns[i % regularTurns.length];
     if (turn) turn.categoriesCovered.push(cat);
   });
 

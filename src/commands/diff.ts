@@ -9,8 +9,8 @@
  */
 
 import fs from 'node:fs';
-import { createHash } from 'node:crypto';
 import type { Finding } from '../types/findings.js';
+import { getFingerprint } from '../ci/fingerprintUtils.js';
 
 // ── Diff result ─────────────────────────────────────────────────────────
 
@@ -19,21 +19,6 @@ export interface DiffResult {
   resolvedFindings: Finding[];
   persistentFindings: Finding[];
   summary: string;
-}
-
-// ── Fingerprint fallback ────────────────────────────────────────────────
-
-function computeFallbackFingerprint(f: Finding): string {
-  const normalizedTitle = f.title.toLowerCase().replace(/\s+/g, ' ').trim();
-  const firstFile = f.evidence.length > 0
-    ? f.evidence[0].filePath.replace(/\\/g, '/')
-    : '';
-  const input = `${f.category}:${firstFile}:${normalizedTitle}`;
-  return createHash('sha256').update(input).digest('hex');
-}
-
-function getFingerprint(f: Finding): string {
-  return f.fingerprint || computeFallbackFingerprint(f);
 }
 
 // ── Diff ────────────────────────────────────────────────────────────────

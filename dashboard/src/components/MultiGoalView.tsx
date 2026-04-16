@@ -1,14 +1,25 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Scorecard, RunMetrics, StepEvent } from '@/lib/agentSession';
+import type { Scorecard, RunMetrics, StepEvent, CategoryScore, ScoreLevel } from '@/lib/agentSession';
 import { transformRunData, type TransformedRunData, normalizeFindings, type Finding } from '@/lib/runTransform';
+import {
+  copyToClipboard,
+  buildMultiGoalMarkdown,
+  exportMultiGoalMarkdown,
+  exportReportPDF,
+  exportEventsCSV,
+  exportCostCSV,
+  costToMarkdown,
+} from '@/lib/export';
 import { AnalysisView } from './AnalysisView';
-import { ScorecardGrid, FindingsSection } from './CompleteView';
+import { FindingsSection, ExportButton, CopiedToast, CostTab } from './CompleteView';
 import { FindingsLoadingSkeleton } from './Skeleton';
-import { scoreColor, scoreBg, scoreToGrade } from '@/lib/utils';
+import { CreateIssuesModal } from './CreateIssuesModal';
+import { scoreColor, scoreBg, scoreToGrade, scoreToVerdict } from '@/lib/utils';
+import type { MultiTab } from '@/lib/useUrlState';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -24,6 +35,7 @@ export interface MultiGoalGoal {
 export interface MultiGoalData {
   parentId: string;
   repoName: string;
+  repoUrl?: string;
   startedAt: string;
   completedAt?: string;
   goals: MultiGoalGoal[];
@@ -34,9 +46,14 @@ export interface MultiGoalData {
 
 interface MultiGoalViewProps {
   data: MultiGoalData;
+  activeTab?: MultiTab;
+  onTabChange?: (tab: MultiTab) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
+
+const SCORE_ORDER: Record<string, number> = { red: 3, yellow: 2, green: 1 };
+const SEV_ORDER: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
 function goalDisplayName(goal: string): string {
   const names: Record<string, string> = {
@@ -64,6 +81,91 @@ function goalDescription(goal: string): string {
     accessibility: 'WCAG 2.1 AA compliance',
   };
   return descs[goal] ?? '';
+}
+
+/**
+ * Aggregate metrics from all goals into a single RunMetrics.
+ *
+ * NOTE: In multi-goal runs, all 8 child goals receive the SAME metrics object
+ * (from the last pass result). We deduplicate by checking object identity —
+ * if all goals share the same metrics, we use it directly instead of summing 8x.
+ */
+function aggregateMetrics(goals: MultiGoalGoal[], events: StepEvent[], startedAt: string, completedAt?: string): RunMetrics {
+  const allMetrics = goals.map(g => g.metrics).filter(Boolean);
+  if (allMetrics.length === 0) {
+    return { startedAt: '', completedAt: '', durationMs: 0, toolCalls: 0, models: {}, totalEstimatedCostUsd: 0 };
+  }
+
+  // Deduplicate: if all goals share identical metrics (same cost, same duration),
+  // they came from the same run result — use as-is instead of summing.
+  const first = allMetrics[0];
+  const allIdentical = allMetrics.every(m =>
+    m.totalEstimatedCostUsd === first.totalEstimatedCostUsd &&
+    m.durationMs === first.durationMs,
+  );
+
+  if (allIdentical) {
+    return {
+      ...first,
+      startedAt,
+      completedAt: completedAt ?? '',
+      toolCalls: events.filter(e => e.type === 'tool_call').length,
+    };
+  }
+
+  // Truly distinct metrics — sum them
+  const mergedModels: RunMetrics['models'] = {};
+  for (const m of allMetrics) {
+    for (const [modelId, info] of Object.entries(m.models)) {
+      if (!mergedModels[modelId]) {
+        mergedModels[modelId] = { ...info };
+      } else {
+        mergedModels[modelId].calls += info.calls;
+        mergedModels[modelId].inputTokens += info.inputTokens;
+        mergedModels[modelId].outputTokens += info.outputTokens;
+        mergedModels[modelId].cachedTokens += info.cachedTokens;
+        mergedModels[modelId].estimatedCostUsd += info.estimatedCostUsd;
+      }
+    }
+  }
+
+  return {
+    startedAt,
+    completedAt: completedAt ?? '',
+    durationMs: allMetrics.reduce((sum, m) => sum + m.durationMs, 0),
+    toolCalls: events.filter(e => e.type === 'tool_call').length,
+    models: mergedModels,
+    totalEstimatedCostUsd: allMetrics.reduce((sum, m) => sum + m.totalEstimatedCostUsd, 0),
+  };
+}
+
+/** Build a merged scorecard across all goals for cross-goal findings display. */
+function buildMergedScorecard(goals: MultiGoalGoal[], repoName: string, startedAt: string, worstScore: ScoreLevel): Scorecard {
+  const catMap = new Map<string, CategoryScore>();
+  for (const g of goals) {
+    for (const cat of g.scorecard.categories) {
+      const existing = catMap.get(cat.category);
+      if (!existing || (SCORE_ORDER[cat.score] ?? 0) > (SCORE_ORDER[existing.score] ?? 0)) {
+        catMap.set(cat.category, cat);
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const allRisks = goals.flatMap(g => g.scorecard.topRisks ?? []).filter(r => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  }).sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0));
+
+  return {
+    repoName,
+    goalType: 'all',
+    generatedAt: startedAt,
+    overallScore: worstScore,
+    categories: [...catMap.values()],
+    topRisks: allRisks,
+  };
 }
 
 // ─── Scoreboard ─────────────────────────────────────────────────
@@ -110,9 +212,8 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
     }
   }
 
-  const sevOrder: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
   const sorted = allRisks
-    .sort((a, b) => (sevOrder[b.severity] ?? 0) - (sevOrder[a.severity] ?? 0))
+    .sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0))
     .slice(0, 8);
 
   if (sorted.length === 0) return null;
@@ -220,6 +321,43 @@ function PassBreakdown({ events }: { events: StepEvent[] }) {
   );
 }
 
+// ─── Per-Goal Score Summary ─────────────────────────────────────
+
+function PerGoalSummaryTable({ goals }: { goals: MultiGoalGoal[] }) {
+  return (
+    <div className="mt-6">
+      <div className="text-tertiary-label font-semibold mb-3 text-[10px] uppercase tracking-wide">
+        Per-Goal Summary
+      </div>
+      <div className="bg-surface rounded-lg border border-separator shadow-sm overflow-hidden">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-canvas text-tertiary-label text-[11px]">
+              {['Goal', 'Score', 'Categories', 'Findings'].map(h => (
+                <th key={h} className="px-4 py-2.5 text-left font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {goals.map(g => (
+              <tr key={g.id} className="border-t border-separator">
+                <td className="px-4 py-2.5 text-label font-medium">{goalDisplayName(g.goal)}</td>
+                <td className="px-4 py-2.5">
+                  <span className="font-bold uppercase" style={{ color: scoreColor(g.scorecard.overallScore) }}>
+                    {g.scorecard.overallScore}
+                  </span>
+                </td>
+                <td className="px-4 py-2.5 text-secondary-label">{g.scorecard.categories.length}</td>
+                <td className="px-4 py-2.5 text-secondary-label">{g.findingsCount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Goal Section (collapsible per-goal report) ─────────────────
 
 function GoalSection({
@@ -299,12 +437,9 @@ function GoalSection({
       {/* Expanded content */}
       {isExpanded && (
         <div className="px-4 pb-5 border-t border-separator/50 pt-4">
-          <ScorecardGrid scorecard={goal.scorecard} metrics={goal.metrics} />
+          <FindingsSection findings={findings ?? []} scorecard={goal.scorecard} />
 
           {loading && <FindingsLoadingSkeleton />}
-          {findings && findings.length > 0 && (
-            <FindingsSection findings={findings} scorecard={goal.scorecard} />
-          )}
           {findings && findings.length === 0 && !loading && goal.findingsCount > 0 && (
             <div className="text-[12px] text-tertiary-label mb-4">No detailed findings available.</div>
           )}
@@ -322,12 +457,27 @@ function GoalSection({
 
 // ─── Main Component ─────────────────────────────────────────────
 
-type ViewMode = 'summary' | 'investigation';
+const TABS: { id: MultiTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'investigation', label: 'Investigation' },
+  { id: 'cost', label: 'Cost' },
+];
 
-export function MultiGoalView({ data }: MultiGoalViewProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('summary');
+export function MultiGoalView({ data, activeTab: controlledTab, onTabChange }: MultiGoalViewProps) {
+  const [internalTab, setInternalTab] = useState<MultiTab>('overview');
+  const activeTab = controlledTab ?? internalTab;
+  const setActiveTab = onTabChange ?? setInternalTab;
+
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const [copied, setCopied] = useState(false);
   const sectionRefs = useRef(new Map<string, HTMLDivElement>());
+
+  const flash = useCallback(() => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, []);
 
   // Transform events for AnalysisView replay
   const runData: TransformedRunData | undefined = data.events.length > 0
@@ -341,18 +491,32 @@ export function MultiGoalView({ data }: MultiGoalViewProps) {
       })
     : undefined;
 
-  // Aggregate metrics
-  const metrics = data.goals[0]?.metrics;
-  const durationMs = metrics?.durationMs ?? 0;
-  const toolCalls = data.events.filter(e => e.type === 'tool_call').length;
-  const cost = metrics?.totalEstimatedCostUsd ?? 0;
+  // Aggregate metrics across ALL goals (not just goals[0])
+  const metrics = useMemo(
+    () => aggregateMetrics(data.goals, data.events, data.startedAt, data.completedAt),
+    [data.goals, data.events, data.startedAt, data.completedAt],
+  );
 
   // Worst score across all goals
-  const scoreOrder: Record<string, number> = { red: 3, yellow: 2, green: 1 };
-  const worstScore = data.goals.reduce<string>((worst, g) => {
-    const s = g.scorecard.overallScore;
-    return (scoreOrder[s] ?? 0) > (scoreOrder[worst] ?? 0) ? s : worst;
-  }, 'green');
+  const worstScore = useMemo(() =>
+    data.goals.reduce<ScoreLevel>((worst, g) => {
+      const s = g.scorecard.overallScore;
+      return (SCORE_ORDER[s] ?? 0) > (SCORE_ORDER[worst] ?? 0) ? s : worst;
+    }, 'green'),
+    [data.goals],
+  );
+
+  // Merged scorecard for cross-goal findings display + PDF export
+  const mergedScorecard = useMemo(
+    () => buildMergedScorecard(data.goals, data.repoName, data.startedAt, worstScore),
+    [data.goals, data.repoName, data.startedAt, worstScore],
+  );
+
+  // Normalize all findings for cross-goal display + issue creation
+  const allFindings: Finding[] = useMemo(
+    () => data.findings?.length > 0 ? normalizeFindings(data.findings) : [],
+    [data.findings],
+  );
 
   const toggleGoal = useCallback((goalId: string) => {
     setExpandedGoals(prev => {
@@ -364,109 +528,226 @@ export function MultiGoalView({ data }: MultiGoalViewProps) {
   }, []);
 
   const scrollToGoal = useCallback((goalId: string) => {
-    // Expand the section
     setExpandedGoals(prev => new Set(prev).add(goalId));
-    // Scroll into view after DOM update
     requestAnimationFrame(() => {
       sectionRefs.current.get(goalId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }, []);
 
+  const gradeColor = scoreColor(worstScore);
+  const verdict = scoreToVerdict(worstScore);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="px-6 pt-5 pb-4 border-b border-separator shrink-0">
-        <div className="flex items-center gap-3 mb-2">
+      {/* Exec summary banner */}
+      <div className="px-6 py-4 border-b border-separator bg-surface shrink-0">
+        <div className="flex items-start gap-5 max-w-[860px]">
           <div
-            className="w-3 h-3 rounded-full shrink-0"
-            style={{ background: scoreColor(worstScore) }}
-            role="img"
-            aria-label={`Score: ${worstScore}`}
-          />
-          <h1 className="text-[20px] font-bold text-label">
-            {data.repoName}
-          </h1>
-          <span className="text-[12px] font-medium text-tint bg-[rgb(0_113_227/0.08)] rounded px-2 py-0.5">
-            all goals
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-[12px] text-secondary-label">
-          <span>{data.totalFindings} findings</span>
-          <span>{toolCalls} tool calls</span>
-          <span>{(durationMs / 1000).toFixed(0)}s</span>
-          {cost > 0 && <span>${cost.toFixed(4)}</span>}
-          <span>{data.goals.length} goals scored</span>
-        </div>
-
-        {/* View toggle */}
-        <div className="flex gap-1 mt-3 bg-elevated rounded-lg p-0.5 w-fit">
-          <button
-            onClick={() => setViewMode('summary')}
-            className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-all cursor-pointer ${
-              viewMode === 'summary'
-                ? 'bg-surface shadow-sm text-label'
-                : 'text-secondary-label hover:text-label'
-            }`}
+            className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: `color-mix(in srgb, ${gradeColor} 10%, transparent)` }}
           >
-            Results
-          </button>
-          <button
-            onClick={() => setViewMode('investigation')}
-            className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-all cursor-pointer ${
-              viewMode === 'investigation'
-                ? 'bg-surface shadow-sm text-label'
-                : 'text-secondary-label hover:text-label'
-            }`}
-          >
-            Investigation
-          </button>
+            <span className="text-[28px] font-bold font-brand" style={{ color: gradeColor }}>
+              {scoreToGrade(worstScore)}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="text-[15px] font-semibold text-label">{verdict}</h1>
+              <span className="text-[12px] font-medium text-tint bg-[rgb(0_113_227/0.08)] rounded px-2 py-0.5">
+                {data.goals.length} goals
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-[12px] text-secondary-label mb-2 flex-wrap">
+              <span>{data.repoName}</span>
+              <span>{data.totalFindings} findings</span>
+              <span>{metrics.toolCalls} tool calls</span>
+              <span>${metrics.totalEstimatedCostUsd.toFixed(2)}</span>
+              <span>{(metrics.durationMs / 1000).toFixed(0)}s</span>
+            </div>
+            {mergedScorecard.topRisks.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {mergedScorecard.topRisks.slice(0, 3).map(risk => (
+                  <span
+                    key={risk.id}
+                    className="text-[11px] px-2 py-0.5 rounded-md"
+                    style={{
+                      background: risk.severity === 'critical' || risk.severity === 'high'
+                        ? 'rgba(255,59,48,0.08)' : 'rgba(255,149,0,0.08)',
+                      color: risk.severity === 'critical' || risk.severity === 'high'
+                        ? 'var(--color-danger)' : 'var(--color-warning)',
+                    }}
+                  >
+                    {risk.title}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {viewMode === 'summary' && (
-          <div className="px-6 py-5 max-w-4xl">
-            {/* Scoreboard overview */}
-            <div className="mb-6">
-              <h2 className="text-[15px] font-semibold text-label mb-3">Scoreboard</h2>
-              <Scoreboard goals={data.goals} onScrollTo={scrollToGoal} />
-            </div>
+      {/* Tab bar */}
+      <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
+        <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5" role="tablist" aria-label="Report sections">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-5 py-1.5 min-w-[72px] min-h-touch rounded-md text-[13px] font-medium transition-all cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-surface text-label shadow-sm'
+                  : 'text-secondary-label hover:text-label'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-            {/* Top risks + pass breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              <TopRisks goals={data.goals} />
-              <PassBreakdown events={data.events} />
-            </div>
+        {/* Export actions — right side of tab bar */}
+        <div className="ml-auto flex items-center gap-2">
+          <CopiedToast visible={copied} />
 
-            {/* Per-goal sections */}
-            <div className="flex flex-col gap-3">
-              {data.goals.map(g => (
-                <GoalSection
-                  key={g.id}
-                  goal={g}
-                  isExpanded={expandedGoals.has(g.id)}
-                  onToggle={() => toggleGoal(g.id)}
-                  sectionRef={(el) => {
-                    if (el) sectionRefs.current.set(g.id, el);
-                    else sectionRefs.current.delete(g.id);
-                  }}
+          {activeTab === 'overview' && (
+            <>
+              <ExportButton
+                label="Copy Markdown"
+                onClick={async () => {
+                  const md = buildMultiGoalMarkdown(
+                    data.goals.map(g => ({ goal: g.goal, scorecard: g.scorecard, briefMarkdown: g.briefMarkdown })),
+                    data.repoName,
+                  );
+                  const ok = await copyToClipboard(md);
+                  if (ok) flash();
+                }}
+              />
+              <ExportButton
+                label="Export .md"
+                onClick={() => exportMultiGoalMarkdown(
+                  data.goals.map(g => ({ goal: g.goal, scorecard: g.scorecard, briefMarkdown: g.briefMarkdown })),
+                  data.repoName,
+                )}
+              />
+              <ExportButton
+                label={pdfExporting ? 'Exporting...' : 'Export PDF'}
+                onClick={async () => {
+                  setPdfExporting(true);
+                  try {
+                    await exportReportPDF(mergedScorecard, data.findings ?? [], metrics);
+                  } catch (err) {
+                    console.error('PDF export failed:', err);
+                  } finally {
+                    setPdfExporting(false);
+                  }
+                }}
+              />
+              {allFindings.length > 0 && (
+                <ExportButton
+                  label="Create Issues"
+                  onClick={() => setIssueModalOpen(true)}
                 />
-              ))}
-            </div>
-          </div>
-        )}
+              )}
+            </>
+          )}
 
-        {viewMode === 'investigation' && runData && (
-          <AnalysisView runData={runData} />
-        )}
+          {activeTab === 'investigation' && (
+            <ExportButton
+              label="Export CSV"
+              onClick={() => exportEventsCSV(data.events, data.repoName)}
+            />
+          )}
 
-        {viewMode === 'investigation' && !runData && (
-          <div className="flex-1 flex items-center justify-center p-8">
-            <p className="text-sm text-tertiary-label">No investigation events available.</p>
-          </div>
-        )}
+          {activeTab === 'cost' && (
+            <>
+              <ExportButton
+                label="Copy Markdown"
+                onClick={async () => {
+                  const ok = await copyToClipboard(costToMarkdown(metrics));
+                  if (ok) flash();
+                }}
+              />
+              <ExportButton
+                label="Export CSV"
+                onClick={() => exportCostCSV(metrics, data.repoName)}
+              />
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Tab content */}
+      <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'investigation' ? '' : 'px-6'}`}>
+        <div key={activeTab} role="tabpanel" aria-label={activeTab} className="animate-slide-up flex-1 flex flex-col">
+          {activeTab === 'overview' && (
+            <div className="max-w-4xl pt-5 pb-8">
+              {/* Scoreboard overview */}
+              <div className="mb-6">
+                <Scoreboard goals={data.goals} onScrollTo={scrollToGoal} />
+              </div>
+
+              {/* Top risks + pass breakdown */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <TopRisks goals={data.goals} />
+                <PassBreakdown events={data.events} />
+              </div>
+
+              {/* Cross-goal findings — all findings sorted by severity */}
+              {allFindings.length > 0 && (
+                <div className="mb-8">
+                  <FindingsSection findings={allFindings} scorecard={mergedScorecard} />
+                </div>
+              )}
+
+              {/* Per-goal sections */}
+              <div className="mb-2">
+                <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold mb-3">
+                  Per-Goal Details
+                </div>
+              </div>
+              <div className="flex flex-col gap-3">
+                {data.goals.map(g => (
+                  <GoalSection
+                    key={g.id}
+                    goal={g}
+                    isExpanded={expandedGoals.has(g.id)}
+                    onToggle={() => toggleGoal(g.id)}
+                    sectionRef={(el) => {
+                      if (el) sectionRefs.current.set(g.id, el);
+                      else sectionRefs.current.delete(g.id);
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'investigation' && runData && (
+            <AnalysisView runData={runData} />
+          )}
+
+          {activeTab === 'investigation' && !runData && (
+            <div className="flex-1 flex items-center justify-center p-8">
+              <p className="text-sm text-tertiary-label">No investigation events available.</p>
+            </div>
+          )}
+
+          {activeTab === 'cost' && (
+            <div className="max-w-4xl">
+              <CostTab metrics={metrics} />
+              <PerGoalSummaryTable goals={data.goals} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <CreateIssuesModal
+        isOpen={issueModalOpen}
+        onClose={() => setIssueModalOpen(false)}
+        findings={allFindings}
+        repoUrl={data.repoUrl}
+      />
     </div>
   );
 }

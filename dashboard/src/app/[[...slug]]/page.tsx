@@ -5,9 +5,10 @@ import type { StepEvent, Scorecard, RunMetrics, RunResult, HistoryItem } from '@
 import { transformRunData } from '@/lib/runTransform';
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
-import { useUrlState, buildUrl, type Tab } from '@/lib/useUrlState';
+import { useUrlState, buildUrl, type Tab, type MultiTab } from '@/lib/useUrlState';
 import { ContextBar } from '@/components/ContextBar';
 import { Sidebar } from '@/components/Sidebar';
+import { AppSidebar, USE_SIDEBAR_V2 } from '@/components/AppSidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { IdleView } from '@/components/IdleView';
 import { CompleteView } from '@/components/CompleteView';
@@ -108,6 +109,7 @@ export default function DashboardPage() {
   const [multiGoalData, setMultiGoalData] = useState<MultiGoalData | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('report');
+  const [multiTab, setMultiTab] = useState<MultiTab>('overview');
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
   const { urlView, pushUrl, replaceUrl } = useUrlState();
   const urlHandledRef = useRef(false);
@@ -168,6 +170,21 @@ export default function DashboardPage() {
           setResult(data.result);
           setStatus('complete');
           setIsSampleReplay(false);
+          if (data.currentRun) {
+            setCurrentRun({
+              repoPath: '',
+              repoName: data.currentRun.repoName,
+              goal: data.currentRun.goal,
+              startedAt: new Date(data.currentRun.startedAt),
+              events: [],
+              toolCalls: data.result.metrics?.toolCalls ?? 0,
+              budget: data.result.metrics?.toolCalls ?? 45,
+            });
+            setSelectedRunId(data.currentRun.id ?? null);
+            if (data.currentRun.id) {
+              pushUrl({ view: 'run', runId: data.currentRun.id });
+            }
+          }
           urlHandledRef.current = true;
         }
       })
@@ -220,6 +237,7 @@ export default function DashboardPage() {
           setMultiGoalData(data as MultiGoalData);
           setSelectedRunId(urlView.parentId);
           setStatus('multigoal');
+          if (urlView.tab) setMultiTab(urlView.tab);
         } catch (err) {
           console.error('[url] Failed to load multi-goal group:', urlView.parentId, err);
         } finally {
@@ -254,6 +272,13 @@ export default function DashboardPage() {
       replaceUrl({ view: 'run', runId: selectedRunId, tab });
     }
   }, [selectedRunId, replaceUrl]);
+
+  const handleMultiTabChange = useCallback((tab: MultiTab) => {
+    setMultiTab(tab);
+    if (multiGoalData?.parentId) {
+      replaceUrl({ view: 'multi', parentId: multiGoalData.parentId, tab });
+    }
+  }, [multiGoalData?.parentId, replaceUrl]);
 
   const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string) => {
     const resolvedName = repoName ?? (repoPath.split(/[/\\]/).pop() || repoPath);
@@ -810,29 +835,55 @@ export default function DashboardPage() {
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar
-          open={sidebarOpen}
-          history={fullHistory}
-          activeRunId={selectedRunId}
-          currentRepoName={currentRun?.repoName}
-          currentGoal={currentRun?.goal}
-          isRunning={isRunningOrPaused}
-          onSelectHistory={handleSelectHistory}
-          onPrefetch={handlePrefetch}
-          onNewRun={handleNewRun}
-          onClose={() => setSidebarOpen(false)}
-          compareMode={compareMode}
-          compareSelections={compareSelections}
-          onToggleCompare={handleToggleCompareMode}
-          onCompareSelect={handleCompareSelect}
-          onCompare={handleCompare}
-          hasMore={hasMoreHistory}
-          onLoadMore={handleLoadMore}
-          activeTab={activeTab}
-          onSectionClick={handleTabChange}
-          showSections={(status === 'complete' || status === 'error') && !!result}
-          compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
-        />
+        {USE_SIDEBAR_V2 ? (
+          <AppSidebar
+            open={sidebarOpen}
+            history={fullHistory}
+            activeRunId={selectedRunId}
+            currentRepoName={currentRun?.repoName}
+            currentGoal={currentRun?.goal}
+            isRunning={isRunningOrPaused}
+            onSelectHistory={handleSelectHistory}
+            onPrefetch={handlePrefetch}
+            onNewRun={handleNewRun}
+            onClose={() => setSidebarOpen(false)}
+            compareMode={compareMode}
+            compareSelections={compareSelections}
+            onToggleCompare={handleToggleCompareMode}
+            onCompareSelect={handleCompareSelect}
+            onCompare={handleCompare}
+            hasMore={hasMoreHistory}
+            onLoadMore={handleLoadMore}
+            activeTab={activeTab}
+            onSectionClick={handleTabChange}
+            showSections={(status === 'complete' || status === 'error') && !!result}
+            compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
+          />
+        ) : (
+          <Sidebar
+            open={sidebarOpen}
+            history={fullHistory}
+            activeRunId={selectedRunId}
+            currentRepoName={currentRun?.repoName}
+            currentGoal={currentRun?.goal}
+            isRunning={isRunningOrPaused}
+            onSelectHistory={handleSelectHistory}
+            onPrefetch={handlePrefetch}
+            onNewRun={handleNewRun}
+            onClose={() => setSidebarOpen(false)}
+            compareMode={compareMode}
+            compareSelections={compareSelections}
+            onToggleCompare={handleToggleCompareMode}
+            onCompareSelect={handleCompareSelect}
+            onCompare={handleCompare}
+            hasMore={hasMoreHistory}
+            onLoadMore={handleLoadMore}
+            activeTab={activeTab}
+            onSectionClick={handleTabChange}
+            showSections={(status === 'complete' || status === 'error') && !!result}
+            compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
+          />
+        )}
 
         <main className="flex-1 flex flex-col overflow-hidden relative" aria-label="Main content">
           {(historyLoading || compareLoading) && (
@@ -882,7 +933,11 @@ export default function DashboardPage() {
 
           {status === 'multigoal' && multiGoalData && !historyLoading && (
             <div key="multigoal" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
-              <MultiGoalView data={multiGoalData} />
+              <MultiGoalView
+                data={multiGoalData}
+                activeTab={multiTab}
+                onTabChange={handleMultiTabChange}
+              />
             </div>
           )}
 
@@ -896,6 +951,7 @@ export default function DashboardPage() {
                 goal={currentRun.goal}
                 findings={result.state?.findings}
                 runId={selectedRunId ?? undefined}
+                repoUrl={selectedRunId ? history.find(h => h.id === selectedRunId)?.repoUrl : undefined}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
               />

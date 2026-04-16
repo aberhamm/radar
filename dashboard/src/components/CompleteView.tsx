@@ -17,6 +17,7 @@ import { EventStream } from './EventStream';
 import { FindingCard } from './FindingCard';
 import { FindingsLoadingSkeleton, RulesLoadingSkeleton, EventsLoadingSkeleton } from './Skeleton';
 import { normalizeFindings, type Finding } from '@/lib/runTransform';
+import { CreateIssuesModal } from './CreateIssuesModal';
 import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
 import type { Tab } from '@/lib/useUrlState';
 
@@ -28,6 +29,8 @@ interface CompleteViewProps {
   goal: string;
   findings?: unknown[];
   runId?: string;
+  /** GitHub URL for the analyzed repo (used by Create Issues). */
+  repoUrl?: string;
   /** Controlled active tab (from URL state). */
   activeTab?: Tab;
   /** Callback when tab changes (syncs to URL). */
@@ -299,7 +302,7 @@ export function FindingsSection({ findings, scorecard }: { findings: Finding[]; 
   );
 }
 
-function CostTab({ metrics }: { metrics: RunMetrics }) {
+export function CostTab({ metrics }: { metrics: RunMetrics }) {
   const durationS = (metrics.durationMs / 1000).toFixed(1);
   const modelEntries = Object.entries(metrics.models);
 
@@ -395,7 +398,7 @@ function RulesTab({ goal }: { goal: string }) {
   );
 }
 
-function ExportButton({ label, onClick }: { label: string; onClick: () => void }) {
+export function ExportButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -408,7 +411,7 @@ function ExportButton({ label, onClick }: { label: string; onClick: () => void }
   );
 }
 
-function CopiedToast({ visible }: { visible: boolean }) {
+export function CopiedToast({ visible }: { visible: boolean }) {
   if (!visible) return null;
   return (
     <span className="text-[12px] text-success font-medium animate-slide-up ml-2">
@@ -417,7 +420,7 @@ function CopiedToast({ visible }: { visible: boolean }) {
   );
 }
 
-export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId, activeTab: controlledTab, onTabChange }: CompleteViewProps) {
+export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId, repoUrl, activeTab: controlledTab, onTabChange }: CompleteViewProps) {
   const [internalTab, setInternalTab] = useState<Tab>('report');
   const activeTab = controlledTab ?? internalTab;
   const [copied, setCopied] = useState(false);
@@ -426,6 +429,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
   const [eventsLoading, setEventsLoading] = useState(false);
   const [lazyFindings, setLazyFindings] = useState<Finding[] | null>(null);
   const [findingsLoading, setFindingsLoading] = useState(false);
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
 
   const resolvedEvents = events.length > 0 ? events : lazyEvents ?? [];
 
@@ -539,6 +543,10 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
                   }
                 }}
               />
+              <ExportButton
+                label="Create Issues"
+                onClick={() => setIssueModalOpen(true)}
+              />
             </>
           )}
 
@@ -604,6 +612,13 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
           {activeTab === 'cost' && <CostTab metrics={metrics} />}
         </div>
       </div>
+
+      <CreateIssuesModal
+        isOpen={issueModalOpen}
+        onClose={() => setIssueModalOpen(false)}
+        findings={typedFindings}
+        repoUrl={repoUrl}
+      />
     </div>
   );
 }

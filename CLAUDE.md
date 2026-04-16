@@ -55,6 +55,9 @@ FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 # Optional: enable web search (Brave Search API)
 # SEARCH_ENGINE=brave
 # SEARCH_API_KEY=your-brave-search-api-key
+
+# Optional: enable GitHub issue creation from findings
+# GITHUB_TOKEN=ghp_... (needs repo scope)
 ```
 
 Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles the investigation phase (reasoning, tool selection, evidence gathering). `FAST_MODEL` handles finding recording and brief assembly. Both models are built by `src/config/piModel.ts`. Swap to any provider's model IDs without code changes.

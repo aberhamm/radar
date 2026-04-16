@@ -6,14 +6,16 @@ import { usePathname, useSearchParams } from 'next/navigation';
 // ─── Types ──────────────────────────────────────────────────────
 
 export type Tab = 'report' | 'events' | 'rules' | 'cost';
+export type MultiTab = 'overview' | 'investigation' | 'cost';
 
 export type UrlView =
   | { view: 'idle' }
   | { view: 'run'; runId: string; tab?: Tab }
   | { view: 'compare'; compareIds: [string, string] }
-  | { view: 'multi'; parentId: string };
+  | { view: 'multi'; parentId: string; tab?: MultiTab };
 
 const VALID_TABS = new Set<Tab>(['report', 'events', 'rules', 'cost']);
+const VALID_MULTI_TABS = new Set<MultiTab>(['overview', 'investigation', 'cost']);
 
 // ─── Pure Functions ─────────────────────────────────────────────
 
@@ -42,9 +44,11 @@ export function parseUrl(pathname: string, searchParams?: URLSearchParams): UrlV
   }
 
   if (segments[0] === 'multi' && segments[1]) {
+    const multiTab = searchParams?.get('tab') as MultiTab | null;
     return {
       view: 'multi',
       parentId: segments[1],
+      tab: multiTab && VALID_MULTI_TABS.has(multiTab) ? multiTab : undefined,
     };
   }
 
@@ -63,8 +67,10 @@ export function buildUrl(state: UrlView): string {
     }
     case 'compare':
       return `/compare/${state.compareIds[0]}/${state.compareIds[1]}`;
-    case 'multi':
-      return `/multi/${state.parentId}`;
+    case 'multi': {
+      const base = `/multi/${state.parentId}`;
+      return state.tab && state.tab !== 'overview' ? `${base}?tab=${state.tab}` : base;
+    }
   }
 }
 

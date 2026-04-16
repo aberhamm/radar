@@ -25,11 +25,17 @@ export interface AnimationActions {
 
 // ─── Hook ───────────────────────────────────────────────────────
 
+/**
+ * Drives the replay animation for completed runs.
+ *
+ * `allTurns` includes investigation turns, switch markers, and pass
+ * boundaries — the hook treats switches/boundaries as instant visual
+ * markers and types out regular investigation turns character-by-character.
+ */
 export function useAnimationSequence(
-  invTurns: AnalysisTurn[],
+  allTurns: AnalysisTurn[],
   allFindings: Finding[],
   findingBatches: number[],
-  hasSwitch: boolean,
 ): AnimationState & AnimationActions {
   const [phase, setPhase] = useState<AnimationPhase>('idle');
   const [turns, setTurns] = useState<StreamTurn[]>([]);
@@ -69,26 +75,71 @@ export function useAnimationSequence(
     setTimeout(() => {
       setPhase('analyzing');
       let d = 0;
-      const typeSpeed = 14;
+      const typeSpeed = 10;
 
-      // Analysis turns — progress from 3% to 42% across N turns
-      const totalInvTurns = invTurns.length;
-      let turnCounter = 0;
-      invTurns.forEach((turn, turnIdx) => {
+      // ── Investigation turns (including switches + pass boundaries) ──
+      // Progress: 3% → 60% across all investigation turns
+      const totalTurns = allTurns.length;
+      let streamTurnCounter = 0;
+
+      allTurns.forEach((turn, turnIdx) => {
+        const turnPct = 3 + ((turnIdx + 1) / totalTurns) * 57;
+
+        // ── Switch marker: instant push, no typing ──
+        if (turn.isSwitch) {
+          const thisTurnIndex = streamTurnCounter++;
+          t(() => {
+            setPhase('switching');
+            setProgressPercent(Math.round(turnPct));
+            setActiveTurnIndex(null);
+            setTurns(prev => [...prev, {
+              reasoning: '',
+              activities: [],
+              phase: 'analyze',
+              isSwitch: true,
+            }]);
+          }, d);
+          d += 800;
+          // Restore analyzing phase for subsequent turns
+          t(() => setPhase('analyzing'), d);
+          void thisTurnIndex; // used for counter only
+          return;
+        }
+
+        // ── Pass boundary marker: instant push ──
+        if (turn.isPassBoundary) {
+          const thisTurnIndex = streamTurnCounter++;
+          t(() => {
+            setProgressPercent(Math.round(turnPct));
+            setTurns(prev => [...prev, {
+              reasoning: turn.passName ?? 'Next pass',
+              activities: [],
+              phase: 'analyze',
+              isPassBoundary: true,
+              passName: turn.passName,
+            }]);
+          }, d);
+          d += 500;
+          void thisTurnIndex;
+          return;
+        }
+
+        // ── Regular investigation turn: type reasoning + push activities ──
         const text = turn.reasoning;
         const typeTime = text.length * typeSpeed;
-        const thisTurnIndex = turnCounter++;
-        const turnPct = 3 + ((turnIdx + 1) / totalInvTurns) * 39;
+        const thisTurnIndex = streamTurnCounter++;
 
-        t(() => setProgressPercent(turnPct - (39 / totalInvTurns) * 0.5), d);
+        t(() => setProgressPercent(Math.round(turnPct - (57 / totalTurns) * 0.5)), d);
 
+        // Character-by-character typing
         text.split('').forEach((_, i) => {
           t(() => setTypingText(text.slice(0, i + 1)), d + i * typeSpeed);
         });
 
+        // After typing: commit the turn
         t(() => {
           setTypingText('');
-          setProgressPercent(turnPct);
+          setProgressPercent(Math.round(turnPct));
           setTurns(prev => [...prev, {
             reasoning: text,
             activities: turn.activities,
@@ -105,34 +156,17 @@ export function useAnimationSequence(
           });
         }, d + typeTime + 50);
 
-        d += typeTime + 200;
-        const activityDuration = Math.min(turn.duration, 1400);
+        d += typeTime + 120;
+        const activityDuration = Math.min(turn.duration, 600);
         t(() => { setActiveTurnIndex(null); }, d + activityDuration);
-        d += activityDuration + 300;
+        d += activityDuration + 80;
       });
 
-      // Model switch
-      if (hasSwitch) {
-        t(() => {
-          setPhase('switching');
-          setProgressPercent(48);
-          setActiveTurnIndex(null);
-          setTurns(prev => [...prev, {
-            reasoning: '',
-            activities: [],
-            phase: 'analyze',
-            isSwitch: true,
-          }]);
-        }, d);
-        d += 1800;
-        turnCounter++;
-      }
-
-      // Recording phase
-      const recordTurnIndex = turnCounter++;
+      // ── Recording phase ──
+      const recordTurnIndex = streamTurnCounter++;
       const totalFindings = allFindings.length;
       const recordText = `Recording ${totalFindings} findings across all categories.`;
-      t(() => { setPhase('recording'); setProgressPercent(55); }, d);
+      t(() => { setPhase('recording'); setProgressPercent(65); }, d);
       recordText.split('').forEach((_, i) => {
         t(() => setTypingText(recordText.slice(0, i + 1)), d + i * typeSpeed);
       });
@@ -155,8 +189,8 @@ export function useAnimationSequence(
       }, d);
 
       // Finding bursts
-      const recordingProgressStart = 55;
-      const recordingProgressEnd = 75;
+      const recordingProgressStart = 65;
+      const recordingProgressEnd = 80;
       findingBatches.forEach((_, batchIdx) => {
         const endIdx = batchCumulative[batchIdx];
         const pct = recordingProgressStart + ((batchIdx + 1) / findingBatches.length) * (recordingProgressEnd - recordingProgressStart);
@@ -175,13 +209,13 @@ export function useAnimationSequence(
         }, d);
       });
       d += 500;
-      t(() => { setActiveTurnIndex(null); setProgressPercent(78); }, d);
+      t(() => { setActiveTurnIndex(null); setProgressPercent(83); }, d);
 
-      // Assembling phase
-      const assembleTurnIndex = turnCounter++;
+      // ── Assembling phase ──
+      const assembleTurnIndex = streamTurnCounter++;
       d += 300;
-      t(() => { setPhase('assembling'); setProgressPercent(85); }, d);
-      const assembleText = 'Assembling comprehensive onboarding brief with all required sections.';
+      t(() => { setPhase('assembling'); setProgressPercent(88); }, d);
+      const assembleText = 'Assembling comprehensive brief with all required sections.';
       assembleText.split('').forEach((_, i) => {
         t(() => setTypingText(assembleText.slice(0, i + 1)), d + i * typeSpeed);
       });
@@ -196,7 +230,7 @@ export function useAnimationSequence(
         setActiveTurnIndex(assembleTurnIndex);
       }, d);
 
-      // Done
+      // ── Done ──
       d += 1200;
       t(() => {
         setPhase('done');
@@ -211,7 +245,7 @@ export function useAnimationSequence(
         });
       }, d);
     }, 50);
-  }, [reset, t, invTurns, allFindings, findingBatches, hasSwitch]);
+  }, [reset, t, allTurns, allFindings, findingBatches]);
 
   return {
     phase, turns, typingText, activeTurnIndex, coveredTopics,

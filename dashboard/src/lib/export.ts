@@ -153,6 +153,56 @@ export function exportCostCSV(metrics: RunMetrics, repoName: string) {
   downloadBlob(costToCSV(metrics), `${repoName}-cost.csv`, 'text/csv');
 }
 
+// ── Multi-Goal Report (Markdown) ──────────────────────────────
+
+export function buildMultiGoalMarkdown(
+  goals: Array<{ goal: string; scorecard: Scorecard; briefMarkdown: string }>,
+  repoName: string,
+): string {
+  const date = new Date().toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const lines: string[] = [];
+  lines.push(`# ${repoName} — Full Analysis Report`);
+  lines.push('');
+  lines.push(`**${goals.length} goals analyzed** · ${date}`);
+  lines.push('');
+
+  // Summary table
+  lines.push('| Goal | Score |');
+  lines.push('|------|-------|');
+  for (const g of goals) {
+    lines.push(`| ${goalTitle(g.goal)} | **${g.scorecard.overallScore.toUpperCase()}** |`);
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+
+  for (const g of goals) {
+    lines.push(`## ${goalTitle(g.goal)}`);
+    lines.push('');
+    lines.push(`**Overall: ${g.scorecard.overallScore.toUpperCase()}**`);
+    lines.push('');
+    if (g.briefMarkdown) {
+      lines.push(g.briefMarkdown);
+    }
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+export function exportMultiGoalMarkdown(
+  goals: Array<{ goal: string; scorecard: Scorecard; briefMarkdown: string }>,
+  repoName: string,
+) {
+  const md = buildMultiGoalMarkdown(goals, repoName);
+  const slug = repoName.replace(/[^a-zA-Z0-9-]/g, '-');
+  downloadBlob(md, `${slug}-full-report.md`, 'text/markdown');
+}
+
 // ── Report (PDF) ──────────────────────────────────────────────
 
 export async function exportReportPDF(

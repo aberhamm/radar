@@ -33,13 +33,9 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
   const DATA_FINDINGS: Finding[] = runData?.findings ?? SAMPLE_FINDINGS;
   const DATA_BATCHES = runData?.findingBatches ?? [4, 5, 4];
 
-  // Separate switch turn from analysis turns
-  const switchIndex = DATA_TURNS.findIndex(t => t.activities.some(a => a.label === 'switch_to_fast_model'));
-  const INV_TURNS = switchIndex >= 0 ? DATA_TURNS.slice(0, switchIndex) : DATA_TURNS;
-  const HAS_SWITCH = switchIndex >= 0;
-
-  // Animation hook (used for replay mode; runs but is ignored in live mode)
-  const animState = useAnimationSequence(INV_TURNS, DATA_FINDINGS, DATA_BATCHES, HAS_SWITCH);
+  // Pass ALL turns to the animation hook — it handles switches and pass
+  // boundaries as visual markers within the sequence.
+  const animState = useAnimationSequence(DATA_TURNS, DATA_FINDINGS, DATA_BATCHES);
 
   // Pick state source: live events or animation replay
   const {
@@ -336,6 +332,26 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                           <div>
                             <div className="text-xs font-semibold text-warning">Analysis Complete</div>
                             <div className="text-[10px] text-tertiary-label">Switching to fast model for writing</div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (turn.isPassBoundary) {
+                      return (
+                        <div
+                          key={`pass-${i}`}
+                          className="flex items-center gap-3 px-4 py-3 my-3 rounded-xl bg-[rgba(0,113,227,0.05)] border border-[rgba(0,113,227,0.15)] relative z-[1]"
+                          style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                        >
+                          <div className="w-7 h-7 rounded-full bg-[rgba(0,113,227,0.1)] flex items-center justify-center shrink-0">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                              <path d="M2 8h12M8 2v12" stroke="var(--color-tint)" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-tint">{turn.passName ?? 'Next Pass'}</div>
+                            <div className="text-[10px] text-tertiary-label">Starting specialist investigation</div>
                           </div>
                         </div>
                       );
