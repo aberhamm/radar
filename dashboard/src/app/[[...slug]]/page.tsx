@@ -186,8 +186,7 @@ export default function DashboardPage() {
     urlHandledRef.current = true;
 
     if (urlView.view === 'run' && urlView.runId) {
-      if (urlView.tab) setActiveTab(urlView.tab);
-      handleSelectHistory(urlView.runId);
+      handleSelectHistory(urlView.runId, urlView.tab);
     } else if (urlView.view === 'compare') {
       // Load compare directly from URL
       (async () => {
@@ -198,6 +197,7 @@ export default function DashboardPage() {
           if (res.ok && !data.error) {
             setCompareData(data as CompareData);
             setStatus('comparing');
+            if (window.innerWidth < 1024) setSidebarOpen(false);
           } else {
             console.warn('[url] Compare failed:', data.error);
             pushUrl({ view: 'idle' });
@@ -225,6 +225,7 @@ export default function DashboardPage() {
           setSelectedRunId(urlView.parentId);
           setStatus('multigoal');
           if (urlView.tab) setMultiTab(urlView.tab);
+          if (window.innerWidth < 1024) setSidebarOpen(false);
         } catch (err) {
           console.error('[url] Failed to load multi-goal group:', urlView.parentId, err);
         } finally {
@@ -482,7 +483,7 @@ export default function DashboardPage() {
     pushUrl({ view: 'idle' });
   }, [pushUrl]);
 
-  const handleSelectHistory = useCallback(async (id: string) => {
+  const handleSelectHistory = useCallback(async (id: string, initialTab?: Tab) => {
     // In compare mode, delegate to compare select
     if (compareMode) {
       handleCompareSelect(id);
@@ -507,6 +508,7 @@ export default function DashboardPage() {
       setSelectedRunId(id);
       setStatus('replaying');
       pushUrl({ view: 'run', runId: id });
+      if (window.innerWidth < 1024) setSidebarOpen(false);
       return;
     }
 
@@ -525,6 +527,7 @@ export default function DashboardPage() {
         setSelectedRunId(id);
         setStatus('multigoal');
         pushUrl({ view: 'multi', parentId: id });
+        if (window.innerWidth < 1024) setSidebarOpen(false);
       } catch (err) {
         console.error('[history] Failed to load group:', id, err);
       } finally {
@@ -558,8 +561,9 @@ export default function DashboardPage() {
       setIsSampleReplay(false);
       setSelectedRunId(id);
       setStatus('complete');
-      setActiveTab('report');
-      pushUrl({ view: 'run', runId: id });
+      setActiveTab(initialTab ?? 'report');
+      pushUrl({ view: 'run', runId: id, tab: initialTab });
+      if (window.innerWidth < 1024) setSidebarOpen(false);
       return;
     }
 
@@ -604,8 +608,9 @@ export default function DashboardPage() {
       setIsSampleReplay(false);
       setSelectedRunId(id);
       setStatus('complete');
-      setActiveTab('report');
-      pushUrl({ view: 'run', runId: id });
+      setActiveTab(initialTab ?? 'report');
+      pushUrl({ view: 'run', runId: id, tab: initialTab });
+      if (window.innerWidth < 1024) setSidebarOpen(false);
     } catch (err) {
       console.error('[history] Failed to load run:', id, err);
     } finally {
