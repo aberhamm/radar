@@ -137,7 +137,7 @@ async function isFileUnchanged(state: AgentState, repoRoot: string, filePath: st
   }
 }
 
-async function updateFileCache(state: AgentState, repoRoot: string, filePath: string): Promise<void> {
+async function updateFileCache(state: AgentState, repoRoot: string, filePath: string, content?: string): Promise<void> {
   try {
     const absPath = pathResolve(repoRoot, filePath);
     const stats = await fsStat(absPath);
@@ -146,11 +146,59 @@ async function updateFileCache(state: AgentState, repoRoot: string, filePath: st
       const buf = Buffer.alloc(1024);
       const { bytesRead } = await fh.read(buf, 0, 1024, 0);
       const hash = createHash('sha256').update(buf.subarray(0, bytesRead)).digest('hex');
-      state.fileReadCache.set(filePath, { mtime: stats.mtimeMs, contentHash: hash });
+      // Build a short content summary so dedup responses carry context
+      const summary = content ? buildFileSummary(filePath, content) : undefined;
+      state.fileReadCache.set(filePath, { mtime: stats.mtimeMs, contentHash: hash, summary });
     } finally {
       await fh.close();
     }
   } catch { /* ignore — dedup is best-effort */ }
+}
+
+/**
+ * Build a ~300 char summary of file contents for the dedup cache.
+ * When a file is re-requested and unchanged, this summary is returned
+ * instead of bare "[file_unchanged]" so the agent retains context
+ * even after the original full read is compressed away.
+ */
+function buildFileSummary(filePath: string, content: string): string {
+  const lines = content.split('\n');
+  const lineCount = lines.length;
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+
+  // Collect structural signals based on file type
+  const signals: string[] = [`${lineCount} lines`];
+
+  if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
+    // Extract imports, exports, function/class names
+    const imports = lines.filter(l => l.startsWith('import ')).length;
+    if (imports > 0) signals.push(`${imports} imports`);
+    const exports = lines.filter(l => /^export\s+(default\s+)?/.test(l)).length;
+    if (exports > 0) signals.push(`${exports} exports`);
+    // Top-level identifiers
+    const ids = lines
+      .filter(l => /^(export\s+)?(function|const|class|interface|type|enum)\s+\w/.test(l))
+      .map(l => l.match(/(?:function|const|class|interface|type|enum)\s+(\w+)/)?.[1])
+      .filter(Boolean)
+      .slice(0, 8);
+    if (ids.length > 0) signals.push(`defines: ${ids.join(', ')}`);
+  } else if (ext === 'json') {
+    // Top-level keys
+    try {
+      const keys = Object.keys(JSON.parse(content)).slice(0, 10);
+      signals.push(`keys: ${keys.join(', ')}`);
+    } catch { /* not parseable */ }
+  } else if (ext === 'md') {
+    const headings = lines.filter(l => l.startsWith('#')).map(l => l.replace(/^#+\s*/, '')).slice(0, 5);
+    if (headings.length > 0) signals.push(`headings: ${headings.join(', ')}`);
+  }
+
+  // First meaningful non-blank, non-import line as a content hint
+  const firstMeaningful = lines.find(l => l.trim() && !l.startsWith('import ') && !l.startsWith('//') && !l.startsWith('/*'));
+  if (firstMeaningful) signals.push(`starts: ${firstMeaningful.trim().slice(0, 60)}`);
+
+  const result = `[${filePath}: ${signals.join(' | ')}]`;
+  return result.slice(0, 400);
 }
 
 /**
@@ -336,9 +384,10 @@ export function buildPiTools(
           // Dedup check: skip re-read if file is unchanged
           if (state.fileReadCache && await isFileUnchanged(state, repoRoot(), filePath)) {
             state.filesRead.add(filePath);
+            const cached = state.fileReadCache.get(filePath);
             return ok('read_file', {
               path: filePath,
-              content: '[file_unchanged]',
+              content: cached?.summary ?? '[file_unchanged]',
               lineCount: 0,
               language: 'text',
               unchanged: true,
@@ -350,9 +399,9 @@ export function buildPiTools(
           // and can race with afterToolCall, so tracking must happen here.
           state.filesRead.add(filePath);
 
-          // Update dedup cache on successful read
+          // Update dedup cache on successful read (include content for summary generation)
           if (!result.error) {
-            await updateFileCache(state, repoRoot(), filePath);
+            await updateFileCache(state, repoRoot(), filePath, result.content);
           }
 
           return ok('read_file', result);
@@ -391,17 +440,20 @@ export function buildPiTools(
             ? await readFilesBatch(repoRoot(), { ...a, paths: toRead })
             : { files: [] };
 
-          // Add unchanged stubs
+          // Add unchanged stubs with cached summaries
           const resultWithDedup = {
             ...result,
             files: [
-              ...unchangedPaths.map((p) => ({
-                path: p,
-                content: '[file_unchanged]',
-                lineCount: 0,
-                language: 'text' as const,
-                unchanged: true,
-              })),
+              ...unchangedPaths.map((p) => {
+                const cached = state.fileReadCache.get(p);
+                return {
+                  path: p,
+                  content: cached?.summary ?? '[file_unchanged]',
+                  lineCount: 0,
+                  language: 'text' as const,
+                  unchanged: true,
+                };
+              }),
               ...(result.files ?? []),
             ],
           };
@@ -410,7 +462,12 @@ export function buildPiTools(
           // Must happen in execute() (not afterToolCall) because recordFinding
           // checks filesRead inside its own execute() and can race with afterToolCall.
           for (const p of paths) state.filesRead.add(p);
-          for (const p of toRead) await updateFileCache(state, repoRoot(), p);
+          // Pass content to updateFileCache for summary generation
+          const readResults = result.files ?? [];
+          for (const p of toRead) {
+            const fileResult = readResults.find((f) => f.path === p);
+            await updateFileCache(state, repoRoot(), p, fileResult?.content);
+          }
 
           return ok('read_files_batch', resultWithDedup);
         } catch (e) { return err('read_files_batch', e as Error); }

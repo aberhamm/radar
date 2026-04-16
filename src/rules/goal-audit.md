@@ -182,7 +182,7 @@ Use a two-pass approach when investigating. Pass 1 categories are always checked
 - Image optimization: CMS images served without width/height, missing `next/image` or equivalent, no CDN transformation
 
 #### Component Architecture
-- Excessive client components: `"use client"` directives on components that could be server components — increases bundle size without benefit
+- Excessive client components: **specific** `"use client"` directives on components that could be server components — increases bundle size without benefit. (Do not flag the coexistence of client and server components — that is the intended React Server Components architecture.)
 - Inline styles in components re-parsed every render instead of CSS modules, Tailwind classes, or styled-components
 - O(n*m) lookups in rendering logic — `Array.find()` inside `.map()` loops instead of building a lookup object first
 

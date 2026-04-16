@@ -250,21 +250,6 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
             </div>
           )}
 
-          {/* New Analysis button */}
-          {!isRunning && (
-            <div className="px-4 pt-3">
-              <button
-                onClick={onNewRun}
-                className="w-full flex items-center justify-center gap-2 h-9 rounded-lg bg-tint text-white text-[13px] font-semibold cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-                New Analysis
-              </button>
-            </div>
-          )}
-
           {/* Section navigation (visible when viewing a completed run) */}
           {showSections && onSectionClick && (
             <div className="px-4 pt-3 pb-2">

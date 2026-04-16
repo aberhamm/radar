@@ -128,12 +128,33 @@ export function useLiveAnalysis(
             tags: f.tags ?? [],
           });
         } catch { /* parse error */ }
+        // Clear pending state on any matching activity chip (tool_start fires
+        // before the finding event, so the activity exists but stays pending=true
+        // because 'finding' type never reaches the tool_call handler below).
+        const existing = currentActivities.find(a => a.label === 'record_finding');
+        if (existing) existing.pending = false;
         continue;
       }
 
       // Assemble output
       if (ev.type === 'assemble_output' || ev.action === 'assemble_output') {
         assembleOutputSeen = true;
+      }
+
+      // Post-loop progress (verification, dedup, scorecard, writing output)
+      if (ev.type === 'verification' && ev.result) {
+        // Commit any pending reasoning first
+        if (currentReasoning && currentActivities.length > 0) {
+          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+          currentReasoning = '';
+          currentActivities = [];
+        }
+        turns.push({
+          reasoning: String(ev.result),
+          activities: [{ label: ev.action ?? 'post_process', files: [], detail: '' }],
+          phase: 'write',
+        });
+        continue;
       }
 
       // Streaming text delta — update live typing text as LLM generates

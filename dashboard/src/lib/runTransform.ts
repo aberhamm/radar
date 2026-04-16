@@ -402,3 +402,54 @@ export function transformRunData(
     findingBatches: batchSizes.length > 0 ? batchSizes : [findings.length],
   };
 }
+
+// ─── Instant State Builder ─────────────────────────────────────
+
+/** Build a fully-populated state from run data — no animation, everything visible at once. */
+export function buildInstantState(data: TransformedRunData): {
+  phase: 'done';
+  turns: StreamTurn[];
+  typingText: string;
+  activeTurnIndex: null;
+  coveredTopics: Set<string>;
+  examinedFiles: string[];
+  findings: Finding[];
+  scoreVisible: boolean;
+  progressPercent: number;
+  pendingActions: string[];
+  statusMessage: string;
+} {
+  const turns: StreamTurn[] = data.analysisTurns.map(t => ({
+    reasoning: t.reasoning,
+    activities: t.activities,
+    phase: (t.isSwitch || t.isPassBoundary) ? 'analyze' as const : 'analyze' as const,
+    isSwitch: t.isSwitch,
+    isPassBoundary: t.isPassBoundary,
+    passName: t.passName,
+  }));
+
+  const coveredTopics = new Set<string>();
+  const examinedFiles: string[] = [];
+  for (const t of data.analysisTurns) {
+    for (const cat of t.categoriesCovered) coveredTopics.add(cat);
+    for (const a of t.activities) {
+      for (const f of a.files) {
+        if (f && f !== '.' && !examinedFiles.includes(f)) examinedFiles.push(f);
+      }
+    }
+  }
+
+  return {
+    phase: 'done',
+    turns,
+    typingText: '',
+    activeTurnIndex: null,
+    coveredTopics,
+    examinedFiles,
+    findings: data.findings,
+    scoreVisible: true,
+    progressPercent: 100,
+    pendingActions: [],
+    statusMessage: '',
+  };
+}

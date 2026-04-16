@@ -49,8 +49,8 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 - [ ] VS Code open with tabs in order:
   1. `src/rules/goal-security-review.md`
   2. `src/config/piModel.ts`
-  3. `src/agent/runner.ts` (scrolled to ~line 795)
-  4. `src/agent/runner.ts` (split/bookmarked at ~line 462)
+  3. `src/agent/runner.ts` (scrolled to ~line 809)
+  4. `src/agent/runner.ts` (split/bookmarked at ~line 463)
   5. `src/agent/budgetPlanner.ts`
   6. `src/tools/analysis/recordFinding.ts`
   7. `src/agent/contextBoundary.ts`
@@ -76,13 +76,13 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 **Screen: anywhere, doesn't matter yet.**
 
-> I want to show you something we've been building.
+> This is Radar. It's an AI agent that investigates codebases and produces structured consulting deliverables — security reviews, architecture audits, accessibility checks, developer onboarding briefs.
 >
-> Imagine a prospect sends us their repo for a health check. Today that takes a senior architect a week. Reading through the codebase, checking security, accessibility, architecture patterns, writing up findings.
+> You point it at a repository, pick a goal type, and it autonomously reads the code, records findings with file-level evidence, and assembles a scored report. Ten goal types, 23 tools, runs in about 8 minutes.
 >
-> What if an AI agent could run all of those assessments in one sweep, in under 10 minutes, for about 7 dollars, and hand the architect a scored report with file-level evidence to start from?
+> Let me show you how it works.
 
-**Don't pause. Open the dashboard immediately.**
+**Open the dashboard.**
 
 ---
 
@@ -168,11 +168,15 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 >
 > You change two env vars to any provider's model IDs. Swap from AWS Bedrock to Azure OpenAI, no code changes. That's how a client runs this on their own infrastructure.
 
+**If asked: "Why is extended thinking turned off?" (`reasoning: false` on line 48):**
+
+> The agentic loop *is* the reasoning. The agent already thinks in steps — pick a tool, read the result, decide what to do next. Extended thinking would be reasoning on top of reasoning. Plus, thinking tokens on every turn across 30-50 tool calls would blow up the per-run cost. The multi-turn loop gives us structured reasoning for free.
+
 ---
 
 ### 4:00 — The Pi Agent Wiring
 
-**Show tab: `src/agent/runner.ts`, scrolled to ~line 795.**
+**Show tab: `src/agent/runner.ts`, scrolled to ~line 809.**
 
 > This is the core. Pi Agent gives us an `Agent` class. We give it a system prompt (assembled from those markdown rules), a model, and 23 tools. Then we call `agent.prompt()` and it runs autonomously.
 
@@ -181,29 +185,53 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 *On screen — the Agent constructor:*
 
 ```typescript
-const agent = new Agent({
-  initialState: { systemPrompt, model: piModel, thinkingLevel: 'off', tools },
-  toolExecution: 'parallel',
-  transformContext, onPayload,
-  beforeToolCall, afterToolCall,
-});
+809 │ const agent = new Agent({
+810 │   initialState: {
+811 │     systemPrompt,
+812 │     model: piModel,
+813 │     thinkingLevel: 'off',
+814 │     tools,
+815 │   },
+816 │   toolExecution: 'parallel',
+817 │   transformContext,
+818 │   onPayload,
+819 │   ...(apiKey ? { getApiKey: async () => apiKey } : {}),
+820 │   beforeToolCall,
+821 │   afterToolCall,
+822 │ });
 ```
 
 > The interesting parts are the hooks we attach.
+
+> But before the agent sees any of this, it gets a goal prompt that tells it how to spend its budget.
+
+*On screen — `buildGoalPrompt()` in `src/agent/goalPrompts.ts`:*
+
+```typescript
+207 │ - Your tool call budget is ${toolCallBudget} calls total.
+208 │ - Work CATEGORY BY CATEGORY: investigate a category (2-4 tool calls),
+209 │   then IMMEDIATELY record_finding for it, then move to the next.
+210 │ - Reserve the final 15% of budget for assemble_output.
+214 │ - After investigating ~60% of categories, call switch_to_fast_model ONCE.
+```
+
+> The agent gets a budget of 45 tool calls for a single goal. The prompt tells it how to spend them: work category by category, investigate 2-4 calls, record what you found, move on. Don't batch all investigation first and all recording later, because context gets compressed and you'll lose the details you just read.
+>
+> Reserve the last 15% for assembling the output. And after 60% of categories, switch to the cheaper model. That's the contract. The hooks below enforce it.
 
 > `toolExecution: 'parallel'` means Pi fires all tool calls from a single LLM turn concurrently. The agent wants to read five files at once? They all run in parallel.
 
 > `beforeToolCall` is budget enforcement. Every tool call goes through this gate. It blocks calls when the budget runs out. It enforces per-tool quotas: web search gets 5 calls max, URL fetching gets 3.
 >
-> And if the agent has spent 75% of its budget with zero findings recorded, it locks out all investigation tools and forces the agent into recording mode. The agent can't burn the whole budget without producing anything.
+> And if the agent has spent 60% of its budget with zero findings recorded, it locks out all investigation tools and forces the agent into recording mode. The agent can't burn the whole budget without producing anything.
 
-> `afterToolCall` is state tracking. Every tool call increments counters, logs the investigation step, checks if it's time to send a steering message. At 50% budget it nudges the agent to switch to the cheaper model. At 5 calls remaining it sends a critical message.
+> `afterToolCall` is state tracking. Every tool call increments counters, logs the investigation step, checks if it's time to send a steering message. At 40% budget with zero findings it sends a "start recording now" nudge. At 50% budget it nudges the agent to switch to the cheaper model. At 5 calls remaining it sends a critical message and force-switches the model.
 
 > `transformContext` is context compression. How we keep the conversation under the context window. I'll show you this in a second.
 
 > `onPayload` is prompt caching. We inject cache control breakpoints so the system prompt and all 23 tool definitions are cached across turns. Saves tokens and latency on every LLM call.
 
-**Point at the `agent.subscribe()` block a few lines below (~line 818):**
+**Point at the `agent.subscribe()` block a few lines below (~line 833):**
 
 > And `subscribe()` is how we get real-time telemetry. Every text delta, every tool call start, every usage report streams through here. That's what powers the live dashboard you saw: the tool call chips, the reasoning stream, the progress bar.
 
@@ -211,29 +239,77 @@ const agent = new Agent({
 
 ### 5:30 — The Model Switch Trick
 
-**Scroll to ~line 462, or show the bookmarked split.**
+**Scroll to ~line 463, or show the bookmarked split.**
 
 > This is probably my favorite piece of code in the project.
 
-*On screen — `switchModelInPlace()` at ~line 462. They can see the `Object.assign` call.*
+*On screen — `switchModelInPlace()`:*
+
+```typescript
+463 │ function switchModelInPlace(): void {
+464 │   if (!canSwitchModel) return;
+465 │   // Mutate piModel (the object the loop holds a reference to)
+466 │   Object.assign(piModel, {
+467 │     id: piFastModel.id,
+468 │     name: piFastModel.name,
+469 │     cost: piFastModel.cost,
+470 │     maxTokens: piFastModel.maxTokens,
+471 │   });
+472 │ }
+```
 
 > The dual-model pattern. Sonnet investigates (the expensive, powerful model). Haiku writes the report (fast and cheap).
 >
 > The problem is that Pi's run loop captures the model object by reference when it starts. If you call `setModel()`, you replace the reference on the agent, but the loop is still holding the old object.
 >
-> So we mutate the object in place. `Object.assign` overwrites the properties on the same JavaScript object the loop is holding. No abort, no restart, no lost conversation context. The very next LLM call just goes to a different model.
+> So we mutate the object in place. Line 466: `Object.assign` overwrites the properties on the same JavaScript object the loop is holding. No abort, no restart, no lost conversation context. The very next LLM call just goes to a different model.
 
-**Scroll to ~line 625 where the switch is triggered.**
+**Scroll to ~line 626 where the switch is triggered.**
 
-*On screen — the `if (toolName === 'switch_to_fast_model')` block with `snipBoundaryActive = true`.*
+*On screen — the switch trigger:*
 
-> The agent decides when to switch. It calls `switch_to_fast_model` as a tool, which is a stub that does nothing. The real switch happens in this hook. And the moment it switches, `snipBoundaryActive` flips to true.
+```typescript
+625 │ // Intent-based model switch: agent signals it's done investigating
+626 │ if (toolName === 'switch_to_fast_model' && !modelSwitched) {
+627 │   modelSwitched = true;
+628 │   snipBoundaryActive = true; // Activate aggressive context compression
+629 │   summaryCache.clear();
+630 │   if (canSwitchModel) {
+631 │     const fastId = piFastModel.id;
+632 │     switchModelInPlace();
+```
 
-**Scroll to ~line 721, the context compression.**
+> The agent decides when to switch. It calls `switch_to_fast_model` as a tool, which is a stub that does nothing. The real switch happens in this hook at line 632. And the moment it switches, line 628: `snipBoundaryActive` flips to true.
 
-> That flag activates aggressive context compression. Three tiers for the conversation history. Recent messages: full fidelity. Mid-age: tool results compressed to 600 characters. Old: compressed to 120.
+**Scroll to ~line 750, the context compression.**
+
+```typescript
+750 │ const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
+751 │   if (messages.length <= KEEP_RECENT) return messages;
+752 │
+753 │   const tier2Start = Math.max(0, messages.length - KEEP_RECENT - MID_AGE_WINDOW);
+754 │   const tier1Start = messages.length - KEEP_RECENT;
+755 │
+756 │   // When snip boundary is active (post model switch), use much tighter limits
+757 │   const effectiveMidMax = snipBoundaryActive ? SNIP_MID_MAX : MID_SUMMARY_MAX;
+758 │   const effectiveOldMax = snipBoundaryActive ? SNIP_OLD_MAX : OLD_SUMMARY_MAX;
+```
+
+> This runs before every LLM call. Pi hands it the full conversation history, and it comes back smaller. Three tiers based on message age.
 >
-> But after the model switch, after investigation is done, those limits drop to 80 and 40. The writing phase doesn't need the raw file contents. It just needs the findings.
+> Only tool results get compressed. Assistant reasoning, user messages, steering messages — those pass through untouched. It's the raw file contents, the directory listings, the grep results that bloat the context. Those are the tool results.
+>
+> Tier 1: the last 10 messages. Full fidelity. The agent needs recent tool results intact to reason about what it just read.
+>
+> Tier 2: the next 15 messages back. Tool results truncated to 600 characters. Enough to remind the agent what that file contained, not enough to eat the context window.
+>
+> Tier 3: everything older. Truncated to 120 characters. Just a breadcrumb — "I read this file, here's what it started with."
+
+**Point at lines 757-758, the snip boundary check:**
+
+> Now here's the key. When `snipBoundaryActive` flips to true after the model switch, those limits change. Mid-age drops from 600 to 300 characters — half the context, because the writing phase doesn't need to re-read raw file contents. Old messages stay at roughly the same level, 150 characters. We originally tried 80 and 40, much more aggressive, but that starved the fast model. It couldn't write meaningful findings because it had lost too much investigation context. 300 and 150 was the sweet spot.
+>
+> And line 629: `summaryCache.clear()`. Every compressed result is cached by tool call ID so we don't recompute on each turn. When the limits change, we flush the cache so everything gets re-compressed at the new thresholds.
 >
 > That compression plus the cheaper model is what makes a single-goal run cost 74 cents instead of two dollars.
 
@@ -269,17 +345,33 @@ const agent = new Agent({
 
 > First practical problem: the LLM sends findings in six different argument shapes.
 
-**Point at the case handlers:**
+**Point at the case handlers in `extractFindings()` (line 133):**
 
-> Sometimes it wraps the finding in a `finding` key. Sometimes it sends it flat. Sometimes it double-nests it. Sometimes it batches multiple findings in an array. Sometimes it serializes the array as numbered object keys. This function normalizes all six shapes.
+> Sometimes it wraps the finding in a `finding` key like the schema says. Sometimes it sends it flat — no wrapper, just the fields. Sometimes it double-nests: `finding.finding`. Sometimes it batches multiple findings in an array. Sometimes the array comes as numbered object keys: `"0"`, `"1"`, `"2"`. This function normalizes all six shapes into the same structure.
+>
+> Why not just reject the wrong formats and make the LLM retry? Three reasons.
+>
+> First, there's no strict mode on this provider chain. OpenAI has `strict: true` for function calling that constrains output to match the JSON schema exactly. We're going through Portkey to Bedrock to Anthropic's API. Anthropic's tool use doesn't have an equivalent strict mode — the model makes a best effort at the schema but isn't constrained to it. So even if you define the schema perfectly, the model can still deviate.
+>
+> Second, retries are expensive in this budget model. The agent has 45 tool calls. A validation-reject-retry cycle costs 2 calls — the bad one plus the redo. Three bad findings is 6 wasted calls, 13% of your budget gone on format corrections instead of investigation. The normalization function costs zero calls.
+>
+> So instead of fighting the model, we normalize defensively. One `extractFindings()` function, zero retries. The LLM sends whatever shape it wants, we handle it. If Anthropic ships strict tool schemas, or we switch to a provider that has them, we can drop most of this code. Until then, defensive normalization is the pragmatic choice.
 
-> Then the evidence verification. For every piece of evidence the agent cites: did it actually read that file during this run? Is the code snippet it cited actually in that file on disk?
+**Scroll down to the evidence verification loop (~line 289):**
+
+> Then the evidence verification. Every finding goes through `verifyAndCorrectEvidence` — a deterministic engine in `verifyEvidence.ts`. No LLM involved. Pure string matching against the filesystem.
+
+**Point at the three checks:**
+
+> Three gates for every piece of evidence. Gate one: did the agent actually read this file during the run? We track every `read_file` and `read_files_batch` call in a set. If the file isn't in there, the evidence is rejected. The agent can't cite a file it never opened.
 >
-> If the snippet doesn't match (maybe the LLM drifted after 30 turns of conversation), the system auto-corrects to the real code. If the file was never read at all, the evidence is rejected entirely.
+> Gate two: does the code snippet appear in the actual file on disk? Normalized comparison — strips whitespace, collapses indentation. If 60% of the snippet lines match in order, it passes. But there's a catch: an identifier guard checks that any `UPPER_SNAKE_CASE` names in unmatched lines actually exist in the file. That catches hallucinated env var names that slip through because surrounding boilerplate matched.
 >
-> After the loop completes, a separate verification pass re-reads every cited file from disk and drops findings where all evidence is unverifiable.
+> Gate three: if the snippet doesn't match but the file exists, we auto-correct. Replace the agent's drifted snippet with the real code at the cited line number. The finding survives, but with actual code, not hallucinated code.
 >
-> No LLM involved in verification. Pure string matching against the filesystem. The agent cannot hand-wave.
+> After the loop completes, a separate verification pass in the runner re-reads every cited file from disk and drops findings where all evidence is unverifiable.
+>
+> The agent cannot hand-wave. Every claim is checked against the filesystem.
 
 ---
 
@@ -309,43 +401,39 @@ const agent = new Agent({
 
 ## 9:00 — ACT 3: THE RESULTS
 
-**Click the completed all-goals run in the sidebar. Multi-goal view loads.**
+**Click the completed all-goals run in the sidebar. Multi-goal Overview tab loads.**
 
 > I ran this earlier today against the same Sitecore repo. Same agent, same rules. Here are the results.
 
 ---
 
-### 9:00 — The Scoreboard
+### 9:00 — Executive Summary + Scoreboard
 
-**On screen: Scoreboard row at top — goal cards with letter grades.**
+**On screen: Executive summary banner at top — large letter grade, verdict, stats. Below it, a row of goal cards.**
 
-> This is the panoramic view. Every goal type scored with a letter grade. At a glance you can see where this repo is healthy and where it needs attention.
+> At the top, the executive summary. One letter grade representing the worst score across all goals. Total findings, tool calls, cost, duration. You get the headline in two seconds.
 
-**Point at individual goal cards. Read the grades aloud:**
+**Point at the scoreboard cards below the banner:**
 
-> Security: [read the grade]. Architecture: [grade]. Accessibility: [grade]. Next.js health: [grade]. Onboarding: [grade]. Each one is a full assessment with its own scorecard and its own findings.
+> Below that, one card per goal. Security: [read the grade]. Architecture: [grade]. Accessibility: [grade]. Next.js health: [grade]. Onboarding: [grade]. Each card is clickable — it scrolls you straight to that goal's details.
 
 ---
 
-### 9:45 — Top Risks
+### 9:45 — Top Risks + Pass Breakdown
 
 **Point at the Top Risks section below the scoreboard.**
 
-> The agent surfaced the top risks across all goals, ranked by severity. Critical and high at the top. You scan this in five seconds and know exactly where to focus in a client meeting.
+> Top risks across all goals, ranked by severity. Critical and high at the top. You scan this in five seconds and know exactly where to focus in a client meeting.
 
----
+**Point at the Pass Breakdown bars next to it:**
 
-### 10:00 — Investigation Passes
-
-**Point at the Investigation Passes progress bars.**
-
-> And this is the budget planner I just showed you in code. Core pass got 60% of the budget. Next.js specialist got 20%. Accessibility got 20%. The progress bars show how much each pass actually consumed. You can see the core pass used most of its allocation, the specialists used less. The rebalancer worked.
+> And this is the budget planner I just showed you in code. Core pass got 60% of the budget. Next.js specialist got 20%. Accessibility got 20%. The bars show how much each pass actually consumed. You can see the core pass used most of its allocation, the specialists used less. The rebalancer worked.
 
 ---
 
 ### 10:15 — Drill Into Security
 
-**Click the Security goal section to expand it. Scorecard and findings load.**
+**Click the Security scoreboard card. Page scrolls to the Security section and expands it. Scorecard and findings load inline.**
 
 > Let's look at what the security assessment found.
 
@@ -359,7 +447,7 @@ const agent = new Agent({
 >
 > That snippet was verified against the real file on disk. If the agent had fabricated that snippet, it would've been caught and either auto-corrected or dropped.
 
-**Click into a second finding:**
+**Point at a second finding:**
 
 > Every finding is like this. File-level evidence, verified. This is what a senior architect starts from. They review the findings, adjust severity based on their judgment, add business context the agent can't know. The agent does the reading. The human does the thinking.
 
@@ -367,7 +455,7 @@ const agent = new Agent({
 
 ### 11:15 — Drill Into Accessibility
 
-**Click the Accessibility goal section to expand it.**
+**Click the Accessibility scoreboard card at the top, or scroll down and expand the Accessibility section.**
 
 > Different goal, completely different lens on the same codebase. WCAG 2.1 AA compliance. The agent checked ARIA labels, keyboard navigation, color contrast, semantic HTML structure.
 
@@ -389,7 +477,7 @@ const agent = new Agent({
 
 ## 13:00 — ACT 4: CREATE GITHUB ISSUES
 
-**Navigate to a single-goal completed run (e.g., click the Security run from the sidebar, or navigate from the multi-goal view into a single goal).**
+**Stay on the multi-goal view with the Security section still expanded.**
 
 > Reports are great, but findings need to become work. Let me show you what happens next.
 
@@ -471,7 +559,7 @@ const agent = new Agent({
 
 > The dual-model pattern makes this possible. You saw the code. Sonnet runs the investigation, expensive and powerful. When the agent decides it's done, it calls `switch_to_fast_model`. We mutate the model object in place, no restart, no lost context. Haiku writes the report.
 >
-> And the context compression kicks in. Old tool results go from 600 characters down to 80. That switch saves about 37% on cost.
+> And the context compression kicks in. Mid-age tool results drop from 600 to 300 characters. The writing phase doesn't need the raw file contents anymore. That switch saves about 37% on cost.
 
 ---
 
@@ -509,7 +597,7 @@ const agent = new Agent({
 
 > The live run we kicked off at the start just finished. Let me pull it up so you can see this wasn't canned.
 
-**Click into it. Show the scoreboard.**
+**Click into it. The Overview tab loads with the executive summary and scoreboard.**
 
 > Same repo, fresh run. Same grades, same findings. The rules drive the investigation, not randomness.
 
@@ -711,24 +799,24 @@ Quick-reference for what to show and where. Use during Act 2 or when fielding fo
 | # | What to show | File | Line | The point |
 |---|-------------|------|------|-----------|
 | 1 | A consulting rule | `src/rules/goal-security-review.md` | — | "Rules are plain English. Adding expertise is writing markdown." |
-| 2 | Pi Agent wiring | `src/agent/runner.ts` | ~795 | `new Agent({...})` — hooks for budget, steering, compression, caching |
-| 3 | Event streaming | `src/agent/runner.ts` | ~818 | `agent.subscribe()` — real-time telemetry → dashboard |
-| 4 | Model switch trick | `src/agent/runner.ts` | ~462 | `Object.assign(piModel, {...})` — mutate model mid-loop |
-| 5 | Snip boundary | `src/agent/runner.ts` | ~625 | `snipBoundaryActive = true` triggers 80/40 char compression |
-| 6 | Context compression | `src/agent/runner.ts` | ~721 | 3-tier compression: 600 → 120 → 80/40 chars post-switch |
-| 7 | Budget enforcement | `src/agent/runner.ts` | ~478 | `beforeToolCall` — gates, per-tool quotas, recording mode |
-| 8 | Steering messages | `src/agent/runner.ts` | ~680 | `agent.steer()` at 50% budget: "switch now" |
+| 2 | Pi Agent wiring | `src/agent/runner.ts` | 809 | `new Agent({...})` — hooks for budget, steering, compression, caching |
+| 3 | Event streaming | `src/agent/runner.ts` | 833 | `agent.subscribe()` — real-time telemetry → dashboard |
+| 4 | Model switch trick | `src/agent/runner.ts` | 463 | `Object.assign(piModel, {...})` — mutate model mid-loop |
+| 5 | Snip boundary | `src/agent/runner.ts` | 628 | `snipBoundaryActive = true` triggers 300/150 char compression |
+| 6 | Context compression | `src/agent/runner.ts` | 750 | 3-tier compression: 600 → 120 → 300/150 chars post-switch |
+| 7 | Budget enforcement | `src/agent/runner.ts` | 480 | `beforeToolCall` — gates, per-tool quotas, recording mode |
+| 8 | Steering messages | `src/agent/runner.ts` | 693 | `agent.steer()` at 50% budget: "switch now" |
 | 9 | Provider-agnostic | `src/config/piModel.ts` | all | Two models from env vars, no provider names in code |
-| 10 | Budget planner | `src/agent/budgetPlanner.ts` | ~69 | Signal matrix → allocation for multi-goal runs |
-| 11 | Post-core rebalance | `src/agent/budgetPlanner.ts` | ~196 | Adjust specialist budgets based on core findings |
-| 12 | Pre-compute layer | `src/agent/runner.ts` | ~196 | 4 tools in parallel before the loop, saves 3-5 LLM turns |
-| 13 | Finding extraction | `src/tools/analysis/recordFinding.ts` | ~133 | Handles 6 LLM argument shapes — resilient to format drift |
-| 14 | Evidence verification | `src/tools/analysis/recordFinding.ts` | ~289 | Snippet vs. actual file content, auto-correct or reject |
+| 10 | Budget planner | `src/agent/budgetPlanner.ts` | 69 | Signal matrix → allocation for multi-goal runs |
+| 11 | Post-core rebalance | `src/agent/budgetPlanner.ts` | 196 | Adjust specialist budgets based on core findings |
+| 12 | Pre-compute layer | `src/agent/runner.ts` | 196 | 4 tools in parallel before the loop, saves 3-5 LLM turns |
+| 13 | Finding extraction | `src/tools/analysis/recordFinding.ts` | 133 | Handles 6 LLM argument shapes — resilient to format drift |
+| 14 | Evidence verification | `src/tools/analysis/recordFinding.ts` | 286 | Snippet vs. actual file content, auto-correct or reject |
 | 15 | Prompt injection | `src/agent/contextBoundary.ts` | all | Boundary delimiters + 11 injection pattern detectors |
 | 16 | Concurrency | `src/tools/concurrency.ts` | all | Read-only parallel + mutex for stateful tools |
 | 17 | Secret redaction | `src/agent/redaction.ts` | all | API keys, PEM blocks, connection strings redacted |
 | 18 | System prompt assembly | `src/agent/systemPrompt.ts` | all | `core.md + platform-*.md + goal-*.md` composed at runtime |
-| 19 | Prompt caching | `src/agent/runner.ts` | ~777 | `cache_control: { type: 'ephemeral' }` injection |
+| 19 | Prompt caching | `src/agent/runner.ts` | 798 | `cache_control: { type: 'ephemeral' }` injection |
 | 20 | Retry logic | `src/agent/retry.ts` | all | Per-status retry limits, exponential backoff + jitter |
 
 ---
@@ -739,13 +827,13 @@ Quick-reference for what to show and where. Use during Act 2 or when fielding fo
 Show: `src/agent/goalPrompts.ts` — the goal prompt template includes budget allocation guidance (60% investigate, 25% record, 15% assemble) and a confidence calibration scale.
 
 **"How does prompt caching work?"**
-Show: `src/agent/runner.ts:~777` — `onPayload` hook injects `cache_control` breakpoints into the system prompt. Portkey forwards these to Bedrock's Anthropic API. The system prompt + tool definitions are cached across turns.
+Show: `src/agent/runner.ts:798` — `onPayload` hook injects `cache_control` breakpoints into the system prompt. Portkey forwards these to Bedrock's Anthropic API. The system prompt + tool definitions are cached across turns.
 
 **"How does parallel tool execution stay safe?"**
 Show: `src/tools/concurrency.ts` — 21 read-only tools run fully parallel. 3 stateful tools (`record_finding`, `assemble_output`, `switch_to_fast_model`) serialize through an async mutex. The mutex chains promises so each stateful call waits for the previous one, but read-only calls bypass it entirely.
 
 **"What happens when the agent doesn't cooperate?"**
-Show: `src/agent/runner.ts:~495` (recording gate) and `~680` (steering). Three escalation levels:
+Show: `src/agent/runner.ts:495` (recording gate) and `693` (steering). Three escalation levels:
 1. At 50% budget: `agent.steer()` with a soft reminder
 2. At 75% budget with 0 findings: `beforeToolCall` blocks everything except `record_finding`
 3. At 5 calls remaining: force model switch + CRITICAL message

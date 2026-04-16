@@ -444,6 +444,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let terminationReason: RunResult['terminationReason'] = 'budget_exhausted';
   let errorDetail: string | undefined;
   const halfBudget = Math.floor(toolCallBudget / 2);
+  let budgetWarningRecordingSent = false; // 40% — nudge to start recording
   let budgetWarningHalfSent = false;
   let budgetWarning5Sent = false;
   let modelSwitched = false; // true once agent calls switch_to_fast_model
@@ -490,14 +491,17 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       return { block: true, reason: 'Output assembly complete.' };
     }
 
-    // Recording enforcement gate: when 75%+ budget is spent with zero findings,
+    // Recording enforcement gate: when 60%+ budget is spent with zero findings,
     // block investigation tools to force the agent into recording mode.
     // Only record_finding, switch_to_fast_model, and assemble_output are allowed.
-    const RECORDING_GATE_PCT = 0.75;
+    // At 100% budget, fall through to the budget exhaustion check instead so
+    // the user gets the extend prompt (the gate alone can't extend budget).
+    const RECORDING_GATE_PCT = 0.60;
     const WRITING_TOOLS = new Set(['record_finding', 'switch_to_fast_model', 'assemble_output']);
     if (
       state.findings.length === 0 &&
       state.toolCallCount >= Math.floor(currentBudget * RECORDING_GATE_PCT) &&
+      state.toolCallCount < currentBudget &&
       !WRITING_TOOLS.has(toolName)
     ) {
       if (!modelSwitched && canSwitchModel) {
@@ -528,7 +532,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         return undefined;
       }
 
-      // Budget exhausted — ask whether to extend
+      // Budget exhausted — ask whether to extend.
+      // Fire for ANY tool (including record_finding) so the user always gets
+      // the extend prompt when budget is fully spent, even mid-recording.
       if (config.onBudgetExhausted) {
         const shouldExtend = await config.onBudgetExhausted({
           findings: state.findings.length,
@@ -549,7 +555,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           return undefined;
         }
       }
-      // Decline or no callback — save checkpoint before blocking
+      // Decline or no callback — save checkpoint before blocking.
+      // Still allow record_finding and switch_to_fast_model through so the
+      // agent can finish writing even without an extension.
+      if (WRITING_TOOLS.has(toolName)) {
+        return undefined;
+      }
       if (checkpointInterval > 0) {
         try {
           saveCheckpoint(outputDir, repoSlug,
@@ -703,6 +714,19 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         content: `You have ${remaining} tool calls remaining out of ${currentBudget}. If you haven't called switch_to_fast_model yet, do it now. Then record your findings and call assemble_output.`,
         timestamp: Date.now(),
       });
+    } else if (
+      !budgetWarningRecordingSent &&
+      assembledRef.sections === null &&
+      state.findings.length === 0 &&
+      state.toolCallCount >= Math.floor(currentBudget * 0.4) &&
+      remaining > 0
+    ) {
+      budgetWarningRecordingSent = true;
+      agent.steer({
+        role: 'user',
+        content: `You have used ${state.toolCallCount}/${currentBudget} tool calls and recorded 0 findings. Start calling record_finding NOW for what you have already observed. Investigate a category, then immediately record findings for it before moving to the next category. Do not defer all recording to the end.`,
+        timestamp: Date.now(),
+      });
     }
 
     return undefined;
@@ -718,13 +742,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
    * Only tool result messages are compressed; assistant/user messages pass through.
    * Summaries are cached by tool call ID to avoid recomputing on each turn.
    */
-  const KEEP_RECENT = 10;
+  const KEEP_RECENT = 16;
   const MID_AGE_WINDOW = 15;
   const MID_SUMMARY_MAX = 600;
-  const OLD_SUMMARY_MAX = 120;
-  // After model switch, aggressive compression — writing phase doesn't need investigation detail
-  const SNIP_MID_MAX = 80;
-  const SNIP_OLD_MAX = 40;
+  const OLD_SUMMARY_MAX = 200;
+  // After model switch, moderate compression — writing phase still needs investigation context
+  // to write meaningful findings. 80/40 was too aggressive and starved the fast model.
+  const SNIP_MID_MAX = 300;
+  const SNIP_OLD_MAX = 150;
   const summaryCache = new Map<string, string>();
 
   function compressToolResult(text: string, maxChars: number): string {
@@ -984,21 +1009,35 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // Post-loop: assemble output (partial if error/stuck)
   const sections = assembledRef.sections ?? {};
 
+  // --- Post-loop: verification, dedup, scorecard, output ---
+  // Emit progress events so the UI doesn't appear frozen.
+
+  config.onStep?.({
+    step: ++stepCount,
+    action: 'post_process',
+    type: 'verification',
+    result: `Verifying evidence for ${state.findings.length} findings...`,
+  });
+
   // Post-investigation verification pass: re-verify all evidence against actual files.
   // Removes findings where ALL evidence is unverifiable (likely hallucinated).
+  // Parallelize file reads — each finding's evidence is independent.
+  const verificationResults = await Promise.all(
+    state.findings.map((finding) => verifyFindingEvidence(config.repoPath, finding)),
+  );
+
   const removedFindingIds: string[] = [];
-  for (let i = state.findings.length - 1; i >= 0; i--) {
-    const { finding: verified, allUnverifiable } = await verifyFindingEvidence(
-      config.repoPath,
-      state.findings[i],
-    );
+  const verifiedFindings = [];
+  for (let i = 0; i < verificationResults.length; i++) {
+    const { finding: verified, allUnverifiable } = verificationResults[i];
     if (allUnverifiable) {
       removedFindingIds.push(state.findings[i].id);
-      state.findings.splice(i, 1);
     } else {
-      state.findings[i] = verified;
+      verifiedFindings.push(verified);
     }
   }
+  state.findings = verifiedFindings;
+
   if (removedFindingIds.length > 0 || state.findings.some((f) => f.verificationNotes?.length)) {
     config.onStep?.({
       step: ++stepCount,
@@ -1023,6 +1062,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       result: `Deduplication: merged ${dedupResult.mergedCount} duplicate finding(s). ${state.findings.length} findings retained.`,
     });
   }
+
+  config.onStep?.({
+    step: ++stepCount,
+    action: 'post_process',
+    type: 'verification',
+    result: 'Computing scorecard and rendering output...',
+  });
 
   const scorecard = computeScorecard(config.repoName, config.goal, state.findings);
 

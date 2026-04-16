@@ -11,8 +11,8 @@ When investigating a Next.js project, check each of the following areas systemat
 
 ## Client/Server Component Split
 
-- Audit `"use client"` directives: which components have them and which could be server components instead?
-- Look for components that import only server-safe code but are marked `"use client"` — they inflate the client bundle unnecessarily.
+- Having both client and server components is the **intended architecture** in React Server Components. Never flag the coexistence itself as a finding. A 50/50 or any other client/server ratio is not inherently a problem.
+- Only flag **specific** `"use client"` directives that are unjustified: components that import only server-safe code, that could be server components instead, or that inflate the client bundle without benefit.
 - Check for `"use client"` at layout or page level when only a child component needs interactivity.
 - Verify that data-fetching components (those calling APIs or databases) are server components, not client.
 

@@ -201,20 +201,20 @@ Call detect_app_roots early to identify frameworks, versions, and plugins.
 Then call get_specialist_prompts with those results to get targeted investigation checklists for the detected stack.
 Follow the specialist checklists alongside your standard consulting rules — they ensure deep, framework-specific coverage.
 Then investigate according to your consulting rules — check every category.
-Record findings as you go using the record_finding tool. Call it once per finding — you can pass multiple findings in one call if needed, but do not batch all findings at the end.
+Record findings as you go using the record_finding tool. After investigating each category (2-4 tool calls), IMMEDIATELY call record_finding before moving to the next category. Do not batch all findings at the end — you will lose context.
 
 BUDGET MANAGEMENT:
 - Your tool call budget is ${toolCallBudget} calls total.
-- Spend the first 60% investigating (read files, analyze patterns, check dependencies).
-- Spend the next 25% recording findings (minimum 8 across all categories).
-- Spend the final 15% assembling the brief (assemble_output with all required sections).
+- Work CATEGORY BY CATEGORY: investigate a category (2-4 tool calls), then IMMEDIATELY record_finding for it, then move to the next category.
+- Do NOT batch all investigation first and all recording later — context gets compressed and you lose details.
+- Reserve the final 15% of budget for assemble_output with all required sections.
 - When you call assemble_output, provide detailed written content for every required section.
 
 MODEL SWITCHING:
-- When you have gathered enough evidence and are ready to start writing findings, call switch_to_fast_model ONCE.
-- This switches to a cheaper, faster model for the writing phase (recording findings + assembling output).
-- Call it AFTER your last investigation tool call and BEFORE your first record_finding call.
-- Do not call it too early — finish all investigation first. Do not skip it — it saves cost.
+- After investigating ~60% of categories, call switch_to_fast_model ONCE.
+- This switches to a cheaper, faster model for the remaining recording + assembly.
+- You can still investigate after switching — it just costs less.
+- Do not skip it — it saves cost.
 
 CONFIDENCE CALIBRATION:
 When recording findings, set the confidence field (1-10):

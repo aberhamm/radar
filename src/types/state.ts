@@ -76,8 +76,8 @@ export interface AgentState {
   stackProfile?: StackProfile;
   findings: Finding[];
   filesRead: Set<string>;
-  /** Dedup cache: tracks file mtime + content hash to avoid re-sending unchanged files. */
-  fileReadCache: Map<string, { mtime: number; contentHash: string }>;
+  /** Dedup cache: tracks file mtime + content hash + content summary to avoid re-sending unchanged files. */
+  fileReadCache: Map<string, { mtime: number; contentHash: string; summary?: string }>;
   toolCallCount: number;
   toolCallBudget: number;
   webSearchCount: number;

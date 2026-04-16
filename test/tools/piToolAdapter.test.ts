@@ -131,7 +131,8 @@ describe('buildPiTools', () => {
     const r2 = await readFile.execute('call_r2', { path: 'package.json' });
     const p2 = JSON.parse((r2.content[0] as { type: 'text'; text: string }).text);
     expect(p2.unchanged).toBe(true);
-    expect(p2.content).toBe('[file_unchanged]');
+    // Dedup responses now include a content summary instead of bare '[file_unchanged]'
+    expect(p2.content).toContain('package.json');
   });
 
   it('read_file supports startLine parameter', async () => {

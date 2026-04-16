@@ -7,7 +7,6 @@ interface HomePanelProps {
   isRunning: boolean;
   currentRepoName?: string;
   currentGoal?: string;
-  onNewRun: () => void;
   showSections?: boolean;
   activeTab?: Tab;
   onSectionClick?: (tab: Tab) => void;
@@ -24,7 +23,6 @@ export function HomePanel({
   isRunning,
   currentRepoName,
   currentGoal,
-  onNewRun,
   showSections,
   activeTab,
   onSectionClick,
@@ -55,19 +53,6 @@ export function HomePanel({
             </div>
           </div>
         </div>
-      )}
-
-      {/* New Analysis button */}
-      {!isRunning && (
-        <button
-          onClick={onNewRun}
-          className="w-full flex items-center justify-center gap-2 h-9 rounded-lg bg-tint text-white text-[13px] font-semibold cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          New Analysis
-        </button>
       )}
 
       {/* Section navigation */}

@@ -92,6 +92,7 @@ export default function DashboardPage() {
   const [lastRepoPath, setLastRepoPath] = useState('');
   const [replayData, setReplayData] = useState<HistoryRunData | null>(null);
   const [isSampleReplay, setIsSampleReplay] = useState(false);
+  const [replayAnimated, setReplayAnimated] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -653,6 +654,7 @@ export default function DashboardPage() {
         console.warn('[replay] Failed to load events:', err);
       }
     }
+    setReplayAnimated(false);
     setStatus('replaying');
   }, [selectedRunId, replayData]);
 
@@ -807,7 +809,6 @@ export default function DashboardPage() {
           status="comparing"
           repoName=""
           onStop={handleExitCompare}
-          onNewRun={handleNewRun}
           compareRunNames={[compareData.runA.repoName, compareData.runB.repoName]}
           compareSummary={compareData.diff.summary}
           onExitCompare={handleExitCompare}
@@ -826,7 +827,6 @@ export default function DashboardPage() {
           toolCalls={currentRun.toolCalls}
           budget={currentRun.budget}
           onStop={handleStop}
-          onNewRun={handleNewRun}
           onViewReport={isSampleReplay || !result ? undefined : handleViewReport}
           onViewReplay={replayData && !isSampleReplay ? handleViewReplay : undefined}
           onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
@@ -915,13 +915,20 @@ export default function DashboardPage() {
               key="sample-replay"
               className="animate-slide-up flex-1 flex flex-col overflow-hidden"
             >
-              <AnalysisView />
+              <AnalysisView
+                viewMode={replayAnimated ? 'replay' : 'instant'}
+                onStartReplay={() => setReplayAnimated(true)}
+              />
             </div>
           )}
 
           {status === 'replaying' && !isSampleReplay && replayData && (
             <div key="replaying" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
-              <AnalysisView runData={transformRunData(replayData.events, replayData.result)} />
+              <AnalysisView
+                runData={transformRunData(replayData.events, replayData.result)}
+                viewMode={replayAnimated ? 'replay' : 'instant'}
+                onStartReplay={() => setReplayAnimated(true)}
+              />
             </div>
           )}
 

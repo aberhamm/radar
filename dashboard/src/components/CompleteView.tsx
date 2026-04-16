@@ -445,9 +445,13 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
         .then(r => r.json())
         .then(data => {
           const raw = data.result?.state?.findings;
-          if (raw && raw.length > 0) setLazyFindings(normalizeFindings(raw));
+          // Always set lazyFindings (even to []) so we don't re-fetch in a loop
+          setLazyFindings(raw && raw.length > 0 ? normalizeFindings(raw) : []);
         })
-        .catch(err => console.warn('[findings] Failed to load:', err))
+        .catch(err => {
+          console.warn('[findings] Failed to load:', err);
+          setLazyFindings([]); // Prevent infinite retry on error
+        })
         .finally(() => setFindingsLoading(false));
     }
   }, [runId, typedFindings.length, findingsLoading, lazyFindings]);

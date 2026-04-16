@@ -54,7 +54,7 @@ These are areas a senior consultant checks regardless of platform:
 1. **Dependency currency**: Major versions behind? Known CVEs? Unmaintained packages?
 2. **Secret hygiene**: Hardcoded secrets, committed .env files, NEXT_PUBLIC_ leaks of server-side values?
 3. **Error handling**: Are API errors handled? Are there bare catch blocks? Are errors swallowed?
-4. **Performance patterns**: force-dynamic everywhere? Missing ISR/SSG? Unnecessary client components?
+4. **Performance patterns**: force-dynamic everywhere? Missing ISR/SSG? Unnecessary `"use client"` directives on components that could be server components? (Note: having *both* client and server components is the intended React Server Components architecture — only flag specific components whose directives are unjustified, never flag the mix itself.)
 5. **TypeScript strictness**: Is strict mode on? Any `any` types? Are types generated or manual?
 6. **Testing**: Is there a test setup? What's the coverage? Are there integration tests?
 7. **Documentation**: README quality? Onboarding docs? Architecture decision records?

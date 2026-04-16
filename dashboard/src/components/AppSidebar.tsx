@@ -152,7 +152,6 @@ function DetailPanel({
             isRunning={props.isRunning}
             currentRepoName={props.currentRepoName}
             currentGoal={props.currentGoal}
-            onNewRun={props.onNewRun}
             showSections={props.showSections}
             activeTab={props.activeTab}
             onSectionClick={props.onSectionClick}

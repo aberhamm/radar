@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Finding, TransformedRunData } from '@/lib/runTransform';
-import { CATEGORIES } from '@/lib/runTransform';
+import { CATEGORIES, buildInstantState } from '@/lib/runTransform';
 import { SAMPLE_ANALYSIS_TURNS, SAMPLE_FINDINGS } from '@/lib/sampleRunData';
 import { useAnimationSequence } from '@/lib/useAnimationSequence';
 import type { LiveAnalysisState } from '@/lib/useLiveAnalysis';
@@ -20,6 +20,10 @@ interface AnalysisViewProps {
   runData?: TransformedRunData;
   isLive?: boolean;
   liveState?: LiveAnalysisState;
+  /** 'instant' shows all data at once (default for completed runs), 'replay' animates sequentially */
+  viewMode?: 'instant' | 'replay';
+  /** Callback to switch from instant view to replay */
+  onStartReplay?: () => void;
   budgetPaused?: boolean;
   budgetPausedData?: { findings: number; toolCalls: number; budget: number } | null;
   onBudgetDecision?: (extend: boolean) => void;
@@ -27,24 +31,35 @@ interface AnalysisViewProps {
 
 // ─── Analysis View ───────────────────────────────────────────────
 
-export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetPausedData, onBudgetDecision }: AnalysisViewProps) {
+export function AnalysisView({ runData, isLive, liveState, viewMode = 'instant', onStartReplay, budgetPaused, budgetPausedData, onBudgetDecision }: AnalysisViewProps) {
   // Use real data when provided, fall back to sample data
   const DATA_TURNS = runData?.analysisTurns ?? SAMPLE_ANALYSIS_TURNS;
   const DATA_FINDINGS: Finding[] = runData?.findings ?? SAMPLE_FINDINGS;
   const DATA_BATCHES = runData?.findingBatches ?? [4, 5, 4];
 
-  // Pass ALL turns to the animation hook — it handles switches and pass
-  // boundaries as visual markers within the sequence.
-  const animState = useAnimationSequence(DATA_TURNS, DATA_FINDINGS, DATA_BATCHES);
+  // Build instant state when viewing completed run without animation
+  const isInstant = !isLive && viewMode === 'instant';
+  const instantState = useMemo(() => {
+    if (isInstant && runData) return buildInstantState(runData);
+    return null;
+  }, [isInstant, runData]);
 
-  // Pick state source: live events or animation replay
+  // Animation hook — always called (hook rules) but ignored in instant mode.
+  // Uses fastMode when replaying to reveal whole turns at ~200ms intervals.
+  const animState = useAnimationSequence(DATA_TURNS, DATA_FINDINGS, DATA_BATCHES, { fastMode: true });
+
+  // Pick state source: live > instant > animation
   const {
     phase, turns, typingText, activeTurnIndex, coveredTopics,
     examinedFiles, findings, scoreVisible, progressPercent, pendingActions,
     statusMessage,
-  } = isLive && liveState ? liveState : { ...animState, statusMessage: '' };
+  } = isLive && liveState
+    ? liveState
+    : instantState
+      ? instantState
+      : { ...animState, statusMessage: '' };
 
-  // Findings for score panel: live findings grow over time, replay uses full set
+  // Findings for score panel: live findings grow over time, instant/replay uses full set
   const scorePanelFindings = isLive ? findings : DATA_FINDINGS;
 
   // UI-only state
@@ -132,7 +147,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Phase progress rail */}
           <div data-component="PhaseRail" className="h-10 px-4 flex items-center gap-4 border-b border-separator bg-surface-translucent backdrop-blur-sm shrink-0">
-            {/* Live indicator or Play/Reset button */}
+            {/* Live indicator / Replay button / Play controls */}
             {isLive ? (
               <div className="flex items-center gap-2 shrink-0">
                 <div
@@ -146,6 +161,14 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                   {budgetPaused ? 'PAUSED' : phase === 'done' ? 'DONE' : 'LIVE'}
                 </span>
               </div>
+            ) : isInstant ? (
+              <button
+                type="button"
+                onClick={onStartReplay}
+                className="px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 bg-elevated text-secondary-label hover:text-label"
+              >
+                Replay
+              </button>
             ) : (
               <button
                 type="button"
@@ -161,7 +184,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
             )}
               {/* Status dot + label */}
               <div className="flex items-center gap-2 shrink-0">
-                {phase !== 'idle' && !isLive && (
+                {phase !== 'idle' && !isLive && !isInstant && (
                   <div
                     className="w-1.5 h-1.5 rounded-full transition-all duration-500"
                     style={{
@@ -280,8 +303,8 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 onScroll={handleStreamScroll}
                 className="absolute inset-0 overflow-y-auto p-4 space-y-1"
               >
-                {/* Idle / loading state */}
-                {phase === 'idle' && !isLive && (
+                {/* Idle / loading state — only for replay mode, not instant view */}
+                {phase === 'idle' && !isLive && !isInstant && (
                   <div className="text-xs text-quaternary-label text-center pt-32">
                     Press Play to watch the full agent run
                   </div>
@@ -323,11 +346,11 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                         <div
                           data-component="ModelSwitchMarker"
                           key={`switch-${i}`}
-                          className="flex items-center gap-3 px-4 py-3 my-3 rounded-xl bg-[rgba(255,159,10,0.05)] border border-[rgba(255,159,10,0.15)] relative z-[1]"
+                          className="flex items-center gap-2.5 py-2 my-1 relative z-[1]"
                           style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                         >
-                          <div className="w-7 h-7 rounded-full bg-[rgba(255,159,10,0.1)] flex items-center justify-center shrink-0">
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <div className="w-[20px] h-[20px] rounded-full bg-[rgba(255,159,10,0.1)] flex items-center justify-center shrink-0 relative z-[1]" style={{ boxShadow: '0 0 0 1px rgba(255,159,10,0.3)' }}>
+                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
                               <path d="M3 8h10M10 5l3 3-3 3M6 11L3 8l3-3" stroke="var(--color-warning)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </div>
@@ -344,11 +367,11 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                         <div
                           data-component="PassBoundaryMarker"
                           key={`pass-${i}`}
-                          className="flex items-center gap-3 px-4 py-3 my-3 rounded-xl bg-[rgba(0,113,227,0.05)] border border-[rgba(0,113,227,0.15)] relative z-[1]"
+                          className="flex items-center gap-2.5 py-2 my-1 relative z-[1]"
                           style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                         >
-                          <div className="w-7 h-7 rounded-full bg-[rgba(0,113,227,0.1)] flex items-center justify-center shrink-0">
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <div className="w-[20px] h-[20px] rounded-full bg-[rgba(0,113,227,0.1)] flex items-center justify-center shrink-0 relative z-[1]" style={{ boxShadow: '0 0 0 1px rgba(0,113,227,0.3)' }}>
+                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
                               <path d="M2 8h12M8 2v12" stroke="var(--color-tint)" strokeWidth="1.5" strokeLinecap="round" />
                             </svg>
                           </div>
@@ -360,7 +383,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                       );
                     }
 
-                    const isRecent = i >= turns.length - 2;
+                    const isRecent = isInstant || i >= turns.length - 2;
                     const isActive = activeTurnIndex === i;
                     const isWrite = turn.phase === 'write';
                     const hasActivities = turn.activities.length > 0;
