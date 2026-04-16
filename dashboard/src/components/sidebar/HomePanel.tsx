@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { Tab } from '@/lib/useUrlState';
 
 interface HomePanelProps {
@@ -29,7 +30,7 @@ export function HomePanel({
   onSectionClick,
 }: HomePanelProps) {
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div data-component="HomePanel" className="flex flex-col gap-3 h-full">
       {/* Current run card */}
       {isRunning && currentRepoName && (
         <div>
@@ -95,7 +96,7 @@ export function HomePanel({
 
       {/* Spacer + bottom link */}
       <div className="flex-1" />
-      <a
+      <Link
         href="/how-it-works"
         className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12px] text-tertiary-label hover:text-secondary-label hover:bg-surface transition-colors"
       >
@@ -105,7 +106,7 @@ export function HomePanel({
           <circle cx="8" cy="11.5" r="0.5" fill="currentColor" stroke="none" />
         </svg>
         How It Works
-      </a>
+      </Link>
     </div>
   );
 }

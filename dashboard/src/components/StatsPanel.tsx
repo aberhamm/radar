@@ -60,7 +60,7 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
   const pct = Math.min(100, (toolCalls / budget) * 100);
 
   return (
-    <aside className="bg-surface border-l border-separator p-4 flex flex-col gap-5 overflow-y-auto w-full">
+    <aside data-component="StatsPanel" className="bg-surface border-l border-separator p-4 flex flex-col gap-5 overflow-y-auto w-full">
       <Section title="Findings">
         <div className="bg-elevated rounded-lg px-3 py-2 inline-block">
           <span className="text-3xl font-bold text-label font-mono tracking-tight">

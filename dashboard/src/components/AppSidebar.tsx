@@ -94,7 +94,7 @@ function IconRail({
   onSectionClick: (section: Section) => void;
 }) {
   return (
-    <div className="bg-canvas border-r border-separator flex flex-col gap-1 items-center py-3 px-2 w-14 h-full shrink-0">
+    <div data-component="IconRail" className="bg-canvas border-r border-separator flex flex-col gap-1 items-center py-3 px-2 w-14 h-full shrink-0">
       {/* Brand mark */}
       <div className="mb-1 size-10 flex items-center justify-center">
         <span className="text-[16px] font-bold text-tint font-brand select-none">R</span>
@@ -140,6 +140,7 @@ function DetailPanel({
 }) {
   return (
     <div
+      data-component="DetailPanel"
       className={`bg-canvas border-r border-separator flex flex-col shrink-0 overflow-hidden transition-all duration-300 h-full ${
         isCollapsed ? 'w-0' : 'w-[184px]'
       }`}
@@ -210,6 +211,7 @@ export function AppSidebar(props: SidebarProps) {
       )}
 
       <aside
+        data-component="AppSidebar"
         role="navigation"
         aria-label="Run history"
         className={`flex shrink-0 overflow-hidden z-30 transition-all duration-300 h-full fixed lg:relative ${

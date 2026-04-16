@@ -127,11 +127,11 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
   const accentColor = isWriting || phase === 'done' ? 'var(--color-success)' : phase === 'switching' ? 'var(--color-warning)' : 'var(--color-tint)';
 
   return (
-      <div className="flex flex-1 overflow-hidden relative">
+      <div data-component="AnalysisView" className="flex flex-1 overflow-hidden relative">
         {/* Left: phase bar + scrollable stream */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Phase progress rail */}
-          <div className="h-10 px-4 flex items-center gap-4 border-b border-separator bg-surface-translucent backdrop-blur-sm shrink-0">
+          <div data-component="PhaseRail" className="h-10 px-4 flex items-center gap-4 border-b border-separator bg-surface-translucent backdrop-blur-sm shrink-0">
             {/* Live indicator or Play/Reset button */}
             {isLive ? (
               <div className="flex items-center gap-2 shrink-0">
@@ -305,9 +305,10 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                 )}
 
                 {/* Committed turns */}
-                <div className="relative">
-                  {/* Vertical connector rail */}
-                  {turns.length > 1 && (
+                <div data-component="ReasoningStream" className="relative">
+                  {/* Vertical connector rail — count typing indicator as an item so the rail
+                      is already visible before a turn commits (prevents rightward shift) */}
+                  {(turns.length + (typingText || (isLive && phase !== 'done' && phase !== 'idle') ? 1 : 0)) > 1 && (
                     <div
                       className="absolute left-[9px] top-4 bottom-4 w-px"
                       style={{
@@ -320,6 +321,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                     if (turn.isSwitch) {
                       return (
                         <div
+                          data-component="ModelSwitchMarker"
                           key={`switch-${i}`}
                           className="flex items-center gap-3 px-4 py-3 my-3 rounded-xl bg-[rgba(255,159,10,0.05)] border border-[rgba(255,159,10,0.15)] relative z-[1]"
                           style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
@@ -340,6 +342,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                     if (turn.isPassBoundary) {
                       return (
                         <div
+                          data-component="PassBoundaryMarker"
                           key={`pass-${i}`}
                           className="flex items-center gap-3 px-4 py-3 my-3 rounded-xl bg-[rgba(0,113,227,0.05)] border border-[rgba(0,113,227,0.15)] relative z-[1]"
                           style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
@@ -403,12 +406,14 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
 
                     return (
                       <div
+                        data-component="ReasoningTurn"
                         key={i}
                         className={`flex gap-2.5 py-2 transition-opacity duration-300 ${isRecent ? 'opacity-100' : 'opacity-40 hover:opacity-100 focus-within:opacity-100'}`}
                       >
                         {/* Status icon waypoint */}
                         <div
-                          className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-0.5 relative z-[1] transition-all duration-300"
+                          data-component="TurnIcon"
+                          className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1] transition-all duration-300"
                           style={{
                             background: isActive
                               ? `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`
@@ -423,14 +428,16 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                         </div>
 
                         {/* Turn content */}
-                        <div className="flex-1 min-w-0">
-                          <div className={`md-content text-[13px] leading-relaxed ${
-                            isWrite ? 'text-success' : 'text-secondary-label'
-                          }`}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {verbose ? turn.reasoning : (turn.reasoning.length > 150 ? turn.reasoning.slice(0, 150) + '\u2026' : turn.reasoning)}
-                            </ReactMarkdown>
-                          </div>
+                        <div data-component="TurnContent" className="flex-1 min-w-0">
+                          {turn.reasoning && (
+                            <div className={`md-content text-[13px] leading-relaxed ${
+                              isWrite ? 'text-success' : 'text-secondary-label'
+                            }`}>
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {verbose ? turn.reasoning : (turn.reasoning.length > 150 ? turn.reasoning.slice(0, 150) + '\u2026' : turn.reasoning)}
+                              </ReactMarkdown>
+                            </div>
+                          )}
 
                           {hasActivities && (
                             <ActivityChipGroup activities={turn.activities} active={isActive} accentColor={accentColor} />
@@ -439,46 +446,76 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
                       </div>
                     );
                   })}
-                </div>
 
-                {/* Currently typing */}
-                {typingText && (
-                  <div className="py-2">
-                    <div className={`md-content text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{typingText}</ReactMarkdown>
-                      <span
-                        className="inline-block w-[2px] h-[14px] ml-0.5 align-text-bottom rounded-full"
-                        style={{ background: accentColor, animation: 'pulse-dot 0.8s step-end infinite' }}
+                  {/* Currently typing — inside ReasoningStream so it aligns with the turn icons and connector rail */}
+                  {typingText && (
+                  <div data-component="TypingIndicator" className="flex gap-2.5 py-2">
+                    {/* Active pulsing dot — matches TurnIcon layout */}
+                    <div
+                      className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
+                      style={{
+                        background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
+                        boxShadow: `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`,
+                      }}
+                    >
+                      <div
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ background: accentColor, animation: 'pulse-dot 1.2s ease-in-out infinite' }}
                       />
                     </div>
-                  </div>
-                )}
-
-                {/* Thinking indicator: shows between turns when no typing text yet */}
-                {isLive && !typingText && turns.length > 0 && phase !== 'done' && (
-                  <div className="py-2 flex items-center gap-2" style={{ animation: 'fadeIn 0.4s ease 0.6s both' }}>
-                    <div className="flex items-center gap-1">
-                      {[0, 1, 2].map(i => (
-                        <div
-                          key={i}
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{
-                            background: accentColor,
-                            opacity: 0.4,
-                            animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
-                          }}
+                    {/* Text content — matches TurnContent layout */}
+                    <div className="flex-1 min-w-0">
+                      <div className={`md-content text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{typingText}</ReactMarkdown>
+                        <span
+                          className="inline-block w-[2px] h-[14px] ml-0.5 align-text-bottom rounded-full"
+                          style={{ background: accentColor, animation: 'pulse-dot 0.8s step-end infinite' }}
                         />
-                      ))}
+                      </div>
                     </div>
-                    {pendingActions.length > 0 && (
-                      <span className="text-[11px] text-tertiary-label" style={{ animation: 'fadeIn 0.2s ease both' }}>
-                        {pendingActions.length === 1
-                          ? pendingActions[0].replace(/_/g, ' ')
-                          : `${pendingActions.length} tools in parallel`}
-                      </span>
-                    )}
                   </div>
                 )}
+                  {/* Thinking indicator — on the rail with matching turn layout (live mode only) */}
+                  {isLive && !typingText && turns.length > 0 && phase !== 'done' && (
+                    <div
+                      data-component="ThinkingIndicator"
+                      className="flex gap-2.5 py-2"
+                      style={{ animation: 'fadeIn 0.4s ease 0.6s both' }}
+                    >
+                      {/* Icon waypoint — bouncing dots inside the same 20px circle */}
+                      <div
+                        className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
+                        style={{
+                          background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
+                          boxShadow: `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-[3px]">
+                          {[0, 1, 2].map(j => (
+                            <div
+                              key={j}
+                              className="w-[3px] h-[3px] rounded-full"
+                              style={{
+                                background: accentColor,
+                                animation: `pulse-dot 1.2s ease-in-out ${j * 0.2}s infinite`,
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {/* Pending action label */}
+                      <div className="flex-1 min-w-0 flex items-center">
+                        {pendingActions.length > 0 && (
+                          <span className="text-[11px] text-tertiary-label" style={{ animation: 'fadeIn 0.2s ease both' }}>
+                            {pendingActions.length === 1
+                              ? pendingActions[0].replace(/_/g, ' ')
+                              : `${pendingActions.length} tools in parallel`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Resume autoscroll button */}
@@ -498,7 +535,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
             </div>
 
             {/* Bottom: topic coverage */}
-            <div className="border-t border-separator bg-surface-translucent shrink-0">
+            <div data-component="TopicCoverage" className="border-t border-separator bg-surface-translucent shrink-0">
               <div className="px-4 pt-2 pb-1 flex items-center justify-between">
                 <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">Topics</div>
                 {coveredTopics.size > 0 && (
@@ -558,11 +595,11 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
           </div>
 
           {/* Right sidebar: files examined + findings */}
-          <div className={`border-l border-separator bg-canvas flex flex-col shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${rightPanelOpen ? 'w-[260px]' : 'w-0 border-l-0'}`}>
+          <div data-component="RightPanel" className={`border-l border-separator bg-canvas flex flex-col shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${rightPanelOpen ? 'w-[260px]' : 'w-0 border-l-0'}`}>
           <div className="w-[260px] flex flex-col h-full">
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
               {/* Files examined section */}
-              <div className="shrink-0">
+              <div data-component="FilesExamined" className="shrink-0">
                 <button
                   type="button"
                   onClick={() => setFilesCollapsed(p => !p)}
@@ -595,7 +632,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
               </div>
 
               {/* Findings section */}
-              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+              <div data-component="FindingsPanel" className="flex-1 flex flex-col overflow-hidden min-h-0">
                 <button
                   type="button"
                   onClick={() => setFindingsCollapsed(p => !p)}
@@ -641,7 +678,7 @@ export function AnalysisView({ runData, isLive, liveState, budgetPaused, budgetP
             </div>
 
             {/* Scorecard at bottom */}
-            <div className="border-t border-separator bg-surface-translucent shrink-0">
+            <div data-component="ScorePanel" className="border-t border-separator bg-surface-translucent shrink-0">
               <div className="px-3 pt-2 pb-1 flex items-center justify-between">
                 <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">Score</div>
                 {scoreVisible && (

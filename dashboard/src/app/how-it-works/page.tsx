@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useTheme } from '@/lib/useTheme';
 import { HowItWorksPanel } from '@/components/HowItWorksPanel';
 
@@ -10,7 +11,7 @@ export default function HowItWorksPage() {
     <div className="flex flex-col h-screen overflow-hidden bg-canvas">
       {/* Header — matches dashboard chrome */}
       <header className="bg-surface-translucent backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-4 h-12 flex items-center gap-3 sticky top-0 z-10 shrink-0">
-        <a
+        <Link
           href="/"
           className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors"
           title="Back to dashboard"
@@ -18,7 +19,7 @@ export default function HowItWorksPage() {
           <svg className="w-4 h-4 text-secondary-label" viewBox="0 0 16 16" fill="currentColor">
             <path fillRule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z" />
           </svg>
-        </a>
+        </Link>
 
         <span className="text-[20px] font-bold text-tint tracking-[-0.02em] font-brand select-none whitespace-nowrap shrink-0">
           radar

@@ -124,42 +124,45 @@ export function useAnimationSequence(
           return;
         }
 
-        // ── Regular investigation turn: type reasoning + push activities ──
+        // ── Regular investigation turn ──
         const text = turn.reasoning;
-        const typeTime = text.length * typeSpeed;
         const thisTurnIndex = streamTurnCounter++;
+        const hasReasoning = text.length > 0;
 
-        t(() => setProgressPercent(Math.round(turnPct - (57 / totalTurns) * 0.5)), d);
-
-        // Character-by-character typing
-        text.split('').forEach((_, i) => {
-          t(() => setTypingText(text.slice(0, i + 1)), d + i * typeSpeed);
-        });
-
-        // After typing: commit the turn
-        t(() => {
-          setTypingText('');
-          setProgressPercent(Math.round(turnPct));
-          setTurns(prev => [...prev, {
-            reasoning: text,
-            activities: turn.activities,
-            phase: 'analyze',
-          }]);
-          setActiveTurnIndex(thisTurnIndex);
-          const newFiles = turn.activities.flatMap(a => a.files).filter(f => f && f !== '.');
-          setExaminedFiles(prev => {
-            const combined = [...prev, ...newFiles.filter(f => !prev.includes(f))];
-            return combined;
+        if (hasReasoning) {
+          // Type reasoning character-by-character, then commit with activities
+          const typeTime = text.length * typeSpeed;
+          t(() => setProgressPercent(Math.round(turnPct - (57 / totalTurns) * 0.5)), d);
+          text.split('').forEach((_, i) => {
+            t(() => setTypingText(text.slice(0, i + 1)), d + i * typeSpeed);
           });
-          turn.categoriesCovered.forEach((cat, ci) => {
-            t(() => setCoveredTopics(prev => new Set([...prev, cat])), ci * 150);
-          });
-        }, d + typeTime + 50);
-
-        d += typeTime + 120;
-        const activityDuration = Math.min(turn.duration, 600);
-        t(() => { setActiveTurnIndex(null); }, d + activityDuration);
-        d += activityDuration + 80;
+          t(() => {
+            setTypingText('');
+            setProgressPercent(Math.round(turnPct));
+            setTurns(prev => [...prev, { reasoning: text, activities: turn.activities, phase: 'analyze' }]);
+            setActiveTurnIndex(thisTurnIndex);
+            const newFiles = turn.activities.flatMap(a => a.files).filter(f => f && f !== '.');
+            setExaminedFiles(prev => { const combined = [...prev, ...newFiles.filter(f => !prev.includes(f))]; return combined; });
+            turn.categoriesCovered.forEach((cat, ci) => { t(() => setCoveredTopics(prev => new Set([...prev, cat])), ci * 150); });
+          }, d + typeTime + 50);
+          d += typeTime + 120;
+          const activityDuration = Math.min(turn.duration, 600);
+          t(() => { setActiveTurnIndex(null); }, d + activityDuration);
+          d += activityDuration + 80;
+        } else {
+          // Tool-only turn: no typing, just pop in activity chips quickly
+          t(() => {
+            setProgressPercent(Math.round(turnPct));
+            setTurns(prev => [...prev, { reasoning: '', activities: turn.activities, phase: 'analyze' }]);
+            setActiveTurnIndex(thisTurnIndex);
+            const newFiles = turn.activities.flatMap(a => a.files).filter(f => f && f !== '.');
+            setExaminedFiles(prev => { const combined = [...prev, ...newFiles.filter(f => !prev.includes(f))]; return combined; });
+            turn.categoriesCovered.forEach((cat, ci) => { t(() => setCoveredTopics(prev => new Set([...prev, cat])), ci * 150); });
+          }, d);
+          d += 300; // brief pause, then next turn
+          t(() => { setActiveTurnIndex(null); }, d);
+          d += 50;
+        }
       });
 
       // ── Recording phase ──

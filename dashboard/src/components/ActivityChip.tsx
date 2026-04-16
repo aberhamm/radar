@@ -44,6 +44,7 @@ export function ActivityChipButton({
   return (
     <button
       type="button"
+      data-component="ActivityChipButton"
       onClick={hasContent ? onToggle : undefined}
       className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg text-left ${hasContent ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
@@ -111,7 +112,7 @@ export function ActivityChipGroup({
   const expandedActivity = expandedIndex !== null ? activities[expandedIndex] : null;
 
   return (
-    <div className="mt-1.5">
+    <div data-component="ActivityChipGroup" className="mt-1.5">
       <div className="flex flex-wrap gap-1.5">
         {activities.map((act, ai) => (
           <ActivityChipButton

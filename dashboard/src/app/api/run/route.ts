@@ -298,5 +298,5 @@ export async function POST(req: NextRequest) {
     abortController.abort();
   });
 
-  return NextResponse.json({ ok: true, repoName, goal, runId });
+  return NextResponse.json({ ok: true, repoName, goal, runId, budget: goal === 'all' ? 100 : 45 });
 }

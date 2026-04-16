@@ -121,7 +121,7 @@ export function HistoryPanel({
             : isSelected
               ? 'bg-[rgb(0_113_227/0.08)] cursor-pointer'
               : isActive && !compareMode
-                ? 'cursor-pointer'
+                ? 'bg-[rgb(0_113_227/0.06)] cursor-pointer'
                 : 'hover:bg-surface cursor-pointer'
         }`}
       >
@@ -200,7 +200,7 @@ export function HistoryPanel({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div data-component="HistoryPanel" className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between pb-2 shrink-0">
         <div className="text-[10px] uppercase tracking-widest text-tertiary-label font-semibold">
@@ -266,7 +266,7 @@ export function HistoryPanel({
                       if (!compareMode) onSelectHistory(entry.parentId);
                     }}
                     className={`w-full text-left rounded-lg p-2 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
-                      isActive ? 'bg-tint/8' : ''
+                      isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
@@ -337,17 +337,36 @@ export function HistoryPanel({
                         );
                       }
 
-                      const groupId = entry.parentId;
+                      const isActive = activeRunId === entry.parentId;
                       return (
-                        <div key={groupId}>
-                          {renderHistoryRow(entry.item, {
-                            isGroupHeader: true,
-                            expanded: false,
-                            groupId,
-                            worstScore: entry.worstScore,
-                            isChild: true,
-                            childCount: entry.children.length,
-                          })}
+                        <div key={entry.parentId}>
+                          <button
+                            onClick={() => {
+                              if (!compareMode) onSelectHistory(entry.parentId);
+                            }}
+                            onPointerEnter={() => onPrefetch?.(entry.parentId)}
+                            className={`w-full text-left rounded-lg p-2 pl-4 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
+                              isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-[12px] truncate transition-colors ${isActive ? 'font-semibold text-tint' : 'font-medium text-label group-hover:text-label'}`}>
+                                  all
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[10px] text-tertiary-label">
+                                    {entry.children.length} goals
+                                  </span>
+                                  {entry.worstScore && (
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                      entry.worstScore === 'red' ? 'bg-danger' : entry.worstScore === 'yellow' ? 'bg-warning' : 'bg-success'
+                                    }`} />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
                         </div>
                       );
                     })}

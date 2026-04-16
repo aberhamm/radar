@@ -156,7 +156,7 @@ export function normalizeFindings(raw: unknown[]): Finding[] {
 // ─── Transformer ────────────────────────────────────────────────
 
 /** Auto-flush investigation turns after this many tool calls. */
-const TOOL_CALLS_PER_TURN = 6;
+const TOOL_CALLS_PER_TURN = 8;
 
 const DIR_TOOLS = new Set([
   'list_directory', 'grep_pattern', 'find_files',
@@ -164,53 +164,54 @@ const DIR_TOOLS = new Set([
   'analyze_middleware', 'analyze_env_usage',
 ]);
 
-/** Human-readable verb for each tool action. */
-const ACTION_VERBS: Record<string, string> = {
-  read_file: 'Reading',
-  read_files_batch: 'Reading',
-  list_directory: 'Exploring',
-  find_files: 'Searching for',
-  grep_pattern: 'Searching for',
-  parse_package_json: 'Analyzing',
-  parse_tsconfig: 'Checking',
-  parse_next_config: 'Checking',
-  parse_env_file: 'Checking',
-  query_npm_versions: 'Querying',
-  compare_versions: 'Comparing',
-  analyze_middleware: 'Analyzing',
-  analyze_env_usage: 'Auditing',
-  analyze_route_structure: 'Mapping',
-  analyze_component_directives: 'Scanning',
-  check_gitignore: 'Checking',
-  detect_app_roots: 'Detecting',
-  detect_scope_drift: 'Checking',
-  get_specialist_prompts: 'Loading',
-  fetch_url: 'Fetching',
-};
+/** Infrastructure tools that don't produce visible investigation turns. */
+const INFRA_TOOLS = new Set([
+  'detect_app_roots', 'detect_scope_drift', 'get_specialist_prompts',
+]);
 
-/** Build a readable description from a set of tool call activities. */
-function buildActivityDescription(activities: Activity[]): string {
-  const parts: string[] = [];
-  for (const a of activities) {
-    const verb = ACTION_VERBS[a.label] ?? 'Running';
-    const shortName = a.label.replace(/_/g, ' ');
+/** Patterns that look like bare file paths (no surrounding sentence). */
+const FILE_PATH_RE = /^[a-zA-Z0-9_./@-]+\/[a-zA-Z0-9_./@[\]()-]+$/;
 
-    // Show specific file/path targets
-    const targets = a.files
-      .map(f => f.split('/').filter(Boolean).slice(-2).join('/'))
-      .filter(Boolean);
+/** Hollow narration sentences to strip — applied per-sentence via split. */
+const HOLLOW_TESTS: RegExp[] = [
+  /^(?:now )?(?:let me|let's) (?:now )?(?:examine|check|look|explore|investigate|continue|also|try|move|conduct)\b/i,
+  /^I'll (?:now )?(?:check|examine|look|explore|investigate|continue|also|conduct)\b/i,
+  /^(?:the file|it) (?:appears|seems)\b.*(?:empty|unchanged|not returning)/i,
+  /^(?:let me try|trying) a different approach/i,
+  // "This is a critical finding." without explaining WHAT — no "because/since/:" clause
+  /^this is (?:a )?(?:critical|important|significant|notable|interesting|key)\b[^.]*(?:finding|issue|observation|discovery)\s*\.?$/i,
+];
 
-    if (targets.length > 0) {
-      const shown = targets.slice(0, 3).join(', ');
-      const extra = targets.length > 3 ? ` +${targets.length - 3} more` : '';
-      parts.push(`${verb} ${shown}${extra}`);
-    } else if (a.detail) {
-      parts.push(`${verb} ${shortName}: ${a.detail}`);
-    } else {
-      parts.push(`${verb} ${shortName}`);
-    }
+/**
+ * Clean agent reasoning: strip file-path dumps and hollow narration.
+ * Returns empty string if nothing substantive remains.
+ */
+function cleanReasoning(raw: string): string {
+  const lines = raw.split('\n');
+  const kept: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Drop bare file paths (agent dumping tool args into reasoning)
+    if (FILE_PATH_RE.test(trimmed)) continue;
+    // Drop concatenated path blobs (no spaces, over 40 chars)
+    if (/^[a-zA-Z0-9_./@[\]()-]+$/.test(trimmed) && trimmed.length > 40) continue;
+    // Drop raw grep patterns (pipe-separated identifiers, no spaces)
+    if (/^[a-zA-Z0-9_.*@"[\]()-]+(\|[a-zA-Z0-9_.*@"[\]()-]+){2,}$/.test(trimmed)) continue;
+    kept.push(line);
   }
-  return parts.join('. ') + '.';
+
+  // Split into sentences, drop hollow ones
+  const text = kept.join('\n').trim();
+  const sentences = text.split(/(?<=[.!?:])\s+/);
+  const substantive = sentences.filter(s => {
+    const t = s.trim();
+    if (!t) return false;
+    return !HOLLOW_TESTS.some(re => re.test(t));
+  });
+
+  return substantive.join(' ').trim();
 }
 
 /** Parse a tool_call event into an Activity. Does NOT merge with previous. */
@@ -256,11 +257,15 @@ export function transformRunData(
 
   const WRITING_ACTIONS = new Set(['record_finding', 'assemble_output']);
 
-  /** Flush accumulated activities into a turn. */
+  /** Flush accumulated activities into a turn.
+   *  Reasoning is cleaned to strip file-path dumps and hollow narration.
+   *  If nothing substantive remains, the turn gets empty reasoning —
+   *  the activity chips already show what tools ran. */
   function flush(reasoning: string, duration?: number) {
-    if (currentActivities.length === 0 && !reasoning) return;
+    const cleaned = cleanReasoning(reasoning);
+    if (currentActivities.length === 0 && !cleaned) return;
     turns.push({
-      reasoning: reasoning || buildActivityDescription(currentActivities),
+      reasoning: cleaned,
       activities: currentActivities,
       categoriesCovered: [...currentCategories],
       duration: duration ?? (turnStartTime && lastTimestamp ? lastTimestamp - turnStartTime : 1000),
@@ -275,22 +280,8 @@ export function transformRunData(
   for (const ev of events) {
     const ts = ev.timestamp ? new Date(ev.timestamp).getTime() : null;
 
-    // Budget plan / rebalance: synthetic events from budget planner
-    if (ev.action === 'budget_plan' || ev.action === 'budget_rebalance') {
-      if (currentActivities.length > 0) flush(currentReasoning);
-      currentReasoning = '';
-      const label = ev.action === 'budget_plan'
-        ? 'Budget plan computed'
-        : 'Specialist budgets rebalanced';
-      turns.push({
-        reasoning: label,
-        activities: [{ label: ev.action, files: [], detail: ev.result ?? '' }],
-        categoriesCovered: [],
-        duration: 300,
-        passName: currentPassName,
-      });
-      continue;
-    }
+    // Budget plan / rebalance: skip — infrastructure, not investigation
+    if (ev.action === 'budget_plan' || ev.action === 'budget_rebalance') continue;
 
     // Pass boundary: synthetic event injected between multi-goal passes
     if (ev.action === 'pass_boundary') {
@@ -328,7 +319,11 @@ export function transformRunData(
       continue;
     }
 
-    // Skip writing-phase events (findings/assembly handled via result object)
+    // Skip writing-phase tool calls (record_finding, assemble_output) — the
+    // animation hook provides its own recording/assembling narrative.
+    // text_response events are NOT skipped: in multi-pass runs without
+    // pass_boundary events, the second pass's investigation reasoning arrives
+    // while inWritingPhase is still true and must be preserved.
     if (inWritingPhase && WRITING_ACTIONS.has(ev.action)) continue;
 
     if (ev.type === 'text_response') {
@@ -342,8 +337,18 @@ export function transformRunData(
     }
 
     if (ev.type === 'tool_call' && ev.action !== 'reasoning') {
+      // Skip infrastructure tools — pre-compute setup, not real investigation
+      if (INFRA_TOOLS.has(ev.action)) continue;
+
       const { activity, categories } = parseToolActivity(ev);
-      currentActivities.push(activity);
+      // Merge same-action activities within a turn (e.g. 3x read_file → 1 chip with all files)
+      const existing = currentActivities.find(a => a.label === activity.label);
+      if (existing) {
+        existing.files = [...existing.files, ...activity.files];
+        if (activity.detail && !existing.detail) existing.detail = activity.detail;
+      } else {
+        currentActivities.push(activity);
+      }
       categories.forEach(c => currentCategories.add(c));
       toolCallCount++;
 

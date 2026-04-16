@@ -125,7 +125,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
             : isSelected
               ? 'bg-[rgb(0_113_227/0.08)] cursor-pointer'
               : isActive && !compareMode
-                ? 'cursor-pointer'
+                ? 'bg-[rgb(0_113_227/0.06)] cursor-pointer'
                 : 'hover:bg-surface cursor-pointer'
         }`}
       >
@@ -216,6 +216,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
       )}
 
       <aside
+        data-component="Sidebar"
         role="navigation"
         aria-label="Run history"
         className={`bg-canvas border-r border-separator flex flex-col shrink-0 overflow-hidden z-30 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
@@ -360,7 +361,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                           if (!compareMode) onSelectHistory(entry.parentId);
                         }}
                         className={`w-full text-left rounded-lg p-2.5 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
-                          isActive ? 'bg-tint/8' : ''
+                          isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
                         }`}
                       >
                         <div className="flex items-center gap-2">
@@ -433,17 +434,36 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                           }
 
                           // Multi-goal group within repo — navigate directly, no child expansion
-                          const groupId = entry.parentId;
+                          const isActive = activeRunId === entry.parentId;
                           return (
-                            <div key={groupId}>
-                              {renderHistoryRow(entry.item, {
-                                isGroupHeader: true,
-                                expanded: false,
-                                groupId,
-                                worstScore: entry.worstScore,
-                                isChild: true,
-                                childCount: entry.children.length,
-                              })}
+                            <div key={entry.parentId}>
+                              <button
+                                onClick={() => {
+                                  if (!compareMode) onSelectHistory(entry.parentId);
+                                }}
+                                onPointerEnter={() => onPrefetch?.(entry.parentId)}
+                                className={`w-full text-left rounded-lg p-2.5 pl-5 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
+                                  isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className={`text-[12px] truncate transition-colors ${isActive ? 'font-semibold text-tint' : 'font-medium text-label group-hover:text-label'}`}>
+                                      all
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] text-tertiary-label">
+                                        {entry.children.length} goals
+                                      </span>
+                                      {entry.worstScore && (
+                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                          entry.worstScore === 'red' ? 'bg-danger' : entry.worstScore === 'yellow' ? 'bg-warning' : 'bg-success'
+                                        }`} />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </button>
                             </div>
                           );
                         })}

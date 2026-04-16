@@ -27,7 +27,7 @@ interface AppRoot {
 
 interface IdleViewProps {
   initialRepoPath?: string;
-  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string) => void;
+  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string, budget?: number) => void;
   history?: HistoryRunItem[];
   historyReady?: boolean;
   compact?: boolean;
@@ -264,7 +264,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         setLoading(false);
         return;
       }
-      onStart(targetPath, goal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined, data.runId);
+      onStart(targetPath, goal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined, data.runId, data.budget);
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
@@ -427,7 +427,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
 
   if (compact) {
     return (
-      <div className="bg-surface rounded-xl border border-separator shadow-sm p-6 w-full max-w-lg">
+      <div data-component="IdleView" className="bg-surface rounded-xl border border-separator shadow-sm p-6 w-full max-w-lg">
         <h2 className="text-lg font-bold text-label tracking-tight mb-1">New Analysis</h2>
         <p className="text-sm text-secondary-label mb-5">
           Point at a codebase to start a new run.
@@ -440,7 +440,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
   // ─── Full-page hero layout ─────────────────────────────────────
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div data-component="IdleView" className="flex-1 overflow-y-auto">
       {/* Stat bar hero */}
       <div className="px-6 pt-8 pb-6 animate-slide-up">
         <h1 className="text-[32px] font-bold font-brand text-label tracking-[-0.02em] mb-1">

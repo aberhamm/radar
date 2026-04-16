@@ -73,9 +73,9 @@ Investigate all six security scorecard categories: secrets & environment,
 authentication & authorization, security headers, dependency security,
 input validation, and data exposure. Follow your security review rules.
 
-Think out loud as you investigate: after every 2-3 tool calls, explain what you found,
-what security implications you see, and what you plan to check next. Your reasoning between
-tool calls shows clients your analytical depth.
+After every 2-3 tool calls, explain WHAT YOU FOUND — concrete facts from the results.
+Never just announce what you're about to do ("Let me check X") or label without explaining
+("This is critical"). State what the data shows and what security implications it has.
 
 IMPORTANT: Record findings throughout your investigation.
 You must record at least 6 findings — one per security category minimum.
@@ -92,9 +92,9 @@ This audit is framework-focused, not CMS-focused. Investigate router architectur
 data fetching patterns, rendering strategy, performance optimization, configuration
 quality, dependency currency, and TypeScript/DX patterns. Follow your Next.js audit rules.
 
-Think out loud as you investigate: after every 2-3 tool calls, explain what you found,
-what patterns you're seeing, and what you plan to check next. Your reasoning between
-tool calls shows clients your analytical depth.
+After every 2-3 tool calls, explain WHAT YOU FOUND — concrete facts from the results.
+Never just announce what you're about to do ("Let me check X") or label without explaining
+("This is critical"). State what the data shows and why it matters.
 
 IMPORTANT: Record findings throughout your investigation.
 You must record at least 8 findings across all scorecard categories.
@@ -104,9 +104,9 @@ Every scorecard category must have at least one finding.`,
 Conduct a comprehensive multi-goal analysis of this codebase.
 
 You are a senior consultant, not a linter. Your investigation should demonstrate deep
-understanding of this codebase — not just list files and versions. As you investigate,
-explain what you're finding and why it matters. Think out loud: after every few tool calls,
-describe what you discovered, what patterns you're seeing, and what you plan to investigate next.
+understanding of this codebase — not just list files and versions. After every few tool calls,
+explain what the results show and why it matters. Describe concrete facts from the data, not
+what you're about to do next.
 
 Your findings will feed into 8 different goal scorecards: onboarding, audit, migration,
 component-map, ci-check, security-review, Next.js, and accessibility.
@@ -116,10 +116,13 @@ configuration, architecture, dependencies, deployment, and nextjs patterns.
 Follow your universal investigation rules.
 
 INVESTIGATION STYLE:
-- After each batch of 2-3 tool calls, pause and explain what you found and what it means.
-- Flag architectural decisions, patterns that will cause pain, and things that surprised you.
-- Connect findings across categories — e.g., a dependency issue may also be a security concern.
-- Your reasoning between tool calls is valuable — it shows the client your analytical process.
+- After each batch of 2-3 tool calls, explain WHAT YOU FOUND — concrete facts from the results.
+- NEVER write reasoning that only announces what you're about to do ("Let me check X") or
+  labels something without explaining it ("This is a critical finding").
+- GOOD: "The pom.xml targets AEM SDK 2023.9 which is 14 months behind current. The uber-jar
+  dependency pins to a specific patch version rather than using the SDK BOM, which means
+  security patches require manual version bumps across all modules."
+- Connect findings across categories — a dependency gap may also be a security exposure.
 
 IMPORTANT: Record findings throughout your investigation.
 You must record at least 15 findings across all 9 core categories.
@@ -152,9 +155,9 @@ Investigate all six scorecard categories: images & media, semantic structure,
 keyboard & focus, forms & inputs, color & contrast, and dynamic content.
 Follow your accessibility audit rules.
 
-Think out loud as you investigate: after every 2-3 tool calls, explain what you found,
-what WCAG criteria are at risk, and what you plan to check next. Your reasoning between
-tool calls shows clients your analytical depth.
+After every 2-3 tool calls, explain WHAT YOU FOUND — concrete facts from the results.
+Never just announce what you're about to do ("Let me check X") or label without explaining
+("This is critical"). State what the data shows and what WCAG criteria are at risk.
 
 Frame findings in terms of WCAG criteria and compliance risk, not just best practice.
 Accessibility is a legal requirement in many jurisdictions.

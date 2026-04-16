@@ -154,7 +154,7 @@ export function FileTree({ files, className }: FileTreeProps) {
   }
 
   return (
-    <div className={cn('space-y-px', className)}>
+    <div data-component="FileTree" className={cn('space-y-px', className)}>
       {tree.map((node, i) => (
         <FileItem key={`${node.type}-${node.name}-${i}`} node={node} depth={0} />
       ))}

@@ -60,6 +60,8 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
     } else if (ev.type === 'model_switch' || ev.type === 'budget_warning' || ev.type === 'assemble_output'
                || ev.action === 'budget_plan' || ev.action === 'budget_rebalance') {
       current.special.push(ev);
+    } else if (ev.action === 'detect_app_roots' || ev.action === 'detect_scope_drift' || ev.action === 'get_specialist_prompts') {
+      // Infrastructure tools — skip entirely, not visible to users
     } else {
       current.toolCalls.push(ev);
     }
@@ -478,6 +480,7 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
 
   return (
     <div
+      data-component="EventStream"
       ref={scrollRef}
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto bg-canvas relative pt-3"

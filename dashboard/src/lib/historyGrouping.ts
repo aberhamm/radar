@@ -94,6 +94,9 @@ export function groupByRepo(items: HistoryItem[]): RepoGroup[] {
   // Step 4: build RepoGroup array, sorted by most recent first
   const repoGroups: RepoGroup[] = [];
   for (const [repoName, runs] of repoMap) {
+    // Sort runs within each repo by most recent first
+    runs.sort((a, b) => b.item.startedAt.localeCompare(a.item.startedAt));
+
     const latest = runs.reduce((max, r) => {
       const t = r.item.startedAt;
       return t > max ? t : max;

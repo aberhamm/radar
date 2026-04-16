@@ -79,7 +79,7 @@ export function TerminalBrand({ isRunning }: TerminalBrandProps) {
   if (!suffix) return null;
 
   return (
-    <span className="text-tertiary-label whitespace-nowrap">
+    <span data-component="TerminalBrand" className="text-tertiary-label whitespace-nowrap">
       {suffix}
     </span>
   );

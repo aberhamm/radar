@@ -538,7 +538,7 @@ export function MultiGoalView({ data, activeTab: controlledTab, onTabChange }: M
   const verdict = scoreToVerdict(worstScore);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div data-component="MultiGoalView" className="flex-1 flex flex-col overflow-hidden">
       {/* Exec summary banner */}
       <div className="px-6 py-4 border-b border-separator bg-surface shrink-0">
         <div className="flex items-start gap-5 max-w-[860px]">

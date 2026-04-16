@@ -34,7 +34,7 @@ export function RunningView({
   onRunError,
 }: RunningViewProps) {
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
+    <div data-component="RunningView" className="flex-1 flex flex-col overflow-hidden relative">
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-[3] flex flex-col overflow-hidden">
           <EventStream

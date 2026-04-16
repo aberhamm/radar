@@ -78,7 +78,7 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 > I want to show you something we've been building.
 >
-> Imagine a prospect sends us their repo for a health check. Today that takes a senior architect a week — reading through the codebase, checking security, accessibility, architecture patterns, writing up findings.
+> Imagine a prospect sends us their repo for a health check. Today that takes a senior architect a week. Reading through the codebase, checking security, accessibility, architecture patterns, writing up findings.
 >
 > What if an AI agent could run all of those assessments in one sweep, in under 10 minutes, for about 7 dollars, and hand the architect a scored report with file-level evidence to start from?
 
@@ -96,7 +96,7 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 > Ten goal types. Security review, architecture audit, accessibility, developer onboarding, Next.js health, migration readiness, CI checks.
 >
-> Each one follows its own set of consulting rules — written in plain English markdown by a senior architect, not by a developer writing code.
+> Each one follows its own set of consulting rules. Plain English markdown, not code. You can read them, edit them, write new ones.
 
 **Point at "All Goals" in the dropdown.**
 
@@ -104,15 +104,15 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 **Paste the GitHub URL into the repo field. Click "Pull Repo."**
 
-> This is Sitecore's official XM Cloud starter kit. Their Next.js headless CMS template. Real production code — this is what new Sitecore projects start from.
+> This is Sitecore's official XM Cloud starter kit. Their Next.js headless CMS template. Real production code, the starting point for new Sitecore projects.
 
 **Wait for clone to finish. Select "All Goals." Click Start.**
 
-> That's now running live. The agent is working through security, architecture, accessibility, onboarding — everything. Takes about 8 minutes.
+> That's now running live. The agent is working through security, architecture, accessibility, onboarding, everything. Takes about 8 minutes.
 
 **Let the investigation view stream for 10-15 seconds. Let them see tool call chips fly by.**
 
-> Watch the tool calls on the left — reading package.json, detecting the framework, scanning the directory structure. No hardcoded sequence. The agent decides what to investigate based on what it finds.
+> Watch the tool calls on the left. Reading package.json, detecting the framework, scanning the directory structure. No hardcoded sequence. The agent decides what to investigate based on what it finds.
 
 > While this runs in the background, let me show you how it works under the hood. We'll come back for the results.
 
@@ -126,17 +126,17 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 ### 2:00 — The Four Layers
 
-*Describe verbally — four layers, bottom to top:*
+*Describe verbally — four layers as an execution flow:*
 
 > The architecture is four layers, and the principle is simple.
 
-> At the bottom: 23 deterministic tools. They read files, search code, parse configs, query npm. They return facts. They never call an LLM. They never reason.
+> First: consulting rules. Plain English markdown files. Core rules that every run follows, platform rules for Sitecore or Optimizely, goal rules for each assessment type. They define the mission.
 
-> Above that: the Pi Agent runtime. An observe-reason-act loop. The agent decides which tools to call and in what order. That's where the intelligence lives.
+> Second: the Pi Agent runtime. An observe-reason-act loop. It loads the rules into its system prompt, then decides which tools to call and in what order. That's where the intelligence lives.
 
-> Above that: consulting rules. Plain English markdown files. Core rules that every run follows, platform rules for Sitecore or Optimizely, goal rules for each assessment type.
+> Third: 23 deterministic tools. They read files, search code, parse configs, query npm. They return facts. They never call an LLM. They never reason. The agent calls them; they don't know the agent exists.
 
-> At the top: structured output. Scorecards, findings, briefs, PDFs, SARIF, GitHub Issues. Schema-enforced, evidence-verified, scored.
+> Fourth: structured output. Scorecards, findings, briefs, PDFs, SARIF, GitHub Issues. Schema-enforced, evidence-verified, scored.
 
 > No layer reaches into another. Tools don't know about rules. Rules don't know about output formats. The agent sits in the middle and connects them.
 
@@ -146,13 +146,13 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 **Show tab: `src/rules/goal-security-review.md`. Scroll slowly.**
 
-> This is a goal rule file. Plain English markdown. It tells the agent what categories to investigate — auth, secrets, injection, headers, dependencies, data exposure.
+> This is a goal rule file. Plain English markdown. It tells the agent what categories to investigate: auth, secrets, injection, headers, dependencies, data exposure.
 >
 > It defines severity criteria. What patterns to look for, what counts as evidence.
 
 **Point at a specific instruction in the file.**
 
-> A senior architect writes these. You want a new audit type — say, performance, or GraphQL security — you write one of these files. No code changes. The agent picks it up on the next run.
+> You want a new audit type, say performance or GraphQL security, you write one of these files. No code changes. The agent picks it up on the next run. The expertise lives in the rules, not in the codebase.
 
 ---
 
@@ -160,13 +160,13 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 **Show tab: `src/config/piModel.ts`. The whole file is ~77 lines.**
 
-> Before I show you the agent loop, here's the model config. Two models built entirely from environment variables.
+> The model config is two models built entirely from environment variables.
 
 **Point at `model` and `fastModel` objects.**
 
-> The agent model — that's for investigation. The fast model — that's for writing. Role-based names, not model names. The code never says "Sonnet" or "Haiku."
+> The agent model is for investigation. The fast model is for writing. Role-based names, not model names. The code never says "Sonnet" or "Haiku."
 >
-> You change two env vars to any provider's model IDs. Swap from AWS Bedrock to Azure OpenAI — no code changes. That's how a client runs this on their own infrastructure.
+> You change two env vars to any provider's model IDs. Swap from AWS Bedrock to Azure OpenAI, no code changes. That's how a client runs this on their own infrastructure.
 
 ---
 
@@ -174,7 +174,7 @@ echo "GITHUB_TOKEN=$(gh auth token)" >> dashboard/.env.local
 
 **Show tab: `src/agent/runner.ts`, scrolled to ~line 795.**
 
-> This is the core. Pi Agent gives us an `Agent` class. We give it a system prompt — assembled from those markdown rules — a model, and 23 tools. Then we call `agent.prompt()` and it runs autonomously.
+> This is the core. Pi Agent gives us an `Agent` class. We give it a system prompt (assembled from those markdown rules), a model, and 23 tools. Then we call `agent.prompt()` and it runs autonomously.
 
 **Point at the `new Agent({...})` block. Walk through the properties.**
 
@@ -191,21 +191,21 @@ const agent = new Agent({
 
 > The interesting parts are the hooks we attach.
 
-> `toolExecution: 'parallel'` — Pi fires all tool calls from a single LLM turn concurrently. The agent wants to read five files at once? They all run in parallel.
+> `toolExecution: 'parallel'` means Pi fires all tool calls from a single LLM turn concurrently. The agent wants to read five files at once? They all run in parallel.
 
-> `beforeToolCall` — budget enforcement. Every tool call goes through this gate. It blocks calls when the budget runs out. It enforces per-tool quotas — web search gets 5 calls max, URL fetching gets 3.
+> `beforeToolCall` is budget enforcement. Every tool call goes through this gate. It blocks calls when the budget runs out. It enforces per-tool quotas: web search gets 5 calls max, URL fetching gets 3.
 >
-> And if the agent has spent 75% of its budget with zero findings recorded, it locks out all investigation tools and forces the agent into recording mode. Safety net — the agent can't burn the whole budget without producing anything.
+> And if the agent has spent 75% of its budget with zero findings recorded, it locks out all investigation tools and forces the agent into recording mode. The agent can't burn the whole budget without producing anything.
 
-> `afterToolCall` — state tracking. Every tool call increments counters, logs the investigation step, checks if it's time to send a steering message. At 50% budget it nudges the agent to switch to the cheaper model. At 5 calls remaining it sends a critical message.
+> `afterToolCall` is state tracking. Every tool call increments counters, logs the investigation step, checks if it's time to send a steering message. At 50% budget it nudges the agent to switch to the cheaper model. At 5 calls remaining it sends a critical message.
 
-> `transformContext` — context compression. How we keep the conversation under the context window. I'll show you this in a second.
+> `transformContext` is context compression. How we keep the conversation under the context window. I'll show you this in a second.
 
-> `onPayload` — prompt caching. We inject cache control breakpoints so the system prompt and all 23 tool definitions are cached across turns. Saves tokens and latency on every LLM call.
+> `onPayload` is prompt caching. We inject cache control breakpoints so the system prompt and all 23 tool definitions are cached across turns. Saves tokens and latency on every LLM call.
 
 **Point at the `agent.subscribe()` block a few lines below (~line 818):**
 
-> And `subscribe()` is how we get real-time telemetry. Every text delta, every tool call start, every usage report streams through here. That's what powers the live dashboard you saw — the tool call chips, the reasoning stream, the progress bar.
+> And `subscribe()` is how we get real-time telemetry. Every text delta, every tool call start, every usage report streams through here. That's what powers the live dashboard you saw: the tool call chips, the reasoning stream, the progress bar.
 
 ---
 
@@ -213,13 +213,13 @@ const agent = new Agent({
 
 **Scroll to ~line 462, or show the bookmarked split.**
 
-> This is my favorite piece of code in the whole project.
+> This is probably my favorite piece of code in the project.
 
 *On screen — `switchModelInPlace()` at ~line 462. They can see the `Object.assign` call.*
 
-> The dual-model pattern. Sonnet investigates — the expensive, powerful model. Haiku writes the report — fast and cheap.
+> The dual-model pattern. Sonnet investigates (the expensive, powerful model). Haiku writes the report (fast and cheap).
 >
-> But here's the problem. Pi's run loop captures the model object by reference when it starts. If you call `setModel()`, you replace the reference on the agent, but the loop is still holding the old object.
+> The problem is that Pi's run loop captures the model object by reference when it starts. If you call `setModel()`, you replace the reference on the agent, but the loop is still holding the old object.
 >
 > So we mutate the object in place. `Object.assign` overwrites the properties on the same JavaScript object the loop is holding. No abort, no restart, no lost conversation context. The very next LLM call just goes to a different model.
 
@@ -227,13 +227,13 @@ const agent = new Agent({
 
 *On screen — the `if (toolName === 'switch_to_fast_model')` block with `snipBoundaryActive = true`.*
 
-> The agent decides when to switch. It calls `switch_to_fast_model` as a tool — that's a stub, does nothing. The real switch happens in this hook. And the moment it switches, `snipBoundaryActive` flips to true.
+> The agent decides when to switch. It calls `switch_to_fast_model` as a tool, which is a stub that does nothing. The real switch happens in this hook. And the moment it switches, `snipBoundaryActive` flips to true.
 
 **Scroll to ~line 721, the context compression.**
 
 > That flag activates aggressive context compression. Three tiers for the conversation history. Recent messages: full fidelity. Mid-age: tool results compressed to 600 characters. Old: compressed to 120.
 >
-> But after the model switch — after investigation is done — those limits drop to 80 and 40. The writing phase doesn't need the raw file contents. It just needs the findings.
+> But after the model switch, after investigation is done, those limits drop to 80 and 40. The writing phase doesn't need the raw file contents. It just needs the findings.
 >
 > That compression plus the cheaper model is what makes a single-goal run cost 74 cents instead of two dollars.
 
@@ -243,19 +243,19 @@ const agent = new Agent({
 
 **Show tab: `src/agent/budgetPlanner.ts`. Scroll to `planBudget()` at ~line 69.**
 
-> This powers the all-goals run we kicked off. Before any LLM call, we run a pre-compute phase — four deterministic tools in parallel. Detect app roots, parse package.json, list the directory tree, load specialist prompts. No LLM, just tool execution.
+> This powers the all-goals run we kicked off. Before any LLM call, we run a pre-compute phase: four deterministic tools in parallel. Detect app roots, parse package.json, list the directory tree, load specialist prompts. No LLM, just tool execution.
 >
 > The budget planner takes those signals and decides how to split the budget across passes.
 
 **Point at the conditional blocks.**
 
-> Signal matrix. Next.js detected with a UI framework? 60% core, 20% Next.js specialist, 20% accessibility. Backend-only repo, no UI? 100% goes to core, specialists are skipped entirely.
+> Next.js detected with a UI framework? 60% core, 20% Next.js specialist, 20% accessibility. Backend-only repo, no UI? 100% goes to core, specialists are skipped entirely.
 
 **Scroll to `rebalanceBudget()` at ~line 196.**
 
 > After the core pass finishes, this rebalances based on what was actually found.
 >
-> Core found no Next.js patterns despite the pre-compute signals? Maybe a false positive — Next.js specialist gets skipped, budget goes to accessibility. Core under-utilized its budget? Repo was simpler than expected — specialist budgets shrink by 40%. Core already found 5-plus findings in a specialist's category? That specialist gets less because the ground is already covered.
+> Core found no Next.js patterns despite the pre-compute signals? Maybe a false positive, so the Next.js specialist gets skipped and budget goes to accessibility. Core under-utilized its budget? Repo was simpler than expected, specialist budgets shrink by 40%. Core already found 5-plus findings in a specialist's category? That specialist gets less because the ground is already covered.
 >
 > Pure functions. No LLM, no I/O. Deterministic budget intelligence.
 
@@ -273,9 +273,9 @@ const agent = new Agent({
 
 > Sometimes it wraps the finding in a `finding` key. Sometimes it sends it flat. Sometimes it double-nests it. Sometimes it batches multiple findings in an array. Sometimes it serializes the array as numbered object keys. This function normalizes all six shapes.
 
-> Then the evidence verification. For every piece of evidence the agent cites — did it actually read that file during this run? Is the code snippet it cited actually in that file on disk?
+> Then the evidence verification. For every piece of evidence the agent cites: did it actually read that file during this run? Is the code snippet it cited actually in that file on disk?
 >
-> If the snippet doesn't match — maybe the LLM drifted after 30 turns of conversation — the system auto-corrects to the real code. If the file was never read at all, the evidence is rejected entirely.
+> If the snippet doesn't match (maybe the LLM drifted after 30 turns of conversation), the system auto-corrects to the real code. If the file was never read at all, the evidence is rejected entirely.
 >
 > After the loop completes, a separate verification pass re-reads every cited file from disk and drops findings where all evidence is unverifiable.
 >
@@ -291,9 +291,9 @@ const agent = new Agent({
 
 **Point at the boundary strings and the injection pattern array.**
 
-> Every tool output gets wrapped in open and close delimiters. The system prompt tells the agent: treat everything inside these markers as data, not instructions.
+> Every tool output gets wrapped in open and close delimiters. The system prompt tells the agent to treat everything inside these markers as data, not instructions.
 >
-> And we have 11 pattern detectors — "ignore previous instructions," "you are now," "new system prompt," delimiter escape attempts. Suspicious patterns in a finding's content get flagged automatically.
+> And we have 11 pattern detectors: "ignore previous instructions," "you are now," "new system prompt," delimiter escape attempts. Suspicious patterns in a finding's content get flagged automatically.
 >
 > Not bulletproof against sophisticated attacks, but meaningful protection against what you'd actually find in production codebases.
 
@@ -323,7 +323,7 @@ const agent = new Agent({
 
 **Point at individual goal cards. Read the grades aloud:**
 
-> Security: [read the grade]. Architecture: [grade]. Accessibility: [grade]. Next.js health: [grade]. Onboarding: [grade]. Each one of those is a full assessment with its own scorecard and its own findings.
+> Security: [read the grade]. Architecture: [grade]. Accessibility: [grade]. Next.js health: [grade]. Onboarding: [grade]. Each one is a full assessment with its own scorecard and its own findings.
 
 ---
 
@@ -331,7 +331,7 @@ const agent = new Agent({
 
 **Point at the Top Risks section below the scoreboard.**
 
-> The agent surfaced the top risks across all goals, ranked by severity. Critical and high at the top. These are your conversation starters for a client meeting — you scan this in five seconds and know exactly where to focus.
+> The agent surfaced the top risks across all goals, ranked by severity. Critical and high at the top. You scan this in five seconds and know exactly where to focus in a client meeting.
 
 ---
 
@@ -339,7 +339,7 @@ const agent = new Agent({
 
 **Point at the Investigation Passes progress bars.**
 
-> And this is the budget planner I just showed you in code. Core pass got 60% of the budget. Next.js specialist got 20%. Accessibility got 20%. The progress bars show how much each pass actually consumed. You can see the core pass used most of its allocation, the specialists used less — the rebalancer worked.
+> And this is the budget planner I just showed you in code. Core pass got 60% of the budget. Next.js specialist got 20%. Accessibility got 20%. The progress bars show how much each pass actually consumed. You can see the core pass used most of its allocation, the specialists used less. The rebalancer worked.
 
 ---
 
@@ -355,9 +355,9 @@ const agent = new Agent({
 
 **Scroll to a high-severity finding. Point at each piece:**
 
-> Look at this finding. Severity badge — high. Category — security. File path and line number. And the evidence — the actual code snippet.
+> Look at this finding. Severity badge, high. Category, security. File path and line number. And the evidence: the actual code snippet.
 >
-> That snippet was verified against the real file on disk. The anti-hallucination system I showed you. If the agent had fabricated that snippet, it would've been caught and either auto-corrected or dropped.
+> That snippet was verified against the real file on disk. If the agent had fabricated that snippet, it would've been caught and either auto-corrected or dropped.
 
 **Click into a second finding:**
 
@@ -373,9 +373,9 @@ const agent = new Agent({
 
 **Scroll through one or two findings:**
 
-> Same quality of evidence. File, line, snippet. The accessibility rules encode the same expertise your accessibility specialist would apply — except this ran in about 90 seconds as part of the sweep.
+> Same quality of evidence. File, line, snippet. The accessibility rules encode the same expertise your accessibility specialist would apply, except this ran in about 90 seconds as part of the sweep.
 
-> And that's the platform pattern. Same 23 tools. Same agent runtime. Different rules, different output. Security rules look for auth and secrets. Accessibility rules look for ARIA and contrast. One architecture, many deliverables.
+> Same 23 tools. Same agent runtime. Different rules, different output. Security rules look for auth and secrets. Accessibility rules look for ARIA and contrast. One architecture, many deliverables.
 
 ---
 
@@ -383,7 +383,7 @@ const agent = new Agent({
 
 *If time allows and the audience is engaged, expand the Onboarding section:*
 
-> This one's a different shape entirely. It's not a scorecard — it's a 12-section developer onboarding brief. Architecture overview, environment setup, data flow, CMS integration patterns, deployment process. Everything a new developer joining this project needs on day one. Same run, same budget, completely different deliverable.
+> This one's a different shape entirely. Not a scorecard, it's a 12-section developer onboarding brief. Architecture overview, environment setup, data flow, CMS integration patterns, deployment process. Everything a new developer joining this project needs on day one. Same run, same budget, completely different deliverable.
 
 ---
 
@@ -419,7 +419,7 @@ const agent = new Agent({
 
 > [X] issues will be created. [N] high, [M] medium. It tells you exactly what's going to happen before you commit.
 
-> And notice this — duplicates will be skipped automatically via fingerprint matching. Every finding gets a fingerprint — SHA-256 of the category, file path, and normalized title.
+> And duplicates get skipped automatically via fingerprint matching. Every finding gets a fingerprint, a SHA-256 of the category, file path, and normalized title.
 >
 > Run this again next month, and findings that haven't changed won't create duplicate issues. You only see what's new.
 
@@ -441,7 +441,7 @@ const agent = new Agent({
 
 **Click an issue link. GitHub opens in a new tab.**
 
-> Title. Severity label — high. Category label — security. The file path. The evidence snippet right there in the issue body. And at the bottom, the fingerprint hash for deduplication.
+> Title. Severity label, high. Category label, security. The file path. The evidence snippet right there in the issue body. And at the bottom, the fingerprint hash for deduplication.
 >
 > Every finding just became a trackable work item. Your PM can prioritize these. Your developers can pick them up. The agent's investigation just turned into your sprint backlog.
 
@@ -451,7 +451,7 @@ const agent = new Agent({
 
 ### 15:30 — The Dedup Beat
 
-> One more thing on this. That fingerprint — a hash of the category, file path, and title — is how you track drift over time without a database.
+> That fingerprint (a hash of the category, file path, and title) is how you track drift over time without a database.
 >
 > Run the assessment again next quarter. Findings that haven't changed: no duplicate issues. New findings: new issues. Resolved findings: you can see what went away. In CI, this comparison happens automatically on every PR.
 
@@ -461,39 +461,37 @@ const agent = new Agent({
 
 **Navigate back to the multi-goal view. Point at the stats in the header bar.**
 
-> Let's talk about cost. This entire all-goals sweep — security, architecture, accessibility, onboarding, Next.js, component mapping — [X] tool calls, [Y] seconds, $[Z].
+> Let's talk about cost. This entire all-goals sweep (security, architecture, accessibility, onboarding, Next.js, component mapping): [X] tool calls, [Y] seconds, $[Z].
 >
 > About 7 dollars for the full diagnostic across every goal type.
 
 **Pause. Two seconds of silence. Let the number land.**
 
-> A single-goal run — just security, or just accessibility — about 74 cents.
+> A single-goal run, just security or just accessibility, about 74 cents.
 
-> The dual-model pattern makes this possible. You saw the code. Sonnet runs the investigation — expensive, powerful. When the agent decides it's done, it calls `switch_to_fast_model`. We mutate the model object in place — no restart, no lost context. Haiku writes the report.
+> The dual-model pattern makes this possible. You saw the code. Sonnet runs the investigation, expensive and powerful. When the agent decides it's done, it calls `switch_to_fast_model`. We mutate the model object in place, no restart, no lost context. Haiku writes the report.
 >
-> And the context compression kicks in — old tool results go from 600 characters down to 80. That switch saves about 37% on cost.
+> And the context compression kicks in. Old tool results go from 600 characters down to 80. That switch saves about 37% on cost.
 
 ---
 
-### 17:00 — The Three Takeaways
-
-> Three things to take away.
+### 17:00 — The Takeaways
 
 **Hold up one finger.**
 
-> One — it runs anywhere. A client's network, their LLM provider, behind their firewall. Four environment variables. Change from AWS Bedrock to Azure OpenAI. No code changes. No data leaves their environment.
+> It runs anywhere. A client's network, their LLM provider, behind their firewall. Four environment variables. Change from AWS Bedrock to Azure OpenAI. No code changes. No data leaves their environment.
 
 **Hold up two fingers.**
 
-> Two — the rules are yours. Plain English markdown files. Your most senior architect writes a security playbook, an accessibility checklist, an onboarding template — and every run benefits from their expertise.
+> The rules are yours. Plain English markdown files. A security playbook, an accessibility checklist, an onboarding template. Add one, and every run benefits from it.
 >
 > That's institutional knowledge that scales. It doesn't walk out the door when someone leaves.
 
 **Hold up three fingers.**
 
-> Three — findings become work. Reports are table stakes. What matters is the pipeline from finding to issue to sprint to resolution.
+> Findings become work. Reports are table stakes. What matters is the pipeline from finding to issue to sprint to resolution.
 >
-> You just saw it — findings with evidence go straight into GitHub Issues. In CI, this happens automatically on every PR. Quality doesn't drift because nobody's watching.
+> You just saw it: findings with evidence go straight into GitHub Issues. In CI, this happens automatically on every PR. Quality doesn't drift because nobody's watching.
 
 ---
 
@@ -501,7 +499,7 @@ const agent = new Agent({
 
 > That's Radar. An AI agent that investigates codebases and produces scored consulting deliverables. Ten goal types, 23 tools, plain English rules, under a dollar per run.
 
-> Happy to dig into anything — the agent runtime, the CI pipeline, the budget planner, whatever you want to see.
+> Happy to dig into anything: the agent runtime, the CI pipeline, the budget planner, whatever you want to see.
 
 ---
 
@@ -509,7 +507,7 @@ const agent = new Agent({
 
 **Check the sidebar during Q&A. If the live all-goals run from Act 1 has completed:**
 
-> Actually — the live run we kicked off at the start just finished. Let me pull it up so you can see this wasn't canned.
+> The live run we kicked off at the start just finished. Let me pull it up so you can see this wasn't canned.
 
 **Click into it. Show the scoreboard.**
 
@@ -517,7 +515,7 @@ const agent = new Agent({
 
 *If findings differ slightly from the replay:*
 
-> A couple differences from the earlier run — the agent explored slightly different paths this time. That's the nature of agentic investigation. The rules constrain what it looks for, but the exact path varies. The findings converge.
+> A couple differences from the earlier run. The agent explored slightly different paths this time. That's the nature of agentic investigation. The rules constrain what it looks for, but the exact path varies. The findings converge.
 
 ---
 
@@ -551,7 +549,7 @@ Keep these loaded. The question is in bold, the answer is the blockquote.
 
 **"Can it fix the issues it finds?"**
 
-> Not yet — read-only today. But every finding has file-level evidence, the exact file, line, and code snippet. Extending to auto-fix is a natural next step.
+> Not yet, read-only today. But every finding has file-level evidence: the exact file, line, and code snippet. Extending to auto-fix is a natural next step.
 >
 > We're deliberate about that boundary. Investigation is high-confidence. Automated code changes need more guardrails.
 
@@ -559,7 +557,7 @@ Keep these loaded. The question is in bold, the answer is the blockquote.
 
 **"How do we add a new CMS or framework?"**
 
-> Write a platform rules file — markdown. Write reference files for the framework's patterns. The agent picks them up on the next run. No changes to the agent, the tools, or the output layer. That's the platform pattern.
+> Write a platform rules file in markdown. Write reference files for the framework's patterns. The agent picks them up on the next run. No changes to the agent, the tools, or the output layer.
 
 ---
 
@@ -573,13 +571,13 @@ Keep these loaded. The question is in bold, the answer is the blockquote.
 
 > Yes. Auto-detects GitHub Actions and Azure DevOps from environment variables.
 >
-> Posts PR comments with the scorecard and a findings diff — new, resolved, persistent. Adds file-level annotations inline in the PR. Uploads SARIF for code scanning. Applies labels. Evaluates a quality gate — exit code 0 for green, 1 for red. You can fail a PR if security findings are critical.
+> Posts PR comments with the scorecard and a findings diff: new, resolved, persistent. Adds file-level annotations inline in the PR. Uploads SARIF for code scanning. Applies labels. Evaluates a quality gate (exit code 0 for green, 1 for red). You can fail a PR if security findings are critical.
 
 ---
 
 **"Is this tied to Sitecore and Optimizely?"**
 
-> No. Those are the platform rules we wrote first because that's our practice. There's a generic audit goal that works on any web framework — React, Vue, Angular, plain Node.js. The CMS-specific goals just layer platform rules on top. The architecture is framework-agnostic.
+> No. Those are the platform rules we wrote first because that's our practice. There's a generic audit goal that works on any web framework: React, Vue, Angular, plain Node.js. The CMS-specific goals just layer platform rules on top. The architecture is framework-agnostic.
 
 ---
 
@@ -593,21 +591,21 @@ Keep these loaded. The question is in bold, the answer is the blockquote.
 
 > Started with a 1,200-line spec before any code. Built it in about three weeks. 85 test files, 23 tools, 10 goal types.
 >
-> The architecture is the leverage — once the layers are in place, adding a new goal type takes an afternoon, not a sprint.
+> The architecture is the leverage. Once the layers are in place, adding a new goal type takes an afternoon, not a sprint.
 
 ---
 
 **"What agent framework is this built on?"**
 
-> Pi Agent — open-source TypeScript agent runtime. Gives us the observe-reason-act loop, parallel tool execution, context management, event streaming.
+> Pi Agent, an open-source TypeScript agent runtime. Gives us the observe-reason-act loop, parallel tool execution, context management, event streaming.
 >
-> We added hooks for budget control, model switching, context compression, and prompt caching on top. The tools and rules are framework-agnostic — you could swap Pi for another runtime.
+> We added hooks for budget control, model switching, context compression, and prompt caching on top. The tools and rules are framework-agnostic. You could swap Pi for another runtime.
 
 ---
 
 **"How does parallel tool execution stay safe?"**
 
-> Two groups. 21 read-only tools run fully parallel. Three stateful tools — record finding, assemble output, switch model — serialize through an async mutex.
+> Two groups. 21 read-only tools run fully parallel. Three stateful tools (record finding, assemble output, switch model) serialize through an async mutex.
 >
 > The mutex chains promises so each stateful call waits for the previous one. Read-only calls bypass it entirely.
 
@@ -617,7 +615,7 @@ Keep these loaded. The question is in bold, the answer is the blockquote.
 
 > Three escalation levels.
 >
-> At 50% budget: soft steering — "consider switching to the fast model." At 75% with zero findings: hard gate — investigation tools blocked, only `record_finding` allowed. At 5 calls remaining: force model switch, critical message demanding immediate output.
+> At 50% budget, soft steering: "consider switching to the fast model." At 75% with zero findings, hard gate: investigation tools blocked, only `record_finding` allowed. At 5 calls remaining, force model switch, critical message demanding immediate output.
 >
 > And if the loop ends without the agent producing output, we retry with follow-up nudges on the fast model.
 
@@ -625,15 +623,15 @@ Keep these loaded. The question is in bold, the answer is the blockquote.
 
 **"How does it handle large or complex repos? Monorepos?"**
 
-> Tool call budget — default 45 for a single goal. The agent prioritizes based on the rules, it doesn't try to read every file.
+> Tool call budget, default 45 for a single goal. The agent prioritizes based on the rules, it doesn't try to read every file.
 >
-> For monorepos, `detect_app_roots` identifies the main workspaces first, agent focuses on the most relevant roots. Budget is extensible — extend 50 calls at a time interactively, or set a higher budget up front.
+> For monorepos, `detect_app_roots` identifies the main workspaces first, then the agent focuses on the most relevant roots. Budget is extensible: extend 50 calls at a time interactively, or set a higher budget up front.
 
 ---
 
 **"How does the comparison and trend tracking work without a database?"**
 
-> Every finding gets a fingerprint — SHA-256 of category, file path, and normalized title. To diff two runs, you compare fingerprint sets. Only in the new run? "New." Only in the old? "Resolved." In both? "Persistent."
+> Every finding gets a fingerprint, a SHA-256 of category, file path, and normalized title. To diff two runs, you compare fingerprint sets. Only in the new run? "New." Only in the old? "Resolved." In both? "Persistent."
 >
 > In CI, the previous run's JSON is stored as a pipeline artifact and downloaded automatically for comparison. Pure set math, no database.
 
@@ -641,7 +639,7 @@ Keep these loaded. The question is in bold, the answer is the blockquote.
 
 **"What about specialist rules? Does it know about GraphQL, Tailwind, Prisma?"**
 
-> Yes. Specialist rule files load on demand. During the pre-compute phase, we detect which technologies are present — GraphQL schemas, Tailwind configs, Prisma setups — and load the relevant specialist rules into context.
+> Yes. Specialist rule files load on demand. During the pre-compute phase, we detect which technologies are present (GraphQL schemas, Tailwind configs, Prisma setups) and load the relevant specialist rules into context.
 >
 > The agent doesn't carry all domain knowledge at once. It loads what's relevant to the repo it's investigating.
 
@@ -769,11 +767,11 @@ Post-loop: if `assemble_output` was never called, retry with `agent.followUp()` 
 
 **Scroll to the findings diff:**
 
-> Three sections. New findings — issues that appeared since the last run. Resolved findings — issues that went away. Persistent — still there.
+> Three sections. New findings: issues that appeared since the last run. Resolved: issues that went away. Persistent: still there.
 
-> Every finding has a fingerprint — a hash of its category, file path, and title. That's what makes this comparison work. No database. Just set intersection on two JSON files. Run this on the same repo every sprint, and you have automated drift tracking.
+> Every finding has a fingerprint, a hash of its category, file path, and title. That's what makes this comparison work. No database. Just set intersection on two JSON files. Run this on the same repo every sprint, and you have automated drift tracking.
 
-> In CI, the previous run's JSON is stored as a pipeline artifact. The next run downloads it and diffs automatically. The PR comment shows what changed — new risks in red, resolved in green.
+> In CI, the previous run's JSON is stored as a pipeline artifact. The next run downloads it and diffs automatically. The PR comment shows what changed: new risks in red, resolved in green.
 
 ---
 
@@ -787,7 +785,7 @@ Post-loop: if `assemble_output` was never called, retry with `agent.followUp()` 
 
 **Click the Events tab on a completed run.**
 
-> This is the audit trail. Every tool call, every reasoning step, every finding recorded — in order. If a client asks "why did it flag this file?" you can trace the agent's reasoning step by step.
+> This is the audit trail. Every tool call, every reasoning step, every finding recorded, in order. If a client asks "why did it flag this file?" you can trace the agent's reasoning step by step.
 
 ---
 
@@ -809,19 +807,19 @@ Post-loop: if `assemble_output` was never called, retry with `agent.followUp()` 
 
 **What to call out during a live run:**
 
-> Watch the tool calls — it started with package.json, identified the stack, now it's deciding where to dig. No hardcoded sequence.
+> Watch the tool calls. Started with package.json, identified the stack, now it's deciding where to dig. No hardcoded sequence.
 
 *When a finding appears:*
 
-> First finding just landed. File path, line number, code snippet. That evidence is pulled from the file it read — not generated.
+> First finding just landed. File path, line number, code snippet. That evidence is pulled from the file it read, not generated.
 
 *When `switch_to_fast_model` appears:*
 
-> There — `switch_to_fast_model`. The agent decided it's done investigating. Switching to the cheaper model for the writing phase. That saves 37% on cost.
+> `switch_to_fast_model`. The agent decided it's done investigating. Switching to the cheaper model for the writing phase. That saves 37% on cost.
 
 *If the budget pause modal appears:*
 
-> Budget exhaustion. You can extend — add 50 more calls — or tell it to finish with what it has. In CI, it auto-finishes. In the dashboard, you get the choice.
+> Budget exhaustion. You can extend (add 50 more calls) or tell it to finish with what it has. In CI, it auto-finishes. In the dashboard, you get the choice.
 
 ---
 

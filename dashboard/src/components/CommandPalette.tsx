@@ -56,7 +56,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" onClick={onClose}>
+    <div data-component="CommandPalette" className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" style={{ animation: 'fadeIn 0.15s ease both' }} />
       <div
         className="animate-scale-in relative bg-surface rounded-xl border border-separator shadow-float w-full max-w-lg overflow-hidden"

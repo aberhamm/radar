@@ -45,7 +45,7 @@ function ExecSummaryBanner({ scorecard, metrics }: { scorecard: Scorecard; metri
   const verdict = scoreToVerdict(scorecard.overallScore);
 
   return (
-    <div className="px-6 py-4 border-b border-separator bg-surface shrink-0">
+    <div data-component="ExecSummaryBanner" className="px-6 py-4 border-b border-separator bg-surface shrink-0">
       <div className="flex items-start gap-5 max-w-[860px]">
         <div
           className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
@@ -100,7 +100,7 @@ export function scrollToCategory(category: string) {
 
 export function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; metrics?: RunMetrics }) {
   return (
-    <div className="mb-6">
+    <div data-component="ScorecardGrid" className="mb-6">
       {/* Overall score */}
       <div
         className="flex items-center gap-3 mb-4 p-3 bg-surface rounded-lg border border-separator shadow-sm"
@@ -234,7 +234,7 @@ export function FindingsSection({ findings, scorecard }: { findings: Finding[]; 
   };
 
   return (
-    <div className="mb-6">
+    <div data-component="FindingsSection" className="mb-6">
       <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold mb-3">
         Findings ({findings.length})
       </div>
@@ -307,7 +307,7 @@ export function CostTab({ metrics }: { metrics: RunMetrics }) {
   const modelEntries = Object.entries(metrics.models);
 
   return (
-    <div className="py-5">
+    <div data-component="CostTab" className="py-5">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 mb-6">
         {[
           { label: 'Total Cost', value: `$${metrics.totalEstimatedCostUsd.toFixed(4)}`, accent: true },
@@ -478,7 +478,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
   ];
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div data-component="CompleteView" className="flex-1 flex flex-col overflow-hidden">
       {/* Exec summary banner */}
       <ExecSummaryBanner scorecard={scorecard} metrics={metrics} />
 

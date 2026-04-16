@@ -166,27 +166,10 @@ export default function DashboardPage() {
             }
             urlHandledRef.current = true;
           }
-        } else if (data.status === 'complete' && data.result) {
-          setResult(data.result);
-          setStatus('complete');
-          setIsSampleReplay(false);
-          if (data.currentRun) {
-            setCurrentRun({
-              repoPath: '',
-              repoName: data.currentRun.repoName,
-              goal: data.currentRun.goal,
-              startedAt: new Date(data.currentRun.startedAt),
-              events: [],
-              toolCalls: data.result.metrics?.toolCalls ?? 0,
-              budget: data.result.metrics?.toolCalls ?? 45,
-            });
-            setSelectedRunId(data.currentRun.id ?? null);
-            if (data.currentRun.id) {
-              pushUrl({ view: 'run', runId: data.currentRun.id });
-            }
-          }
-          urlHandledRef.current = true;
         }
+        // For completed sessions: don't auto-restore. The URL-based
+        // navigation effect below will handle deep-links (/run/id,
+        // /multi/id, /compare/a/b). Root "/" stays idle.
       })
       .catch((err) => {
         console.warn('[session] Failed to restore session:', err.message);
@@ -280,7 +263,7 @@ export default function DashboardPage() {
     }
   }, [multiGoalData?.parentId, replaceUrl]);
 
-  const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string) => {
+  const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string, budget?: number) => {
     const resolvedName = repoName ?? (repoPath.split(/[/\\]/).pop() || repoPath);
     setLastRepoPath(repoPath);
     setCurrentRun({
@@ -290,7 +273,7 @@ export default function DashboardPage() {
       startedAt: new Date(),
       events: [],
       toolCalls: 0,
-      budget: 45,
+      budget: budget ?? 45,
     });
     setStatus('running');
     setResult(null);

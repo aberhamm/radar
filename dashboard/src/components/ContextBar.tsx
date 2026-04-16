@@ -39,7 +39,7 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
   const isComparing = status === 'comparing';
 
   return (
-    <div className="bg-surface border-b border-separator px-4 h-10 flex items-center gap-3 shrink-0 animate-slide-down">
+    <div data-component="ContextBar" className="bg-surface border-b border-separator px-4 h-10 flex items-center gap-3 shrink-0 animate-slide-down">
       {/* Repo name — always first (compare mode shows both names) */}
       {isComparing && compareRunNames ? (
         <span className="bg-elevated rounded-md px-2.5 py-0.5 text-xs font-mono font-medium text-label">

@@ -17,6 +17,7 @@ export function FindingCard({ finding, index }: { finding: Finding; index?: numb
 
   return (
     <div
+      data-component="FindingCard"
       id={`finding-${finding.id}`}
       data-finding-category={finding.category ?? ''}
       className="rounded-lg overflow-hidden"
