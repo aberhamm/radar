@@ -54,6 +54,19 @@ Start with the foundation, then go deeper:
 - Middleware v1 vs v2
 - SWC adoption
 
+## Finding categories
+
+Record findings using `record_finding` with these categories:
+- `routing` — App Router vs Pages Router, route organization, layouts
+- `architecture` — structural patterns, component hierarchy, code organization
+- `data-fetching` — Server Components, caching, streaming, Suspense
+- `nextjs` — Next.js-specific rendering patterns (SSR/SSG/ISR), framework features
+- `performance` — image optimization, bundle size, fonts, code splitting
+- `configuration` — next.config.js quality, env var exposure, experimental flags
+- `dependencies` — React/Next.js version currency, compatibility
+- `stack` — TypeScript config, build tooling, type coverage
+- `dx` — developer experience, path aliases, tooling ergonomics
+
 ## Severity guidelines
 
 - **critical** — Next.js 12 or below (EOL), React 17 or below, known security vulnerabilities, broken SSR/SSG config

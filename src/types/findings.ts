@@ -17,7 +17,13 @@ export type FindingCategory =
   | 'performance'
   | 'accessibility'
   | 'forms'
-  | 'aria';
+  | 'aria'
+  | 'auth'
+  | 'secrets'
+  | 'input-validation'
+  | 'data-exposure'
+  | 'testing'
+  | 'dx';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 

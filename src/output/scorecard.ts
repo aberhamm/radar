@@ -17,27 +17,27 @@ const ONBOARDING_CATEGORY_MAP: Record<string, FindingCategory[]> = {
 };
 
 const SECURITY_CATEGORY_MAP: Record<string, FindingCategory[]> = {
-  'Secrets & Environment': ['security'],
-  'Authentication & Authorization': ['architecture'],
+  'Secrets & Environment': ['secrets', 'security'],
+  'Authentication & Authorization': ['auth'],
   'Security Headers': ['configuration'],
   'Dependency Security': ['dependencies'],
-  'Input Validation': ['security'],
-  'Data Exposure': ['security'],
+  'Input Validation': ['input-validation'],
+  'Data Exposure': ['data-exposure'],
 };
 
 const NEXTJS_CATEGORY_MAP: Record<string, FindingCategory[]> = {
   'Router Architecture': ['routing', 'architecture'],
   'Data Fetching': ['data-fetching'],
-  'Rendering Strategy': ['nextjs', 'stack'],
+  'Rendering Strategy': ['nextjs'],
   Performance: ['performance'],
-  Configuration: ['configuration', 'security'],
+  Configuration: ['configuration'],
   Dependencies: ['dependencies'],
-  'TypeScript & DX': ['stack'],
+  'TypeScript & DX': ['stack', 'dx'],
 };
 
 const ACCESSIBILITY_CATEGORY_MAP: Record<string, FindingCategory[]> = {
   'Images & Media': ['accessibility'],
-  'Semantic Structure': ['architecture', 'accessibility'],
+  'Semantic Structure': ['accessibility'],
   'Keyboard & Focus': ['accessibility'],
   'Forms & Inputs': ['forms', 'accessibility'],
   'Color & Contrast': ['accessibility'],
@@ -49,9 +49,9 @@ const GENERIC_CATEGORY_MAP: Record<string, FindingCategory[]> = {
   'Security & Configuration': ['security', 'configuration'],
   Architecture: ['architecture', 'routing', 'data-fetching'],
   Dependencies: ['dependencies'],
-  'Testing & Quality': ['architecture'],
+  'Testing & Quality': ['testing'],
   'Deployment & Operations': ['deployment'],
-  'Documentation & DX': ['stack'],
+  'Documentation & DX': ['dx'],
 };
 
 function getCategoryMap(goal: GoalType): Record<string, FindingCategory[]> {

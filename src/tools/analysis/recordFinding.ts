@@ -24,6 +24,7 @@ const VALID_CATEGORIES = new Set([
   'security', 'architecture', 'dependencies', 'deployment',
   'routing', 'data-fetching', 'nextjs',
   'performance', 'accessibility', 'forms', 'aria',
+  'auth', 'secrets', 'input-validation', 'data-exposure', 'testing', 'dx',
 ]);
 
 /**

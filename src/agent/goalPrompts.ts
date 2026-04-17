@@ -168,10 +168,10 @@ Every scorecard category must have at least one finding.`,
 };
 
 const CATEGORY_COVERAGE: Partial<Record<GoalType | 'universal', string>> = {
-  'security-review': 'security, architecture, configuration, dependencies',
-  'audit-generic': 'stack, security, configuration, architecture, dependencies, deployment',
-  nextjs: 'routing, architecture, data-fetching, nextjs, stack, performance, configuration, dependencies',
-  accessibility: 'accessibility, architecture, forms, aria',
+  'security-review': 'secrets, auth, configuration, dependencies, input-validation, data-exposure, security',
+  'audit-generic': 'stack, security, configuration, architecture, dependencies, deployment, testing, dx',
+  nextjs: 'routing, architecture, data-fetching, nextjs, stack, performance, configuration, dependencies, dx',
+  accessibility: 'accessibility, forms, aria',
   universal: 'stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, nextjs',
 };
 

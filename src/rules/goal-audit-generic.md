@@ -78,6 +78,18 @@ When calling `assemble_output`, write these sections:
 - `top_risks` — top 5 risks with business context (what's wrong, why it matters, what to do)
 - `recommendations` — prioritized into immediate, short-term, and medium-term
 
+## Finding Categories
+
+Record findings using `record_finding` with these categories:
+- `stack` — language, framework, build tooling
+- `security` — env hygiene, secrets, auth patterns, CORS, CSP
+- `configuration` — configuration quality, security headers
+- `architecture` — routing, data flow, component structure, separation of concerns
+- `dependencies` — version currency, vulnerabilities, lock file integrity
+- `testing` — test framework, coverage, CI pipeline, code quality tooling
+- `deployment` — build pipeline, hosting, CI/CD, monitoring
+- `dx` — README quality, onboarding docs, API docs, developer experience
+
 ## Finding Expectations
 
 - Minimum 8 findings for any non-trivial project. Most real projects yield 10-15.

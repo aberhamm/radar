@@ -89,10 +89,13 @@ Use these tools systematically:
 ## Findings
 
 Record findings using `record_finding` with these categories:
-- `security` — general security issues
-- `configuration` — insecure configuration
+- `secrets` — exposed secrets, env variable hygiene, credential leaks
+- `auth` — authentication, authorization, session management, JWT handling
+- `configuration` — insecure configuration, security headers
 - `dependencies` — vulnerable dependencies
-- `architecture` — structural security issues
+- `input-validation` — injection vectors, XSS, unsanitized input
+- `data-exposure` — API response leakage, debug endpoints, sensitive data in logs
+- `security` — general security issues that don't fit a more specific category above
 
 Severity guidelines:
 - **critical** — actively exploitable: exposed secrets, SQL injection, auth bypass

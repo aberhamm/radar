@@ -695,6 +695,8 @@ export function buildPiTools(
             Type.Literal('dependencies'), Type.Literal('deployment'), Type.Literal('routing'),
             Type.Literal('data-fetching'), Type.Literal('nextjs'),
             Type.Literal('performance'), Type.Literal('accessibility'), Type.Literal('forms'), Type.Literal('aria'),
+            Type.Literal('auth'), Type.Literal('secrets'), Type.Literal('input-validation'),
+            Type.Literal('data-exposure'), Type.Literal('testing'), Type.Literal('dx'),
           ]),
           severity: Type.Union([
             Type.Literal('critical'), Type.Literal('high'), Type.Literal('medium'),
