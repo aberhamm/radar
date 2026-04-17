@@ -31,6 +31,7 @@ function scoreColor(score: ScoreLevel): string {
     case 'red': return COLORS.danger;
     case 'yellow': return COLORS.warning;
     case 'green': return COLORS.success;
+    default: return COLORS.labelTertiary;
   }
 }
 
@@ -644,6 +645,8 @@ function scoreVerdictLine(scorecard: Scorecard): string {
       return `${yellowCount} of ${totalCats} categories have issues worth addressing. No critical blockers.`;
     case 'green':
       return `All ${totalCats} categories are healthy. No significant issues found.`;
+    default:
+      return `${totalCats} categories analyzed.`;
   }
 }
 
