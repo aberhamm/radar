@@ -36,12 +36,12 @@ const NEXTJS_CATEGORY_MAP: Record<string, FindingCategory[]> = {
 };
 
 const ACCESSIBILITY_CATEGORY_MAP: Record<string, FindingCategory[]> = {
-  'Images & Media': ['accessibility'],
-  'Semantic Structure': ['accessibility'],
-  'Keyboard & Focus': ['accessibility'],
-  'Forms & Inputs': ['forms', 'accessibility'],
-  'Color & Contrast': ['accessibility'],
-  'Dynamic Content': ['aria', 'accessibility'],
+  'Images & Media': ['media-alt'],
+  'Semantic Structure': ['semantic-html'],
+  'Keyboard & Focus': ['keyboard-focus'],
+  'Forms & Inputs': ['forms'],
+  'Color & Contrast': ['color-contrast'],
+  'Dynamic Content': ['aria'],
 };
 
 const GENERIC_CATEGORY_MAP: Record<string, FindingCategory[]> = {

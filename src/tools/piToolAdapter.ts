@@ -697,6 +697,8 @@ export function buildPiTools(
             Type.Literal('performance'), Type.Literal('accessibility'), Type.Literal('forms'), Type.Literal('aria'),
             Type.Literal('auth'), Type.Literal('secrets'), Type.Literal('input-validation'),
             Type.Literal('data-exposure'), Type.Literal('testing'), Type.Literal('dx'),
+            Type.Literal('media-alt'), Type.Literal('semantic-html'),
+            Type.Literal('keyboard-focus'), Type.Literal('color-contrast'),
           ]),
           severity: Type.Union([
             Type.Literal('critical'), Type.Literal('high'), Type.Literal('medium'),

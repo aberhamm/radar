@@ -15,6 +15,7 @@ const FINDING_CATEGORIES = new Set([
   'architecture', 'dependencies', 'deployment', 'routing', 'data-fetching', 'nextjs',
   'performance', 'accessibility', 'forms', 'aria',
   'auth', 'secrets', 'input-validation', 'data-exposure', 'testing', 'dx',
+  'media-alt', 'semantic-html', 'keyboard-focus', 'color-contrast',
 ]);
 
 const SEVERITIES = new Set(['critical', 'high', 'medium', 'low', 'info']);

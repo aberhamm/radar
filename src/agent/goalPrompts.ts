@@ -171,7 +171,7 @@ const CATEGORY_COVERAGE: Partial<Record<GoalType | 'universal', string>> = {
   'security-review': 'secrets, auth, configuration, dependencies, input-validation, data-exposure, security',
   'audit-generic': 'stack, security, configuration, architecture, dependencies, deployment, testing, dx',
   nextjs: 'routing, architecture, data-fetching, nextjs, stack, performance, configuration, dependencies, dx',
-  accessibility: 'accessibility, forms, aria',
+  accessibility: 'media-alt, semantic-html, keyboard-focus, forms, color-contrast, aria',
   universal: 'stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, nextjs',
 };
 

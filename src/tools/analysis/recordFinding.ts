@@ -25,6 +25,7 @@ const VALID_CATEGORIES = new Set([
   'routing', 'data-fetching', 'nextjs',
   'performance', 'accessibility', 'forms', 'aria',
   'auth', 'secrets', 'input-validation', 'data-exposure', 'testing', 'dx',
+  'media-alt', 'semantic-html', 'keyboard-focus', 'color-contrast',
 ]);
 
 /**

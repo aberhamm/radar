@@ -105,7 +105,7 @@ describe('computeScorecard', () => {
 
   it('accessibility scorecard scores findings in a11y categories', () => {
     const findings = [
-      makeFinding({ severity: 'critical', category: 'accessibility' }),
+      makeFinding({ severity: 'critical', category: 'media-alt' }),
       makeFinding({ id: 'F-002', severity: 'high', category: 'forms' }),
     ];
     const sc = computeScorecard('test-repo', 'accessibility', findings);
@@ -115,7 +115,7 @@ describe('computeScorecard', () => {
   it('accessibility scorecard maps aria findings to Dynamic Content', () => {
     const findings = [makeFinding({ severity: 'medium', category: 'aria' })];
     const sc = computeScorecard('test-repo', 'accessibility', findings);
-    // Dynamic Content maps to ['aria', 'accessibility']
+    // Dynamic Content maps to ['aria']
     const dynamicCat = sc.categories.find((c) => c.category === 'Dynamic Content');
     expect(dynamicCat).toBeDefined();
     expect(dynamicCat?.findings.length).toBe(1);

@@ -58,6 +58,7 @@ const NEXTJS_CATEGORIES: ReadonlySet<FindingCategory> = new Set([
 
 const A11Y_CATEGORIES: ReadonlySet<FindingCategory> = new Set([
   'accessibility', 'aria', 'forms',
+  'media-alt', 'semantic-html', 'keyboard-focus', 'color-contrast',
 ]);
 
 const FRONTEND_CATEGORIES: ReadonlySet<FindingCategory> = new Set([

@@ -23,7 +23,11 @@ export type FindingCategory =
   | 'input-validation'
   | 'data-exposure'
   | 'testing'
-  | 'dx';
+  | 'dx'
+  | 'media-alt'
+  | 'semantic-html'
+  | 'keyboard-focus'
+  | 'color-contrast';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 

@@ -18,6 +18,16 @@ You MUST investigate and record findings for ALL of these categories:
 5. **Color & Contrast** — Hardcoded color values without sufficient contrast, color-only information conveyance, focus indicator visibility, dark mode support parity
 6. **Dynamic Content** — ARIA live regions for async updates, loading state announcements, route change announcements (SPA navigation), toast/notification accessibility, modal/dialog ARIA patterns
 
+## Finding categories
+
+Record findings using `record_finding` with these categories:
+- `media-alt` — image alt text, SVG accessibility, video/audio alternatives, icon labels
+- `semantic-html` — heading hierarchy, landmark regions, list/table structure, document outline
+- `keyboard-focus` — focus management, tab order, focus trapping, skip links, keyboard handlers
+- `forms` — label associations, error messaging, fieldset/legend, autocomplete, validation feedback
+- `color-contrast` — contrast ratios, color-only information, focus indicator visibility, dark mode parity
+- `aria` — ARIA live regions, route change announcements, toast/notification patterns, modal ARIA
+
 ## Investigation approach
 
 1. **Component library scan** — Find the UI component directory. Check Button, Input, Modal, Dialog, Toast, Dropdown, Select, Tabs components for ARIA patterns.
