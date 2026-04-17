@@ -130,14 +130,39 @@ export async function resolveAndRead(
     const effectiveMaxLines = maxLines ?? lineCount;
     const end = Math.min(start + effectiveMaxLines, lineCount);
 
+    // Budget: keep content under 60K chars so JSON serialization stays under
+    // the 65K spillAndTruncate limit. Drop lines from the end at line boundaries
+    // rather than letting spillAndTruncate slice mid-line downstream.
+    const CONTENT_BUDGET = 60_000;
+
     if (start > 0 || end < lineCount) {
       const sliced = lines.slice(start, end);
       content = sliced.join('\n');
-      if (start > 0 || end < lineCount) {
+      if (content.length > CONTENT_BUDGET) {
+        let trimEnd = sliced.length;
+        let len = content.length;
+        while (len > CONTENT_BUDGET && trimEnd > 0) {
+          trimEnd--;
+          len -= sliced[trimEnd].length + 1;
+        }
+        content = sliced.slice(0, trimEnd).join('\n');
+        const shownEnd = start + trimEnd;
+        content += `\n... (showing lines ${start + 1}-${shownEnd} of ${lineCount} total. Use startLine=${shownEnd + 1} to read more.)`;
+      } else if (start > 0 || end < lineCount) {
         content += `\n... (showing lines ${start + 1}-${Math.min(end, lineCount)} of ${lineCount} total)`;
       }
     } else {
       content = raw;
+      if (content.length > CONTENT_BUDGET) {
+        let trimEnd = lines.length;
+        let len = content.length;
+        while (len > CONTENT_BUDGET && trimEnd > 0) {
+          trimEnd--;
+          len -= lines[trimEnd].length + 1;
+        }
+        content = lines.slice(0, trimEnd).join('\n');
+        content += `\n... (showing lines 1-${trimEnd} of ${lineCount} total. Use startLine=${trimEnd + 1} to read more.)`;
+      }
     }
 
     return { content, absolutePath: resolved, lineCount };

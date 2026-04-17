@@ -181,7 +181,7 @@ export async function handleAnalyze(opts: {
         findings: c.findings.length,
       })),
       topRisks: result.scorecard.topRisks.map((r) => ({
-        id: r.id,
+        id: r.findingId,
         severity: r.severity,
         title: r.title,
       })),

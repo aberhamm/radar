@@ -7,7 +7,9 @@ import {
   type MultiGoalMetrics,
 } from '../../src/output/multiGoalSummary.js';
 import type { Finding } from '../../src/types/findings.js';
-import type { Scorecard, CategoryScore, ScoreLevel } from '../../src/types/output.js';
+import type { Scorecard, CategoryScore, ScoreLevel, RankedRisk, FindingCount, ScorecardMetadata } from '../../src/types/output.js';
+
+const ZERO_COUNTS: FindingCount = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -22,11 +24,40 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
   };
 }
 
+function makeRankedRisk(overrides: Partial<RankedRisk> = {}): RankedRisk {
+  return {
+    rank: 1,
+    findingId: 'F-001',
+    title: 'Test risk',
+    severity: 'medium',
+    businessContext: 'A test finding for unit tests',
+    recommendation: 'Fix it',
+    ...overrides,
+  };
+}
+
+function makeMetadata(overrides?: Partial<ScorecardMetadata>): ScorecardMetadata {
+  return {
+    repoName: 'test-repo',
+    analysisDate: '2026-01-01T00:00:00Z',
+    agentVersion: '1.0.0',
+    goalType: 'onboarding',
+    detectedPlatform: 'auto',
+    toolCallsUsed: 0,
+    webSearchesUsed: 0,
+    urlFetchesUsed: 0,
+    documentationSources: [],
+    ...overrides,
+  };
+}
+
 function makeCategory(overrides: Partial<CategoryScore> = {}): CategoryScore {
   return {
     category: 'stack',
     score: 'green',
     findings: [],
+    findingCount: { ...ZERO_COUNTS },
+    keyFindings: [],
     summary: 'OK',
     ...overrides,
   };
@@ -34,12 +65,14 @@ function makeCategory(overrides: Partial<CategoryScore> = {}): CategoryScore {
 
 function makeScorecard(overrides: Partial<Scorecard> = {}): Scorecard {
   return {
+    metadata: makeMetadata({ goalType: overrides.goalType ?? 'onboarding' }),
     repoName: 'test-repo',
     goalType: 'onboarding',
     generatedAt: '2026-01-01T00:00:00Z',
     overallScore: 'green',
     categories: [makeCategory()],
     topRisks: [],
+    findings: [],
     ...overrides,
   };
 }
@@ -78,7 +111,7 @@ describe('renderMultiGoalSummary', () => {
             makeCategory({ category: 'stack', score: 'yellow', findings: [makeFinding()] }),
             makeCategory({ category: 'security', score: 'green' }),
           ],
-          topRisks: [makeFinding({ id: 'R-001', severity: 'high', title: 'Risk one', description: 'Important risk' })],
+          topRisks: [makeRankedRisk({ rank: 1, findingId: 'R-001', severity: 'high', title: 'Risk one', businessContext: 'Important risk' })],
         }),
       }),
     ];
@@ -148,13 +181,13 @@ describe('renderMultiGoalSummary', () => {
   });
 
   it('deduplicates risks by id and sorts by severity, capping at 10', () => {
-    const sharedRisk = makeFinding({ id: 'SHARED-001', severity: 'critical', title: 'Shared critical' });
+    const sharedRisk = makeRankedRisk({ rank: 1, findingId: 'SHARED-001', severity: 'critical', title: 'Shared critical', businessContext: 'Cross-cutting vulnerability' });
     const results = [
       makeResult('onboarding', {
-        scorecard: makeScorecard({ topRisks: [sharedRisk, makeFinding({ id: 'LOW-001', severity: 'low', title: 'Low risk' })] }),
+        scorecard: makeScorecard({ topRisks: [sharedRisk, makeRankedRisk({ rank: 2, findingId: 'LOW-001', severity: 'low', title: 'Low risk', businessContext: 'Low risk desc' })] }),
       }),
       makeResult('audit', {
-        scorecard: makeScorecard({ topRisks: [sharedRisk, makeFinding({ id: 'HIGH-001', severity: 'high', title: 'High risk' })] }),
+        scorecard: makeScorecard({ goalType: 'audit', topRisks: [sharedRisk, makeRankedRisk({ rank: 2, findingId: 'HIGH-001', severity: 'high', title: 'High risk', businessContext: 'High risk desc' })] }),
       }),
     ];
 
@@ -177,7 +210,8 @@ describe('renderMultiGoalSummary', () => {
     const results = [
       makeResult('audit', {
         scorecard: makeScorecard({
-          topRisks: [makeFinding({ id: 'LONG-001', severity: 'high', title: 'Long desc', description: longDesc })],
+          goalType: 'audit',
+          topRisks: [makeRankedRisk({ rank: 1, findingId: 'LONG-001', severity: 'high', title: 'Long desc', businessContext: longDesc })],
         }),
       }),
     ];

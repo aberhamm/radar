@@ -22,6 +22,7 @@
  * since they're only checked in beforeToolCall (no execute()-level race).
  */
 const READ_ONLY_TOOLS = new Set([
+  'clone_repo',
   'list_directory',
   'read_file',
   'read_files_batch',

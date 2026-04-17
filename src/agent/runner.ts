@@ -447,9 +447,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let budgetWarningRecordingSent = false; // 40% — nudge to start recording
   let budgetWarningHalfSent = false;
   let budgetWarning5Sent = false;
+  let progressSummarySent = false; // 70% budget used — inject investigation checkpoint
   let modelSwitched = false; // true once agent calls switch_to_fast_model
   let snipBoundaryActive = false; // true after model switch — aggressive context compression
   const canSwitchModel = piFastModel.id !== piModel.id;
+  // Phase 2 context management: track which toolCallIds touched which files and tool names
+  const toolCallIdToFiles = new Map<string, Set<string>>();
+  const toolCallIdToName = new Map<string, string>();
 
   /**
    * Switch the active model mid-loop by mutating the model object in place.
@@ -590,6 +594,22 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     if (toolName === 'web_search') state.webSearchCount++;
     if (toolName === 'fetch_url') state.urlFetchCount++;
 
+    // Track which files each toolCallId touched (for evidence pinning + stale collapsing)
+    const tcId = ctx.toolCall.id;
+    if (tcId) {
+      toolCallIdToName.set(tcId, toolName);
+      const args = ctx.args as Record<string, unknown>;
+      const files = new Set<string>();
+      if (toolName === 'read_file' && typeof args.path === 'string') {
+        files.add(args.path.replace(/\\/g, '/').replace(/^\.\//, ''));
+      } else if (toolName === 'read_files_batch' && Array.isArray(args.paths)) {
+        for (const p of args.paths) if (typeof p === 'string') files.add(p.replace(/\\/g, '/').replace(/^\.\//, ''));
+      } else if (toolName === 'grep_pattern' && typeof args.path === 'string') {
+        files.add(args.path.replace(/\\/g, '/').replace(/^\.\//, ''));
+      }
+      if (files.size > 0) toolCallIdToFiles.set(tcId, files);
+    }
+
     // Log investigation step — use captured reasoning from last assistant message.
     // Don't clear it here: parallel tool calls in the same message share the same reasoning.
     // It gets overwritten naturally when the next message_end event fires.
@@ -682,8 +702,34 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       return { content: [{ type: 'text', text: wrapped }] };
     }
 
-    // Budget warning steering messages
+    // Progress summary checkpoint at 70% budget — gives the LLM a deterministic
+    // recap of what it's already done, so evicted context doesn't cause re-investigation.
     const remaining = currentBudget - state.toolCallCount;
+    if (
+      !progressSummarySent &&
+      assembledRef.sections === null &&
+      state.toolCallCount >= Math.floor(currentBudget * 0.7) &&
+      remaining > 0
+    ) {
+      progressSummarySent = true;
+      const filesArr = [...state.filesRead].slice(0, 20);
+      const findingTitles = state.findings.map((f) => `${f.category}: ${f.title}`);
+      const categoriesCovered = new Set(state.findings.map((f) => f.category));
+      const lines = [
+        `PROGRESS CHECKPOINT — ${state.toolCallCount}/${currentBudget} tool calls used, ${remaining} remaining.`,
+        `Files read (${state.filesRead.size} total): ${filesArr.join(', ')}${state.filesRead.size > 20 ? '...' : ''}`,
+        `Findings recorded (${state.findings.length}): ${findingTitles.join('; ') || 'none yet'}`,
+        `Categories covered: ${categoriesCovered.size > 0 ? [...categoriesCovered].join(', ') : 'none'}`,
+        'Do NOT re-investigate files or areas already covered above. Focus remaining budget on uncovered categories, then record findings and assemble output.',
+      ];
+      agent.steer({
+        role: 'user',
+        content: lines.join('\n'),
+        timestamp: Date.now(),
+      });
+    }
+
+    // Budget warning steering messages
     if (remaining <= 5 && remaining > 0 && !budgetWarning5Sent && assembledRef.sections === null) {
       budgetWarning5Sent = true;
       // Force switch to fast model if agent hasn't done it yet
@@ -733,61 +779,119 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   };
 
   /**
-   * Tiered context compression: control conversation history size with 3 tiers.
+   * Observation eviction with evidence pinning and stale-read collapsing.
    *
-   *   Tier 1 (recent):  last KEEP_RECENT messages — full fidelity
-   *   Tier 2 (mid-age): next MID_AGE_WINDOW messages — tool results summarized (600 chars)
-   *   Tier 3 (old):     everything older — tool results dropped to 120 chars
+   * Instead of gradually char-slicing all old results (which produces garbled
+   * mid-JSON stubs), this uses three strategies:
    *
-   * Only tool result messages are compressed; assistant/user messages pass through.
-   * Summaries are cached by tool call ID to avoid recomputing on each turn.
+   *   1. Evidence pinning — results whose files appear in recorded findings
+   *      are NEVER compressed. The writing phase needs this raw evidence.
+   *   2. Stale-read collapsing — when the same file was read multiple times,
+   *      only the most recent read stays; earlier reads become one-line stubs.
+   *   3. Observation eviction — everything else outside the recent window
+   *      becomes a clean one-liner with tool name + size hint.
+   *
+   * Writing tool results (record_finding, assemble_output) are never compressed.
+   * Assistant/user messages pass through unchanged.
+   * Stubs are cached by toolCallId to avoid recomputing on each turn.
    */
-  const KEEP_RECENT = 16;
-  const MID_AGE_WINDOW = 15;
-  const MID_SUMMARY_MAX = 600;
-  const OLD_SUMMARY_MAX = 200;
-  // After model switch, moderate compression — writing phase still needs investigation context
-  // to write meaningful findings. 80/40 was too aggressive and starved the fast model.
-  const SNIP_MID_MAX = 300;
-  const SNIP_OLD_MAX = 150;
+  const KEEP_RECENT_NORMAL = 12;
+  const KEEP_RECENT_SNIP = 8;
   const summaryCache = new Map<string, string>();
-
-  function compressToolResult(text: string, maxChars: number): string {
-    if (text.length <= maxChars) return text;
-    return text.slice(0, maxChars) + '...[pruned]';
-  }
+  const WRITING_TOOL_NAMES = new Set(['record_finding', 'assemble_output', 'switch_to_fast_model']);
 
   const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
-    if (messages.length <= KEEP_RECENT) return messages;
+    const keepRecent = snipBoundaryActive ? KEEP_RECENT_SNIP : KEEP_RECENT_NORMAL;
+    if (messages.length <= keepRecent) return messages;
 
-    const tier2Start = Math.max(0, messages.length - KEEP_RECENT - MID_AGE_WINDOW);
-    const tier1Start = messages.length - KEEP_RECENT;
+    // Build the set of file paths cited as evidence in recorded findings
+    const evidenceFiles = new Set<string>();
+    for (const f of state.findings) {
+      for (const ev of f.evidence) {
+        evidenceFiles.add(ev.filePath.replace(/\\/g, '/').replace(/^\.\//, ''));
+      }
+    }
 
-    // When snip boundary is active (post model switch), use much tighter limits
-    const effectiveMidMax = snipBoundaryActive ? SNIP_MID_MAX : MID_SUMMARY_MAX;
-    const effectiveOldMax = snipBoundaryActive ? SNIP_OLD_MAX : OLD_SUMMARY_MAX;
+    // Determine which toolCallIds are pinned (produced evidence)
+    const pinnedToolCallIds = new Set<string>();
+    for (const [tcId, files] of toolCallIdToFiles) {
+      for (const file of files) {
+        if (evidenceFiles.has(file.replace(/\\/g, '/').replace(/^\.\//, ''))) {
+          pinnedToolCallIds.add(tcId);
+          break;
+        }
+      }
+    }
+
+    // Build stale-read map: for each file, which is the latest toolCallId that read it?
+    const latestReadByFile = new Map<string, string>();
+    for (const msg of messages) {
+      if (!msg || typeof msg !== 'object' || !('role' in msg)) continue;
+      const tr = msg as unknown as { role: string; toolCallId?: string };
+      if (tr.role !== 'toolResult' || !tr.toolCallId) continue;
+      const files = toolCallIdToFiles.get(tr.toolCallId);
+      if (files) {
+        for (const f of files) latestReadByFile.set(f.replace(/\\/g, '/').replace(/^\.\//, ''), tr.toolCallId);
+      }
+    }
+
+    // Determine which toolCallIds are stale (superseded by a later read of the same file)
+    const staleToolCallIds = new Set<string>();
+    for (const [tcId, files] of toolCallIdToFiles) {
+      if (pinnedToolCallIds.has(tcId)) continue;
+      for (const f of files) {
+        const nf = f.replace(/\\/g, '/').replace(/^\.\//, '');
+        const latest = latestReadByFile.get(nf);
+        if (latest && latest !== tcId) {
+          staleToolCallIds.add(tcId);
+          break;
+        }
+      }
+    }
+
+    const tier1Start = messages.length - keepRecent;
 
     return messages.map((msg, i) => {
-      // Tier 1: recent — keep intact
+      // Recent window: keep intact
       if (i >= tier1Start) return msg;
       if (!msg || typeof msg !== 'object' || !('role' in msg)) return msg;
       if ((msg as { role: string }).role !== 'toolResult') return msg;
 
       const tr = msg as unknown as { role: string; toolCallId?: string; content: { type: string; text?: string }[]; [k: string]: unknown };
-      const maxChars = i >= tier2Start ? effectiveMidMax : effectiveOldMax;
+      const tcId = tr.toolCallId;
+      const tcName = tcId ? toolCallIdToName.get(tcId) : undefined;
 
+      // Writing tool results: never compress
+      if (tcName && WRITING_TOOL_NAMES.has(tcName)) return msg;
+
+      // Evidence-pinned: never compress
+      if (tcId && pinnedToolCallIds.has(tcId)) return msg;
+
+      // Stale read: collapse to one-liner
+      if (tcId && staleToolCallIds.has(tcId)) {
+        const cacheKey = `${tcId}:stale`;
+        if (summaryCache.has(cacheKey)) {
+          return { ...tr, content: [{ type: 'text', text: summaryCache.get(cacheKey)! }] } as AgentMessage;
+        }
+        const stub = '[superseded — file re-read in a later tool call]';
+        summaryCache.set(cacheKey, stub);
+        return { ...tr, content: [{ type: 'text', text: stub }] } as AgentMessage;
+      }
+
+      // Observation eviction: stub to one-liner with tool name + size hint
       return {
         ...tr,
         content: tr.content.map((c) => {
-          if (c.type !== 'text' || !c.text || c.text.length <= maxChars) return c;
-          // Check cache
-          const cacheKey = tr.toolCallId ? `${tr.toolCallId}:${maxChars}` : undefined;
+          if (c.type !== 'text' || !c.text || c.text.length <= 150) return c;
+          const cacheKey = tcId ? `${tcId}:evict` : undefined;
           if (cacheKey && summaryCache.has(cacheKey)) {
             return { ...c, text: summaryCache.get(cacheKey)! };
           }
-          const compressed = compressToolResult(c.text, maxChars);
-          if (cacheKey) summaryCache.set(cacheKey, compressed);
-          return { ...c, text: compressed };
+          const name = tcName ?? 'tool';
+          const firstLine = c.text.slice(0, 100).split('\n')[0];
+          const stub = `[${name}: ${firstLine}... (${c.text.length} chars)]`;
+          if (cacheKey) summaryCache.set(cacheKey, stub);
+          return { ...c, text: stub };
         }),
       } as AgentMessage;
     });
@@ -1071,6 +1175,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   });
 
   const scorecard = computeScorecard(config.repoName, config.goal, state.findings);
+
+  // Populate scorecard metadata with actual run values
+  scorecard.metadata.repoUrl = config.repoUrl;
+  scorecard.metadata.detectedPlatform = platform;
+  scorecard.metadata.toolCallsUsed = state.toolCallCount;
+  scorecard.metadata.webSearchesUsed = state.webSearchCount;
+  scorecard.metadata.urlFetchesUsed = state.urlFetchCount;
+  scorecard.metadata.documentationSources = state.fetchedDocs.map((d) => ({ url: d.url, title: d.title }));
 
   const completedAt = new Date();
   const metrics = buildMetrics(state, startedAt, completedAt, totalLlmMs, turnCount);

@@ -10,6 +10,7 @@ export interface ListDirectoryInput {
   path: string;
   depth?: number;
   includeHidden?: boolean;
+  maxEntries?: number;
 }
 
 export interface FileEntry {
@@ -81,10 +82,12 @@ export interface FindFilesInput {
   pattern: string;
   path?: string;
   type?: 'file' | 'directory';
+  maxResults?: number;
 }
 
 export interface FindFilesOutput {
   matches: string[];
+  truncated?: boolean;
   error?: string;
 }
 

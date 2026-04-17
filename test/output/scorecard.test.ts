@@ -54,9 +54,9 @@ describe('computeScorecard', () => {
       makeFinding({ id: 'MED', severity: 'medium', category: 'routing' }),
     ];
     const sc = computeScorecard('test-repo', 'audit', findings);
-    expect(sc.topRisks[0].id).toBe('HIGH');
-    expect(sc.topRisks[1].id).toBe('MED');
-    expect(sc.topRisks[2].id).toBe('LOW');
+    expect(sc.topRisks[0].findingId).toBe('HIGH');
+    expect(sc.topRisks[1].findingId).toBe('MED');
+    expect(sc.topRisks[2].findingId).toBe('LOW');
   });
 
   it('limits top risks to 5', () => {
@@ -153,8 +153,8 @@ describe('computeScorecard', () => {
       makeFinding({ id: 'HIGH-CONF', severity: 'high', category: 'dependencies', confidence: 9 }),
     ];
     const sc = computeScorecard('test-repo', 'audit', findings);
-    expect(sc.topRisks[0].id).toBe('HIGH-CONF');
-    expect(sc.topRisks[1].id).toBe('LOW-CONF');
+    expect(sc.topRisks[0].findingId).toBe('HIGH-CONF');
+    expect(sc.topRisks[1].findingId).toBe('LOW-CONF');
   });
 
   it('security-review scorecard has security-specific category names', () => {

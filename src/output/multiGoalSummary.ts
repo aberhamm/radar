@@ -3,7 +3,7 @@
  * Produces a matrix comparing all 8 goal scorecards from the same findings pool.
  */
 
-import type { Scorecard, ScoreLevel } from '../types/output.js';
+import type { Scorecard, ScoreLevel, RankedRisk } from '../types/output.js';
 import type { Finding } from '../types/findings.js';
 import type { GoalType } from '../types/state.js';
 
@@ -103,10 +103,10 @@ export function renderMultiGoalSummary(
   // Unified top risks
   const allRisks = results.flatMap((r) => r.scorecard.topRisks);
   const seen = new Set<string>();
-  const uniqueRisks: Finding[] = [];
+  const uniqueRisks: RankedRisk[] = [];
   for (const risk of allRisks) {
-    if (!seen.has(risk.id)) {
-      seen.add(risk.id);
+    if (!seen.has(risk.findingId)) {
+      seen.add(risk.findingId);
       uniqueRisks.push(risk);
     }
   }
@@ -123,11 +123,11 @@ export function renderMultiGoalSummary(
     for (let i = 0; i < topRisks.length; i++) {
       const risk = topRisks[i];
       const desc =
-        risk.description.length > 150
-          ? risk.description.slice(0, 150) + '...'
-          : risk.description;
+        risk.businessContext.length > 150
+          ? risk.businessContext.slice(0, 150) + '...'
+          : risk.businessContext;
       lines.push(
-        `${i + 1}. **${risk.title}** (${risk.severity}, ${risk.category}) — ${desc}`,
+        `${i + 1}. **${risk.title}** (${risk.severity}) — ${desc}`,
       );
     }
     lines.push('');

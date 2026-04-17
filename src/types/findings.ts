@@ -34,7 +34,7 @@ export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export interface Evidence {
   filePath: string;
   lineNumber?: number;
-  snippet: string;
+  snippet?: string;
   description: string;
   /** Agent's original snippet before auto-correction (set when verification corrects it) */
   originalSnippet?: string;

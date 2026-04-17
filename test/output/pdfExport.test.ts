@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { renderPdf, renderPdfToBuffer } from '../../src/output/pdfExport.js';
-import type { Scorecard, RunMetrics, CategoryScore } from '../../src/types/output.js';
+import type { Scorecard, RunMetrics, CategoryScore, RankedRisk, FindingCount, ScorecardMetadata } from '../../src/types/output.js';
 import type { Finding, Evidence } from '../../src/types/findings.js';
 
 // --- Test helpers ---
+
+const ZERO_COUNTS: FindingCount = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -21,6 +23,18 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
   };
 }
 
+function makeRankedRisk(overrides: Partial<RankedRisk> = {}): RankedRisk {
+  return {
+    rank: 1,
+    findingId: 'TEST-001',
+    title: 'Test risk',
+    severity: 'medium',
+    businessContext: 'Test business context',
+    recommendation: 'Fix it',
+    ...overrides,
+  };
+}
+
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     filePath: 'src/index.ts',
@@ -31,11 +45,28 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   };
 }
 
+function makeMetadata(overrides?: Partial<ScorecardMetadata>): ScorecardMetadata {
+  return {
+    repoName: 'test-repo',
+    analysisDate: '2026-04-13T12:00:00.000Z',
+    agentVersion: '1.0.0',
+    goalType: 'audit',
+    detectedPlatform: 'auto',
+    toolCallsUsed: 0,
+    webSearchesUsed: 0,
+    urlFetchesUsed: 0,
+    documentationSources: [],
+    ...overrides,
+  };
+}
+
 function makeCategory(overrides: Partial<CategoryScore> = {}): CategoryScore {
   return {
     category: 'security',
     score: 'green',
     findings: [],
+    findingCount: { ...ZERO_COUNTS },
+    keyFindings: [],
     summary: 'No issues found',
     ...overrides,
   };
@@ -43,6 +74,7 @@ function makeCategory(overrides: Partial<CategoryScore> = {}): CategoryScore {
 
 function makeScorecard(overrides: Partial<Scorecard> = {}): Scorecard {
   return {
+    metadata: makeMetadata({ goalType: overrides.goalType ?? 'audit' }),
     repoName: 'test-repo',
     goalType: 'audit',
     generatedAt: '2026-04-13T12:00:00.000Z',
@@ -53,6 +85,7 @@ function makeScorecard(overrides: Partial<Scorecard> = {}): Scorecard {
       makeCategory({ category: 'architecture', score: 'green' }),
     ],
     topRisks: [],
+    findings: [],
     ...overrides,
   };
 }
@@ -129,7 +162,7 @@ describe('renderPdf', () => {
       scorecard: makeScorecard({
         overallScore: 'red',
         categories: [makeCategory({ findings, score: 'red' })],
-        topRisks: findings.slice(0, 3),
+        topRisks: findings.slice(0, 3).map((f, i) => makeRankedRisk({ rank: i + 1, findingId: f.id, title: f.title, severity: f.severity, businessContext: f.description })),
       }),
       findings,
       metrics: makeMetrics(),
@@ -208,7 +241,7 @@ describe('renderPdf', () => {
     await renderPdf(pdfPath, {
       scorecard: makeScorecard({
         categories: [makeCategory({ findings, score: 'red' })],
-        topRisks: findings,
+        topRisks: findings.map((f, i) => makeRankedRisk({ rank: i + 1, findingId: f.id, title: f.title, severity: f.severity, businessContext: f.description })),
       }),
       findings,
       metrics: makeMetrics(),
@@ -235,7 +268,7 @@ describe('renderPdf', () => {
       scorecard: makeScorecard({
         overallScore: 'red',
         categories: [makeCategory({ findings, score: 'red' })],
-        topRisks: findings.slice(0, 5),
+        topRisks: findings.slice(0, 5).map((f, i) => makeRankedRisk({ rank: i + 1, findingId: f.id, title: f.title, severity: f.severity, businessContext: f.description })),
       }),
       findings,
       metrics: makeMetrics(),

@@ -1,5 +1,5 @@
 import type { Finding, FindingCategory, Severity } from '../types/findings.js';
-import type { Scorecard, CategoryScore, ScoreLevel } from '../types/output.js';
+import type { Scorecard, CategoryScore, ScoreLevel, FindingCount, RankedRisk } from '../types/output.js';
 import type { GoalType } from '../types/state.js';
 
 /**
@@ -95,11 +95,18 @@ export function computeScorecard(
 
     const score = computeCategoryScore(categoryFindings);
     const summary = buildCategorySummary(displayName, categoryFindings, score);
+    const findingCount = countBySeverity(categoryFindings);
+    const keyFindings = categoryFindings
+      .filter((f) => f.severity === 'critical' || f.severity === 'high')
+      .slice(0, 5)
+      .map((f) => f.title);
 
     categories.push({
       category: displayName,
       score,
       findings: categoryFindings,
+      findingCount,
+      keyFindings,
       summary,
     });
   }
@@ -107,7 +114,7 @@ export function computeScorecard(
   const overallScore = computeOverallScore(categories);
 
   // Top risks: highest severity findings, up to 5 (confidence as tiebreaker)
-  const topRisks = [...scorableFindings]
+  const topRiskFindings = [...scorableFindings]
     .filter((f) => f.severity !== 'info')
     .sort((a, b) => {
       const sevDiff = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
@@ -116,13 +123,35 @@ export function computeScorecard(
     })
     .slice(0, 5);
 
+  const topRisks: RankedRisk[] = topRiskFindings.map((f, i) => ({
+    rank: i + 1,
+    findingId: f.id,
+    title: f.title,
+    severity: f.severity,
+    businessContext: f.investigationNote ?? f.description,
+    recommendation: f.tags.length > 0 ? f.tags.join(', ') : 'Review and remediate.',
+  }));
+
+  const now = new Date().toISOString();
   return {
+    metadata: {
+      repoName,
+      analysisDate: now,
+      agentVersion: '1.0.0',
+      goalType,
+      detectedPlatform: 'auto',
+      toolCallsUsed: 0,
+      webSearchesUsed: 0,
+      urlFetchesUsed: 0,
+      documentationSources: [],
+    },
     repoName,
     goalType,
-    generatedAt: new Date().toISOString(),
+    generatedAt: now,
     overallScore,
     categories,
     topRisks,
+    findings: scorableFindings,
   };
 }
 

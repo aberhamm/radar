@@ -7,20 +7,57 @@ import type { StackProfile } from './state.js';
 
 export type ScoreLevel = 'red' | 'yellow' | 'green';
 
+export interface FindingCount {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+}
+
 export interface CategoryScore {
   category: string;
   score: ScoreLevel;
   findings: Finding[];
+  findingCount: FindingCount;
+  keyFindings: string[];
   summary: string;
 }
 
-export interface Scorecard {
+export interface RankedRisk {
+  rank: number;
+  findingId: string;
+  title: string;
+  severity: string;
+  businessContext: string;
+  recommendation: string;
+}
+
+export interface ScorecardMetadata {
   repoName: string;
+  repoUrl?: string;
+  analysisDate: string;
+  agentVersion: string;
   goalType: string;
+  detectedPlatform: string;
+  toolCallsUsed: number;
+  webSearchesUsed: number;
+  urlFetchesUsed: number;
+  documentationSources: { url: string; title: string }[];
+}
+
+export interface Scorecard {
+  metadata: ScorecardMetadata;
+  /** @deprecated Use metadata.repoName */
+  repoName: string;
+  /** @deprecated Use metadata.goalType */
+  goalType: string;
+  /** @deprecated Use metadata.analysisDate */
   generatedAt: string;
   overallScore: ScoreLevel;
   categories: CategoryScore[];
-  topRisks: Finding[];
+  topRisks: RankedRisk[];
+  findings: Finding[];
 }
 
 export interface AssembledOutput {

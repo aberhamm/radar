@@ -22,6 +22,7 @@ import { createHash } from 'node:crypto';
 import { stat as fsStat, open as fsOpen } from 'node:fs/promises';
 
 // Tool implementations
+import { cloneRepo } from './repo/cloneRepo.js';
 import { listDirectory } from './repo/listDirectory.js';
 import { readFile } from './repo/readFile.js';
 import { readFilesBatch } from './repo/readFilesBatch.js';
@@ -288,15 +289,31 @@ export function createSpillContext(): {
     if (resultJson.length <= limit) return resultJson;
 
     const omitted = resultJson.length - limit;
+    // Structure-aware truncation: try to cut at a clean boundary
+    // so the LLM sees valid JSON rather than garbled mid-key slicing.
+    const truncated = truncateAtBoundary(resultJson, limit);
     try {
       const d = getDir();
       const filename = `${toolName}-${Date.now()}.json`;
       const filepath = join(d, filename);
       writeFileSync(filepath, resultJson, 'utf-8');
-      return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted. Full result: ${filepath}]`;
+      return truncated + `\n...[truncated, ${omitted} chars omitted. Full result: ${filepath}]`;
     } catch {
-      return resultJson.slice(0, limit) + `\n...[truncated, ${omitted} chars omitted]`;
+      return truncated + `\n...[truncated, ${omitted} chars omitted]`;
     }
+  }
+
+  /** Cut at the last clean JSON boundary before the limit. */
+  function truncateAtBoundary(text: string, limit: number): string {
+    // Try: last JSON object/array close before limit
+    const slice = text.slice(0, limit);
+    const lastBrace = Math.max(slice.lastIndexOf('},'), slice.lastIndexOf('}]'));
+    if (lastBrace > limit * 0.5) return text.slice(0, lastBrace + 1);
+    // Fallback: last newline before limit
+    const lastNewline = slice.lastIndexOf('\n');
+    if (lastNewline > limit * 0.5) return text.slice(0, lastNewline);
+    // Last resort: raw slice
+    return slice;
   }
 
   function cleanup(): void {
@@ -356,12 +373,28 @@ export function buildPiTools(
 
   const tools: AgentTool[] = [
     // --- Repo tools ---
+    makeTool('clone_repo', 'Clone Repo',
+      'Clone a GitHub repo to a local temp directory. Returns local path, default branch, and last commit info. Caches locally — repeat calls return immediately without network.',
+      Type.Object({
+        url: Type.String({ description: 'GitHub repo URL, e.g. https://github.com/owner/repo' }),
+        branch: Type.Optional(Type.String({ description: 'Branch to clone (default: default branch)' })),
+        pull: Type.Optional(Type.Boolean({ description: 'Fetch latest before returning (default: false)' })),
+      }),
+      async (_id, params) => {
+        try {
+          const a = norm(params) as { url: string; branch?: string; pull?: boolean };
+          return ok('clone_repo', await cloneRepo(a));
+        } catch (e) { return err('clone_repo', e as Error); }
+      },
+    ),
+
     makeTool('list_directory', 'List Directory',
-      'List files and directories at a given path with configurable depth. Excludes node_modules, .next, dist, build, .git.',
+      'List files and directories at a given path with configurable depth. Excludes node_modules, .next, dist, build, .git. Returns up to maxEntries entries (default 200).',
       Type.Object({
         path: Type.String({ description: 'Relative path from repo root' }),
         depth: Type.Optional(Type.Number({ description: 'Max directory depth (default 2)' })),
         includeHidden: Type.Optional(Type.Boolean({ description: 'Include hidden files/dirs' })),
+        maxEntries: Type.Optional(Type.Number({ description: 'Max entries to return (default 200)' })),
       }),
       async (_id, params) => {
         try { return ok('list_directory', await listDirectory(repoRoot(), norm(params))); }
@@ -499,11 +532,12 @@ export function buildPiTools(
     ),
 
     makeTool('find_files', 'Find Files',
-      'Find files matching a glob or name pattern.',
+      'Find files matching a glob or name pattern. Returns up to maxResults matches (default 200).',
       Type.Object({
         pattern: Type.String({ description: 'Glob pattern, e.g. "componentFactory*"' }),
         path: Type.Optional(Type.String({ description: 'Subdirectory to search' })),
         type: Type.Optional(Type.Union([Type.Literal('file'), Type.Literal('directory')], { description: 'Filter by type' })),
+        maxResults: Type.Optional(Type.Number({ description: 'Max results to return (default 200)' })),
       }),
       async (_id, params) => {
         try { return ok('find_files', await findFiles(repoRoot(), norm(params))); }
@@ -714,7 +748,7 @@ export function buildPiTools(
           evidence: Type.Array(Type.Object({
             filePath: Type.String(),
             lineNumber: Type.Optional(Type.Number()),
-            snippet: Type.String({ description: 'REQUIRED: Exact code copied from tool output. Max 5 lines.' }),
+            snippet: Type.Optional(Type.String({ description: 'Exact code copied from tool output. Max 5 lines.' })),
             description: Type.String(),
           })),
           tags: Type.Array(Type.String()),

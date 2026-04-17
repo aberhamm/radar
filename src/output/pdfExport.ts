@@ -336,20 +336,20 @@ function renderExecSummary(
 
       // Severity pip
       doc.save();
-      doc.circle(mx + 6, riskY + 7, 5).fill(severityColor(r.severity));
+      doc.circle(mx + 6, riskY + 7, 5).fill(severityColor(r.severity as Severity));
       doc.restore();
 
       // Title + severity
       doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.labelPrimary);
-      doc.text(`${i + 1}. ${r.title}`, mx + 18, riskY, { width: pageWidth - 18 });
+      doc.text(`${r.rank}. ${r.title}`, mx + 18, riskY, { width: pageWidth - 18 });
       doc.font('Helvetica').fontSize(9).fillColor(COLORS.labelSecondary);
       doc.text(
-        `${r.severity} | ${categoryLabel(r.category)}${r.confidence ? ` | confidence ${r.confidence}/10` : ''}`,
+        `${r.severity}`,
         mx + 18, doc.y, { width: pageWidth - 18 },
       );
 
-      // Description (truncated)
-      const desc = truncate(r.description, 200);
+      // Business context (truncated)
+      const desc = truncate(r.businessContext, 200);
       doc.font('Helvetica').fontSize(9).fillColor(COLORS.labelSecondary);
       doc.text(desc, mx + 18, doc.y + 2, { width: pageWidth - 18 });
       doc.moveDown(0.6);

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { renderCiComment } from '../../src/output/ciComment.js';
-import type { Scorecard, RunMetrics } from '../../src/types/output.js';
+import type { Scorecard, RunMetrics, CategoryScore, RankedRisk, FindingCount, ScorecardMetadata } from '../../src/types/output.js';
 import type { Finding } from '../../src/types/findings.js';
+
+const ZERO_COUNTS: FindingCount = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
 function makeFinding(overrides: Partial<Finding>): Finding {
   return {
@@ -12,6 +14,18 @@ function makeFinding(overrides: Partial<Finding>): Finding {
     description: 'A test',
     evidence: [],
     tags: [],
+    ...overrides,
+  };
+}
+
+function makeRankedRisk(overrides: Partial<RankedRisk> = {}): RankedRisk {
+  return {
+    rank: 1,
+    findingId: 'TEST-001',
+    title: 'Test risk',
+    severity: 'medium',
+    businessContext: 'Test business context',
+    recommendation: 'Fix it',
     ...overrides,
   };
 }
@@ -28,18 +42,47 @@ function makeMetrics(overrides?: Partial<RunMetrics>): RunMetrics {
   };
 }
 
+function makeMetadata(overrides?: Partial<ScorecardMetadata>): ScorecardMetadata {
+  return {
+    repoName: 'test-repo',
+    analysisDate: new Date().toISOString(),
+    agentVersion: '1.0.0',
+    goalType: 'ci-check',
+    detectedPlatform: 'auto',
+    toolCallsUsed: 0,
+    webSearchesUsed: 0,
+    urlFetchesUsed: 0,
+    documentationSources: [],
+    ...overrides,
+  };
+}
+
+function makeCategory(overrides: Partial<CategoryScore> = {}): CategoryScore {
+  return {
+    category: 'security',
+    score: 'green',
+    findings: [],
+    findingCount: { ...ZERO_COUNTS },
+    keyFindings: [],
+    summary: 'OK',
+    ...overrides,
+  };
+}
+
 function makeScorecard(overrides?: Partial<Scorecard>): Scorecard {
   return {
+    metadata: makeMetadata(),
     repoName: 'test-repo',
     goalType: 'ci-check',
     generatedAt: '2026-04-04T00:00:45Z',
     overallScore: 'green',
     categories: [
-      { category: 'dependencies', score: 'green', findings: [], summary: 'OK' },
-      { category: 'security', score: 'green', findings: [], summary: 'OK' },
-      { category: 'configuration', score: 'green', findings: [], summary: 'OK' },
+      makeCategory({ category: 'dependencies' }),
+      makeCategory({ category: 'security' }),
+      makeCategory({ category: 'configuration' }),
     ],
     topRisks: [],
+    findings: [],
     ...overrides,
   };
 }
@@ -62,11 +105,15 @@ describe('renderCiComment', () => {
     const scorecard = makeScorecard({
       overallScore: 'red',
       categories: [
-        { category: 'dependencies', score: 'red', findings: [highFinding], summary: 'Critical gaps' },
-        { category: 'security', score: 'red', findings: [criticalFinding], summary: 'Exposed secrets' },
-        { category: 'configuration', score: 'green', findings: [], summary: 'OK' },
+        makeCategory({ category: 'dependencies', score: 'red', findings: [highFinding], summary: 'Critical gaps' }),
+        makeCategory({ category: 'security', score: 'red', findings: [criticalFinding], summary: 'Exposed secrets' }),
+        makeCategory({ category: 'configuration' }),
       ],
-      topRisks: [criticalFinding, highFinding],
+      topRisks: [
+        makeRankedRisk({ rank: 1, findingId: 'SEC-001', title: 'Hardcoded API key', severity: 'critical', businessContext: 'Exposed secret in config' }),
+        makeRankedRisk({ rank: 2, findingId: 'DEP-001', title: 'React 17 → 19 gap', severity: 'high', businessContext: '2 major versions behind' }),
+      ],
+      findings: [criticalFinding, highFinding],
     });
 
     const output = renderCiComment(scorecard, makeMetrics());
@@ -84,9 +131,9 @@ describe('renderCiComment', () => {
     const scorecard = makeScorecard({
       overallScore: 'green',
       categories: [
-        { category: 'dependencies', score: 'green', findings: [], summary: 'OK' },
-        { category: 'security', score: 'green', findings: [], summary: 'OK' },
-        { category: 'configuration', score: 'green', findings: [], summary: 'OK' },
+        makeCategory({ category: 'dependencies' }),
+        makeCategory({ category: 'security' }),
+        makeCategory({ category: 'configuration' }),
       ],
       topRisks: [],
     });
@@ -111,11 +158,12 @@ describe('renderCiComment', () => {
     const scorecard = makeScorecard({
       overallScore: 'red',
       categories: [
-        { category: 'dependencies', score: 'red', findings: findings.slice(0, 3), summary: 'Bad' },
-        { category: 'security', score: 'yellow', findings: findings.slice(3, 4), summary: 'Warn' },
-        { category: 'configuration', score: 'yellow', findings: findings.slice(4), summary: 'Warn' },
+        makeCategory({ category: 'dependencies', score: 'red', findings: findings.slice(0, 3), summary: 'Bad' }),
+        makeCategory({ category: 'security', score: 'yellow', findings: findings.slice(3, 4), summary: 'Warn' }),
+        makeCategory({ category: 'configuration', score: 'yellow', findings: findings.slice(4), summary: 'Warn' }),
       ],
-      topRisks: findings,
+      topRisks: findings.map((f, i) => makeRankedRisk({ rank: i + 1, findingId: f.id, title: f.title, severity: f.severity })),
+      findings,
     });
 
     const output = renderCiComment(scorecard, makeMetrics());
@@ -128,9 +176,9 @@ describe('renderCiComment', () => {
     const scorecard = makeScorecard({
       overallScore: 'yellow',
       categories: [
-        { category: 'dependencies', score: 'red', findings: [makeFinding({})], summary: 'Bad' },
-        { category: 'security', score: 'yellow', findings: [], summary: 'Warn' },
-        { category: 'configuration', score: 'green', findings: [], summary: 'OK' },
+        makeCategory({ category: 'dependencies', score: 'red', findings: [makeFinding({})], summary: 'Bad' }),
+        makeCategory({ category: 'security', score: 'yellow', summary: 'Warn' }),
+        makeCategory({ category: 'configuration' }),
       ],
       topRisks: [],
     });
@@ -160,7 +208,11 @@ describe('renderCiComment', () => {
 
     const scorecard = makeScorecard({
       overallScore: 'red',
-      topRisks: [lowConfFinding, highConfFinding],
+      // Low-confidence findings are excluded from topRisks by the agent
+      topRisks: [
+        makeRankedRisk({ rank: 1, findingId: 'SEC-HIGH', title: 'Confirmed secret leak', severity: 'high' }),
+      ],
+      findings: [lowConfFinding, highConfFinding],
     });
 
     const output = renderCiComment(scorecard, makeMetrics());

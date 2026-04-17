@@ -54,18 +54,16 @@ function normalizePath(filePath: string): string {
 
 /**
  * Safely construct an Evidence item from an untyped object.
- * Snippet is required — evidence without a snippet is rejected.
+ * Snippet is optional per spec — evidence without a snippet is accepted but flagged.
  */
 function toEvidence(obj: unknown): Evidence | null {
   if (typeof obj !== 'object' || obj === null) return null;
   const o = obj as Record<string, unknown>;
   if (typeof o.filePath !== 'string' || typeof o.description !== 'string') return null;
-  // Snippet is required — reject evidence without it
-  if (typeof o.snippet !== 'string' || o.snippet.trim() === '') return null;
   return {
     filePath: o.filePath,
     description: o.description,
-    snippet: o.snippet,
+    ...(typeof o.snippet === 'string' && o.snippet.trim() !== '' ? { snippet: o.snippet } : {}),
     ...(typeof o.lineNumber === 'number' ? { lineNumber: o.lineNumber } : {}),
   };
 }

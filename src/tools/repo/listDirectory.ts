@@ -4,6 +4,8 @@ import type { ListDirectoryInput, ListDirectoryOutput, FileEntry } from '../../t
 
 const EXCLUDED = new Set(['node_modules', '.next', 'dist', 'build', '.git']);
 
+const DEFAULT_MAX_ENTRIES = 200;
+
 export async function listDirectory(
   repoRoot: string,
   input: ListDirectoryInput,
@@ -11,6 +13,7 @@ export async function listDirectory(
   const targetPath = path.resolve(repoRoot, input.path);
   const depth = input.depth ?? 1;
   const includeHidden = input.includeHidden ?? false;
+  const maxEntries = input.maxEntries ?? DEFAULT_MAX_ENTRIES;
 
   // Check that the target directory exists before walking
   try {
@@ -30,7 +33,7 @@ export async function listDirectory(
   }
 
   const entries: FileEntry[] = [];
-  await walk(targetPath, repoRoot, depth, includeHidden, entries);
+  await walk(targetPath, repoRoot, depth, includeHidden, entries, maxEntries);
   return { entries };
 }
 
@@ -40,8 +43,9 @@ async function walk(
   remainingDepth: number,
   includeHidden: boolean,
   results: FileEntry[],
+  maxEntries: number,
 ): Promise<void> {
-  if (remainingDepth <= 0) return;
+  if (remainingDepth <= 0 || results.length >= maxEntries) return;
 
   let items: string[];
   try {
@@ -65,9 +69,10 @@ async function walk(
         ...(stats.isFile() ? { size: stats.size } : {}),
       };
       results.push(entry);
+      if (results.length >= maxEntries) return;
 
       if (stats.isDirectory() && remainingDepth > 1) {
-        await walk(fullPath, repoRoot, remainingDepth - 1, includeHidden, results);
+        await walk(fullPath, repoRoot, remainingDepth - 1, includeHidden, results, maxEntries);
       }
     } catch {
       // Skip inaccessible entries

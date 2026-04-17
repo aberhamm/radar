@@ -41,7 +41,7 @@ export function renderExecutiveSummary(
     lines.push('**Top risks:**');
     for (let i = 0; i < risks.length; i++) {
       const r = risks[i];
-      lines.push(`${i + 1}. **${r.title}** (${r.severity}) — ${truncate(r.description, 120)}`);
+      lines.push(`${i + 1}. **${r.title}** (${r.severity}) — ${truncate(r.businessContext, 120)}`);
     }
     lines.push('');
   }

@@ -1,5 +1,4 @@
 import type { Scorecard, RunMetrics } from '../types/output.js';
-import type { Severity } from '../types/findings.js';
 import type { DiffResult } from '../commands/diff.js';
 
 function scoreEmoji(score: string): string {
@@ -100,18 +99,20 @@ export function renderCiComment(
     lines.push('');
   }
 
-  // Blocking issues: critical or high severity AND high confidence (>= 7)
-  const blockingSeverities: Set<Severity> = new Set(['critical', 'high']);
+  // Blocking issues: critical or high severity
+  const blockingSeverities = new Set(['critical', 'high']);
   const blocking = scorecard.topRisks.filter((r) =>
-    blockingSeverities.has(r.severity) && (r.confidence ?? 7) >= 7
+    blockingSeverities.has(r.severity)
   );
 
   if (blocking.length > 0) {
+    const findingMap = new Map(scorecard.findings.map((f) => [f.id, f]));
     lines.push('### Blocking Issues');
     for (const risk of blocking) {
       const tag = risk.severity.toUpperCase();
-      const filePath = risk.evidence[0]?.filePath
-        ? ` — \`${risk.evidence[0].filePath}${risk.evidence[0].lineNumber ? ':' + risk.evidence[0].lineNumber : ''}\``
+      const finding = findingMap.get(risk.findingId);
+      const filePath = finding?.evidence[0]?.filePath
+        ? ` — \`${finding.evidence[0].filePath}${finding.evidence[0].lineNumber ? ':' + finding.evidence[0].lineNumber : ''}\``
         : '';
       lines.push(`1. **[${tag}] ${risk.title}**${filePath}`);
     }

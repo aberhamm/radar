@@ -1,5 +1,4 @@
 import type { Scorecard, CategoryScore, RunMetrics } from '../types/output.js';
-import type { Finding } from '../types/findings.js';
 import type { InvestigationEntry, FetchedDoc } from '../types/state.js';
 import { renderExecutiveSummary } from './executiveSummary.js';
 
@@ -101,20 +100,22 @@ export function renderBrief(
   if (scorecard.topRisks.length > 0) {
     lines.push('## Top Risks');
     lines.push('');
-    for (let i = 0; i < scorecard.topRisks.length; i++) {
-      const risk = scorecard.topRisks[i];
-      const conf = risk.confidence ?? 7;
+    // Resolve full findings for evidence rendering
+    const findingMap = new Map(scorecard.findings.map((f) => [f.id, f]));
+    for (const risk of scorecard.topRisks) {
+      const finding = findingMap.get(risk.findingId);
+      const conf = finding?.confidence ?? 7;
       const confBadge = conf >= 9 ? ' [verified]'
         : conf >= 7 ? ''
         : conf >= 5 ? ' [needs confirmation]'
         : ' [speculative]';
-      lines.push(`### ${i + 1}. ${risk.title}${confBadge}`);
-      lines.push(`**Severity:** ${risk.severity} | **Category:** ${risk.category} | **Confidence:** ${conf}/10`);
+      lines.push(`### ${risk.rank}. ${risk.title}${confBadge}`);
+      lines.push(`**Severity:** ${risk.severity} | **Confidence:** ${conf}/10`);
       lines.push('');
-      lines.push(risk.description);
-      if (risk.evidence.length > 0) {
+      lines.push(risk.businessContext);
+      if (finding && finding.evidence.length > 0) {
         lines.push('');
-        for (const ev of risk.evidence) {
+        for (const ev of finding.evidence) {
           const badge = ev.verificationStatus === 'verified' ? ' [verified]'
             : ev.verificationStatus === 'corrected' ? ' [corrected]'
             : ev.verificationStatus === 'unverifiable' ? ' [unverifiable]'

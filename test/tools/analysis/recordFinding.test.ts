@@ -219,7 +219,7 @@ describe('recordFinding', () => {
     expect(state.findings[0].evidence).toHaveLength(0);
   });
 
-  it('drops evidence items without snippet', async () => {
+  it('accepts evidence items without snippet (snippet is optional)', async () => {
     const state = makeState();
     state.filesRead.add('src/middleware.ts');
     const finding = {
@@ -237,8 +237,10 @@ describe('recordFinding', () => {
       tags: [],
     };
     const result = await recordFinding(state, { finding } as unknown as { finding: Finding });
-    // Evidence without snippet is dropped during toEvidence parsing
-    expect(state.findings[0].evidence).toHaveLength(0);
+    // Evidence without snippet is accepted (snippet is optional per spec)
+    expect(state.findings[0].evidence).toHaveLength(1);
+    expect(state.findings[0].evidence[0].filePath).toBe('src/middleware.ts');
+    expect(state.findings[0].evidence[0].snippet).toBeUndefined();
   });
 
   it('returns warnings array in output', async () => {

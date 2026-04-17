@@ -186,6 +186,20 @@ export async function verifyAndCorrectEvidence(
   // Always capture actual source context around the referenced line for user validation
   const sourceContext = extractCodeWindow(fileContent, evidence.lineNumber, 3);
 
+  // No snippet provided — verify file exists, capture context
+  if (!evidence.snippet) {
+    return {
+      evidence: {
+        ...evidence,
+        verified: true,
+        verificationStatus: 'verified',
+        sourceContext,
+      },
+      status: 'verified',
+      note: `File exists: ${evidence.filePath} (no snippet to verify)`,
+    };
+  }
+
   // Check snippet against the relevant window first, then full file
   if (snippetMatchesContent(evidence.snippet, window) ||
       snippetMatchesContent(evidence.snippet, fileContent)) {
@@ -253,7 +267,7 @@ export async function verifyFindingEvidence(
     const window = extractCodeWindow(fileContent, ev.lineNumber);
     const sourceContext = extractCodeWindow(fileContent, ev.lineNumber, 3);
 
-    if (ev.snippet && (snippetMatchesContent(ev.snippet, window) ||
+    if (ev.snippet != null && (snippetMatchesContent(ev.snippet, window) ||
         snippetMatchesContent(ev.snippet, fileContent))) {
       // Auto-correct line number if snippet is found at a different location
       const actualLine = findSnippetLine(ev.snippet, fileContent);

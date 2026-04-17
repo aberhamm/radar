@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { renderExecutiveSummary } from '../../src/output/executiveSummary.js';
-import type { Scorecard, RunMetrics, CategoryScore, ScoreLevel } from '../../src/types/output.js';
+import type { Scorecard, RunMetrics, CategoryScore, ScoreLevel, RankedRisk, FindingCount, ScorecardMetadata } from '../../src/types/output.js';
 import type { Finding } from '../../src/types/findings.js';
+
+const ZERO_COUNTS: FindingCount = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
 function makeFinding(overrides: Partial<Finding>): Finding {
   return {
@@ -16,11 +18,40 @@ function makeFinding(overrides: Partial<Finding>): Finding {
   };
 }
 
+function makeRankedRisk(overrides: Partial<RankedRisk> = {}): RankedRisk {
+  return {
+    rank: 1,
+    findingId: 'TEST-001',
+    title: 'Test risk',
+    severity: 'medium',
+    businessContext: 'Test business context',
+    recommendation: 'Fix it',
+    ...overrides,
+  };
+}
+
+function makeMetadata(overrides?: Partial<ScorecardMetadata>): ScorecardMetadata {
+  return {
+    repoName: 'test-repo',
+    analysisDate: new Date().toISOString(),
+    agentVersion: '1.0.0',
+    goalType: 'audit',
+    detectedPlatform: 'auto',
+    toolCallsUsed: 0,
+    webSearchesUsed: 0,
+    urlFetchesUsed: 0,
+    documentationSources: [],
+    ...overrides,
+  };
+}
+
 function makeCategory(overrides: Partial<CategoryScore>): CategoryScore {
   return {
     category: 'security',
     score: 'green',
     findings: [],
+    findingCount: { ...ZERO_COUNTS },
+    keyFindings: [],
     summary: 'Security: no issues',
     ...overrides,
   };
@@ -28,6 +59,7 @@ function makeCategory(overrides: Partial<CategoryScore>): CategoryScore {
 
 function makeScorecard(overrides: Partial<Scorecard>): Scorecard {
   return {
+    metadata: makeMetadata(),
     repoName: 'test-repo',
     goalType: 'audit',
     generatedAt: new Date().toISOString(),
@@ -38,6 +70,7 @@ function makeScorecard(overrides: Partial<Scorecard>): Scorecard {
       makeCategory({ category: 'architecture', score: 'green' }),
     ],
     topRisks: [],
+    findings: [],
     ...overrides,
   };
 }
@@ -124,11 +157,11 @@ describe('renderExecutiveSummary', () => {
   });
 
   it('renders top 3 risks', () => {
-    const risks = [
-      makeFinding({ id: 'R1', severity: 'critical', title: 'SQL injection in API' }),
-      makeFinding({ id: 'R2', severity: 'high', title: 'Missing auth middleware' }),
-      makeFinding({ id: 'R3', severity: 'high', title: 'Outdated dependencies' }),
-      makeFinding({ id: 'R4', severity: 'medium', title: 'Fourth risk should not appear' }),
+    const risks: RankedRisk[] = [
+      makeRankedRisk({ rank: 1, findingId: 'R1', severity: 'critical', title: 'SQL injection in API', businessContext: 'Critical API vulnerability' }),
+      makeRankedRisk({ rank: 2, findingId: 'R2', severity: 'high', title: 'Missing auth middleware', businessContext: 'Auth gap' }),
+      makeRankedRisk({ rank: 3, findingId: 'R3', severity: 'high', title: 'Outdated dependencies', businessContext: 'Dependency risk' }),
+      makeRankedRisk({ rank: 4, findingId: 'R4', severity: 'medium', title: 'Fourth risk should not appear', businessContext: 'Minor issue' }),
     ];
     const sc = makeScorecard({ topRisks: risks });
     const md = renderExecutiveSummary(sc, makeMetrics({}));
@@ -218,7 +251,7 @@ describe('renderExecutiveSummary', () => {
   it('truncates long risk descriptions', () => {
     const longDesc = 'A'.repeat(200);
     const sc = makeScorecard({
-      topRisks: [makeFinding({ title: 'Long risk', description: longDesc })],
+      topRisks: [makeRankedRisk({ title: 'Long risk', businessContext: longDesc })],
     });
     const md = renderExecutiveSummary(sc, makeMetrics({}));
 
@@ -241,7 +274,7 @@ describe('renderExecutiveSummary', () => {
         ]}),
       ],
       topRisks: [
-        makeFinding({ severity: 'critical', title: 'Top risk' }),
+        makeRankedRisk({ rank: 1, findingId: 'TOP-1', severity: 'critical', title: 'Top risk', businessContext: 'Critical issue' }),
       ],
     });
     const md = renderExecutiveSummary(sc, makeMetrics({}));

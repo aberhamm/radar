@@ -7,50 +7,41 @@ import path from 'node:path';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Load the agent runner at runtime, completely bypassing webpack.
- *
- * Prefers compiled JS from dist/ (fast — no compilation overhead).
- * Falls back to tsx loader for raw .ts source if dist/ doesn't exist.
- */
+const isDev = process.env.NODE_ENV !== 'production';
+
+async function ensureTsx() {
+  const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
+  const { register } = await import(/* webpackIgnore: true */ 'node:module');
+  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered */ }
+}
+
 async function loadRunner() {
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
-  const fs = await import(/* webpackIgnore: true */ 'node:fs');
 
-  // Prefer compiled JS — avoids tsx cold-start penalty (~5-10s on Windows)
-  const distPath = path.resolve(process.cwd(), '..', 'dist', 'agent', 'runner.js');
-  if (fs.existsSync(distPath)) {
-    const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
+  if (isDev) {
+    await ensureTsx();
+    const agentPath = path.resolve(process.cwd(), '..', 'src', 'agent', 'runner.ts');
+    const mod = await import(/* webpackIgnore: true */ pathToFileURL(agentPath).href);
     return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
   }
 
-  // Fallback: tsx loader for development without a build step
-  const { register } = await import(/* webpackIgnore: true */ 'node:module');
-  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered or unavailable */ }
-
-  const agentPath = path.resolve(process.cwd(), '..', 'src', 'agent', 'runner.ts');
-  const mod = await import(/* webpackIgnore: true */ pathToFileURL(agentPath).href);
+  const distPath = path.resolve(process.cwd(), '..', 'dist', 'agent', 'runner.js');
+  const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
   return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
 }
 
-/**
- * Load computeScorecard at runtime, same pattern as loadRunner.
- */
 async function loadScorecard() {
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
-  const fs = await import(/* webpackIgnore: true */ 'node:fs');
 
-  const distPath = path.resolve(process.cwd(), '..', 'dist', 'output', 'scorecard.js');
-  if (fs.existsSync(distPath)) {
-    const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
+  if (isDev) {
+    await ensureTsx();
+    const srcPath = path.resolve(process.cwd(), '..', 'src', 'output', 'scorecard.ts');
+    const mod = await import(/* webpackIgnore: true */ pathToFileURL(srcPath).href);
     return mod.computeScorecard as (repoName: string, goal: string, findings: unknown[]) => unknown;
   }
 
-  const { register } = await import(/* webpackIgnore: true */ 'node:module');
-  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered */ }
-
-  const srcPath = path.resolve(process.cwd(), '..', 'src', 'output', 'scorecard.ts');
-  const mod = await import(/* webpackIgnore: true */ pathToFileURL(srcPath).href);
+  const distPath = path.resolve(process.cwd(), '..', 'dist', 'output', 'scorecard.js');
+  const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
   return mod.computeScorecard as (repoName: string, goal: string, findings: unknown[]) => unknown;
 }
 
