@@ -26,8 +26,6 @@ export async function handleAnalyze(opts: {
   json?: boolean;
   export?: boolean;
   exportPdf?: boolean;
-  githubOutput?: boolean;
-  pr?: number;
   resume?: string;
   checkpointInterval?: string;
 }): Promise<number> {
@@ -43,6 +41,9 @@ export async function handleAnalyze(opts: {
   }
 
   const budget = parseInt(opts.budget, 10);
+  if (isNaN(budget) || budget < 1) {
+    throw new Error(`Invalid budget: ${opts.budget}. Must be a positive integer.`);
+  }
   const platform = opts.platform ?? 'unknown';
   const outputDir = opts.output;
 

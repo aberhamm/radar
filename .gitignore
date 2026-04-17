@@ -40,3 +40,4 @@ dashboard/output/*
 .gstack/
 .next/trace
 .next/trace-build
+.claude/scheduled_tasks.lock

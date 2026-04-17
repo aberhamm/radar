@@ -17,6 +17,7 @@ export async function handleCompare(opts: {
   platform?: string;
   output: string;
   budget: string;
+  dryRun?: boolean;
   verbose?: boolean;
 }): Promise<number> {
   if (opts.repos.length !== 2) {
@@ -33,6 +34,16 @@ export async function handleCompare(opts: {
   const platform = opts.platform ?? 'unknown';
   const outputDir = opts.output;
   const verbose = opts.verbose ?? false;
+
+  if (opts.dryRun) {
+    console.log('\n--- Dry Run (compare) ---\n');
+    console.log(`Repos:    ${opts.repos.join(' vs ')}`);
+    console.log(`Goal:     ${goal}`);
+    console.log(`Platform: ${platform}`);
+    console.log(`Budget:   ${budget} tool calls per repo`);
+    console.log(`Output:   ${outputDir}`);
+    return 0;
+  }
 
   // Resolve npm versions once for both runs
   console.log('Resolving npm versions...');

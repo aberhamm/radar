@@ -48,6 +48,7 @@ export async function handleAnalyzeAll(opts: {
   platform?: string;
   output: string;
   budget: string;
+  dryRun?: boolean;
   verbose?: boolean;
   json?: boolean;
   export?: boolean;
@@ -89,6 +90,17 @@ export async function handleAnalyzeAll(opts: {
     }
     repoName = path.basename(repoPath);
     repoSource = 'local';
+  }
+
+  // Dry run — show config and exit
+  if (opts.dryRun) {
+    console.log('\n--- Dry Run (--goal all) ---\n');
+    console.log(`Repo:     ${repoPath}`);
+    console.log(`Goals:    ${ALL_GOALS.join(', ')}`);
+    console.log(`Platform: ${platform}`);
+    console.log(`Budget:   ${totalBudget} tool calls (split across core + specialist passes)`);
+    console.log(`Output:   ${outputDir}`);
+    return 0;
   }
 
   // Resolve npm versions (shared across all passes)
