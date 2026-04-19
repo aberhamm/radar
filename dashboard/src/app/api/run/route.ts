@@ -7,24 +7,8 @@ import path from 'node:path';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const isDev = process.env.NODE_ENV !== 'production';
-
-async function ensureTsx() {
-  const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
-  const { register } = await import(/* webpackIgnore: true */ 'node:module');
-  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered */ }
-}
-
 async function loadRunner() {
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
-
-  if (isDev) {
-    await ensureTsx();
-    const agentPath = path.resolve(process.cwd(), '..', 'src', 'agent', 'runner.ts');
-    const mod = await import(/* webpackIgnore: true */ pathToFileURL(agentPath).href);
-    return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
-  }
-
   const distPath = path.resolve(process.cwd(), '..', 'dist', 'agent', 'runner.js');
   const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
   return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
@@ -32,14 +16,6 @@ async function loadRunner() {
 
 async function loadScorecard() {
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
-
-  if (isDev) {
-    await ensureTsx();
-    const srcPath = path.resolve(process.cwd(), '..', 'src', 'output', 'scorecard.ts');
-    const mod = await import(/* webpackIgnore: true */ pathToFileURL(srcPath).href);
-    return mod.computeScorecard as (repoName: string, goal: string, findings: unknown[]) => unknown;
-  }
-
   const distPath = path.resolve(process.cwd(), '..', 'dist', 'output', 'scorecard.js');
   const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
   return mod.computeScorecard as (repoName: string, goal: string, findings: unknown[]) => unknown;
@@ -289,5 +265,5 @@ export async function POST(req: NextRequest) {
     abortController.abort();
   });
 
-  return NextResponse.json({ ok: true, repoName, goal, runId, budget: goal === 'all' ? 100 : 45 });
+  return NextResponse.json({ ok: true, repoName, goal, runId, budget: goal === 'all' ? 15 : 45 });
 }
