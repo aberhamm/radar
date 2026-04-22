@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   // Claim session immediately (before any await) to close the TOCTOU race window
   session.status = 'running';
 
-  let body: { repoPath?: string; goal?: string; repoSource?: string; repoUrl?: string; appRoot?: string };
+  let body: { repoPath?: string; goal?: string; repoSource?: string; repoUrl?: string; appRoot?: string; budget?: number };
   try {
     body = await req.json();
   } catch {
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { repoPath, goal = 'onboarding', repoSource, repoUrl, appRoot } = body;
+  const requestedBudget = body.budget;
 
   if (!repoPath) {
     session.status = 'idle';
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
             repoSource: (repoSource as 'github' | 'local') ?? 'local',
             repoUrl: repoUrl,
             ...(appRoot ? { appRoot } : {}),
-            budget: 100,
+            budget: requestedBudget ?? 100,
             onStep: (event: StepEvent) => {
               const run = session.currentRun;
               if (!run) return;
@@ -265,5 +266,6 @@ export async function POST(req: NextRequest) {
     abortController.abort();
   });
 
-  return NextResponse.json({ ok: true, repoName, goal, runId, budget: goal === 'all' ? 15 : 45 });
+  const effectiveBudget = requestedBudget ?? (goal === 'all' ? 100 : 45);
+  return NextResponse.json({ ok: true, repoName, goal, runId, budget: effectiveBudget });
 }

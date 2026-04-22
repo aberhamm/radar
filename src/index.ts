@@ -56,7 +56,7 @@ program
     try {
       // Apply goal-appropriate default budget if user didn't specify
       if (!opts.budget) {
-        opts.budget = opts.goal === 'all' ? '150' : '45';
+        opts.budget = opts.goal === 'all' ? '15' : '45';
       }
       const handler = opts.goal === 'all' ? handleAnalyzeAll : handleAnalyze;
       const exitCode = await handler(opts);

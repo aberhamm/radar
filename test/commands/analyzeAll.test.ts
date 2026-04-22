@@ -170,8 +170,8 @@ describe('handleAnalyzeAll', () => {
     await expect(handleAnalyzeAll({ output: '/tmp', budget: '100' })).rejects.toThrow('--repo is required');
   });
 
-  it('throws when budget is below 60', async () => {
-    await expect(handleAnalyzeAll({ ...baseOpts, budget: '50' })).rejects.toThrow('Budget 50 is too low');
+  it('throws when budget is below 15', async () => {
+    await expect(handleAnalyzeAll({ ...baseOpts, budget: '10' })).rejects.toThrow('Budget 10 is too low');
   });
 
   // --- Core failure ---

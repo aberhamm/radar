@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import readline from 'node:readline';
 import crypto from 'node:crypto';
 import { runAgent, runPreCompute, writeOutputFiles, type RunResult } from '../agent/runner.js';
 import { planBudget, rebalanceBudget } from '../agent/budgetPlanner.js';
@@ -59,8 +60,8 @@ export async function handleAnalyzeAll(opts: {
   }
 
   const totalBudget = parseInt(opts.budget, 10);
-  if (totalBudget < 60) {
-    throw new Error(`Budget ${totalBudget} is too low for --goal all. Minimum recommended: 100.`);
+  if (totalBudget < 15) {
+    throw new Error(`Budget ${totalBudget} is too low for --goal all. Minimum: 15.`);
   }
 
   const platform = opts.platform ?? 'unknown';
@@ -136,6 +137,17 @@ export async function handleAnalyzeAll(opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allEvents: Array<Record<string, any>> = [];
 
+  // Budget extension callback — interactive prompt for TTY, skip for CI/JSON
+  const isInteractive = process.stdin.isTTY && !opts.json;
+  const onBudgetExhausted = isInteractive
+    ? async (state: { findings: number; toolCalls: number; budget: number }) => {
+        const answer = await askYesNo(
+          `\n  Budget reached (${state.toolCalls} calls, ${state.findings} findings). Continue for 50 more? [y/N] `,
+        );
+        return answer;
+      }
+    : undefined;
+
   // Emit budget plan event
   allEvents.push({
     step: -1,
@@ -159,6 +171,7 @@ export async function handleAnalyzeAll(opts: {
       outputDir,
       verbose,
       preCompute, // Reuse pre-computed signals — avoids redundant filesystem scans
+      onBudgetExhausted,
       onStep: (step) => {
         allEvents.push(step);
         if (verbose) formatVerboseStep(step, '[Core]');
@@ -229,6 +242,7 @@ export async function handleAnalyzeAll(opts: {
         outputDir,
         verbose,
         initialState: sharedState,
+        onBudgetExhausted,
         onStep: (step) => {
           allEvents.push(step);
           if (verbose) formatVerboseStep(step, '[Next.js]');
@@ -277,6 +291,7 @@ export async function handleAnalyzeAll(opts: {
         outputDir,
         verbose,
         initialState: sharedState,
+        onBudgetExhausted,
         onStep: (step) => {
           allEvents.push(step);
           if (verbose) formatVerboseStep(step, '[A11y]');
@@ -525,4 +540,14 @@ export async function handleAnalyzeAll(opts: {
   // Exit code: worst of all scorecards
   const hasRed = ALL_GOALS.some((g) => scorecards.get(g)?.overallScore === 'red');
   return hasRed ? 1 : 0;
+}
+
+function askYesNo(prompt: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === 'y');
+    });
+  });
 }
