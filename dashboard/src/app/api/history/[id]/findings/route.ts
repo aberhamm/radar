@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, loadRunFindings } from '@/lib/agentSession';
+import { getSession, loadRunFindings, findRunById } from '@/lib/agentSession';
 
 export async function GET(
   _req: NextRequest,
@@ -7,7 +7,11 @@ export async function GET(
 ) {
   const { id } = await params;
   const session = getSession();
-  const record = session.history.find(r => r.id === id);
+  let record = session.history.find(r => r.id === id);
+
+  if (!record) {
+    record = findRunById(id) ?? undefined;
+  }
 
   if (!record) {
     return NextResponse.json({ error: 'Run not found' }, { status: 404 });

@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import type { StepEvent, Scorecard, RunMetrics, RunResult, HistoryItem } from '@/lib/agentSession';
-import { transformRunData } from '@/lib/runTransform';
+import type { StepEvent, Scorecard, RunMetrics, HistoryItem } from '@/lib/agentSession';
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
 import { useUrlState, buildUrl, type Tab, type MultiTab } from '@/lib/useUrlState';
@@ -18,6 +17,7 @@ import { MultiGoalView, type MultiGoalData } from '@/components/MultiGoalView';
 import { RunLoadingSkeleton } from '@/components/Skeleton';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
+import type { TransformedRunData } from '@/lib/runTransform';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ function friendlyError(raw: string): string {
 
 // ─── Types ──────────────────────────────────────────────────────
 
-type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing' | 'multigoal';
+type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing' | 'multigoal';
 
 interface CurrentRun {
   repoPath: string;
@@ -69,14 +69,6 @@ interface CompletedResult {
   state?: { findings: unknown[] };
 }
 
-interface HistoryRunData {
-  repoName: string;
-  goal: string;
-  startedAt: string;
-  events: StepEvent[];
-  result: RunResult;
-}
-
 // ─── Page ───────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -90,9 +82,6 @@ export default function DashboardPage() {
     budget: number;
   } | null>(null);
   const [lastRepoPath, setLastRepoPath] = useState('');
-  const [replayData, setReplayData] = useState<HistoryRunData | null>(null);
-  const [isSampleReplay, setIsSampleReplay] = useState(false);
-  const [replayAnimated, setReplayAnimated] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -109,7 +98,8 @@ export default function DashboardPage() {
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [multiGoalData, setMultiGoalData] = useState<MultiGoalData | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [activeTab, setActiveTab] = useState<Tab>('report');
+  const [sampleInvestigation, setSampleInvestigation] = useState<TransformedRunData | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [multiTab, setMultiTab] = useState<MultiTab>('overview');
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
   const { urlView, pushUrl, replaceUrl } = useUrlState();
@@ -161,7 +151,6 @@ export default function DashboardPage() {
             });
             setSelectedRunId(data.currentRun.id ?? null);
             setStatus(data.status);
-            setIsSampleReplay(false);
             // Push URL to match the running run
             if (data.currentRun.id) {
               pushUrl({ view: 'run', runId: data.currentRun.id });
@@ -249,7 +238,6 @@ export default function DashboardPage() {
       setStatus('idle');
       setResult(null);
       setCurrentRun(null);
-      setReplayData(null);
       setSelectedRunId(null);
       setMultiGoalData(null);
       setCompareData(null);
@@ -286,13 +274,11 @@ export default function DashboardPage() {
     });
     setStatus('running');
     setResult(null);
-    setReplayData(null);
-    setIsSampleReplay(false);
     setBudgetPausedData(null);
     setNewRunModal(false);
     setSelectedRunId(runId ?? null);
     setMultiGoalData(null);
-    setActiveTab('report');
+    setActiveTab('overview');
 
     // Push URL with runId so refresh reconnects
     if (runId) {
@@ -412,8 +398,6 @@ export default function DashboardPage() {
     setStatus('idle');
     setCurrentRun(null);
     setResult(null);
-    setReplayData(null);
-    setIsSampleReplay(false);
     setBudgetPausedData(null);
     setSelectedRunId(null);
     pushUrl({ view: 'idle' });
@@ -496,8 +480,19 @@ export default function DashboardPage() {
 
     // Sample run uses built-in data, no fetch needed
     if (id === SAMPLE_RUN_ID) {
-      setReplayData(null);
-      setResult(null);
+      const { SAMPLE_SCORECARD, SAMPLE_METRICS, SAMPLE_BRIEF_MARKDOWN, SAMPLE_FINDINGS: sampleFindings, SAMPLE_ANALYSIS_TURNS } = await import('@/lib/sampleRunData');
+      setResult({
+        scorecard: SAMPLE_SCORECARD,
+        metrics: SAMPLE_METRICS,
+        terminationReason: 'completed',
+        briefMarkdown: SAMPLE_BRIEF_MARKDOWN,
+        state: { findings: sampleFindings },
+      });
+      setSampleInvestigation({
+        analysisTurns: SAMPLE_ANALYSIS_TURNS,
+        findings: sampleFindings,
+        findingBatches: [sampleFindings.length],
+      });
       setCurrentRun({
         repoPath: '',
         repoName: SAMPLE_HISTORY_ITEM.repoName,
@@ -508,10 +503,11 @@ export default function DashboardPage() {
         budget: 45,
       });
       setBudgetPausedData(null);
-      setIsSampleReplay(true);
+      setSampleInvestigation(null);
       setSelectedRunId(id);
-      setStatus('replaying');
-      pushUrl({ view: 'run', runId: id });
+      setStatus('complete');
+      setActiveTab(initialTab ?? 'overview');
+      pushUrl({ view: 'run', runId: id, tab: initialTab });
       if (window.innerWidth < 1024) setSidebarOpen(false);
       return;
     }
@@ -543,14 +539,6 @@ export default function DashboardPage() {
     // Check cache first — runs are immutable, no need to re-fetch
     const cached = runCacheRef.current.get(id);
     if (cached) {
-      const runData: HistoryRunData = {
-        repoName: cached.repoName,
-        goal: cached.goal,
-        startedAt: cached.startedAt,
-        events: [],
-        result: cached.result,
-      };
-      setReplayData(runData);
       setResult(cached.result);
       setCurrentRun({
         repoPath: '',
@@ -562,10 +550,10 @@ export default function DashboardPage() {
         budget: cached.result.metrics?.toolCalls ?? 45,
       });
       setBudgetPausedData(null);
-      setIsSampleReplay(false);
+      setSampleInvestigation(null);
       setSelectedRunId(id);
       setStatus('complete');
-      setActiveTab(initialTab ?? 'report');
+      setActiveTab(initialTab ?? 'overview');
       pushUrl({ view: 'run', runId: id, tab: initialTab });
       if (window.innerWidth < 1024) setSidebarOpen(false);
       return;
@@ -590,14 +578,6 @@ export default function DashboardPage() {
         startedAt: data.startedAt,
         result: data.result,
       });
-      const runData: HistoryRunData = {
-        repoName: data.repoName,
-        goal: data.goal,
-        startedAt: data.startedAt,
-        events: [],
-        result: data.result,
-      };
-      setReplayData(runData);
       setResult(data.result as CompletedResult);
       setCurrentRun({
         repoPath: '',
@@ -609,10 +589,10 @@ export default function DashboardPage() {
         budget: data.result.metrics?.toolCalls ?? 45,
       });
       setBudgetPausedData(null);
-      setIsSampleReplay(false);
+      setSampleInvestigation(null);
       setSelectedRunId(id);
       setStatus('complete');
-      setActiveTab(initialTab ?? 'report');
+      setActiveTab(initialTab ?? 'overview');
       pushUrl({ view: 'run', runId: id, tab: initialTab });
       if (window.innerWidth < 1024) setSidebarOpen(false);
     } catch (err) {
@@ -644,28 +624,6 @@ export default function DashboardPage() {
       .catch(() => {})
       .finally(() => { prefetchingRef.current.delete(id); });
   }, []);
-
-  const handleViewReport = useCallback(() => {
-    setStatus('complete');
-  }, []);
-
-  const handleViewReplay = useCallback(async () => {
-    if (selectedRunId && replayData && replayData.events.length === 0) {
-      try {
-        const r = await fetch(`/api/history/${encodeURIComponent(selectedRunId)}/events`);
-        const data = await r.json();
-        if (data.events) {
-          const updated = { ...replayData, events: data.events };
-          setReplayData(updated);
-          setCurrentRun(prev => prev ? { ...prev, events: data.events } : prev);
-        }
-      } catch (err) {
-        console.warn('[replay] Failed to load events:', err);
-      }
-    }
-    setReplayAnimated(false);
-    setStatus('replaying');
-  }, [selectedRunId, replayData]);
 
   const isRunningOrPaused = status === 'running' || status === 'budget_paused';
 
@@ -823,21 +781,15 @@ export default function DashboardPage() {
           onExitCompare={handleExitCompare}
         />
       )}
-      {status !== 'idle' && status !== 'comparing' && currentRun?.repoName && (
+      {status !== 'idle' && status !== 'comparing' && status !== 'multigoal' && currentRun?.repoName && (
         <ContextBar
-          status={
-            status === 'replaying'
-              ? 'replaying'
-              : (status as 'running' | 'budget_paused' | 'complete' | 'error')
-          }
+          status={status as 'running' | 'budget_paused' | 'complete' | 'error'}
           repoName={currentRun.repoName}
           goal={currentRun.goal}
           scorecard={result?.scorecard}
           toolCalls={currentRun.toolCalls}
           budget={currentRun.budget}
           onStop={handleStop}
-          onViewReport={isSampleReplay || !result ? undefined : handleViewReport}
-          onViewReplay={replayData && !isSampleReplay ? handleViewReplay : undefined}
           onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
           activeTab={activeTab}
         />
@@ -919,28 +871,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {status === 'replaying' && isSampleReplay && (
-            <div
-              key="sample-replay"
-              className="animate-slide-up flex-1 flex flex-col overflow-hidden"
-            >
-              <AnalysisView
-                viewMode={replayAnimated ? 'replay' : 'instant'}
-                onStartReplay={() => setReplayAnimated(true)}
-              />
-            </div>
-          )}
-
-          {status === 'replaying' && !isSampleReplay && replayData && (
-            <div key="replaying" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
-              <AnalysisView
-                runData={transformRunData(replayData.events, replayData.result)}
-                viewMode={replayAnimated ? 'replay' : 'instant'}
-                onStartReplay={() => setReplayAnimated(true)}
-              />
-            </div>
-          )}
-
           {status === 'comparing' && compareData && !compareLoading && (
             <div key="comparing" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <CompareView data={compareData} />
@@ -970,6 +900,7 @@ export default function DashboardPage() {
                 repoUrl={selectedRunId ? history.find(h => h.id === selectedRunId)?.repoUrl : undefined}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
+                investigationRunData={sampleInvestigation ?? undefined}
               />
             </div>
           )}

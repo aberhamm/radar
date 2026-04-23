@@ -13,9 +13,8 @@ interface HomePanelProps {
 }
 
 const SECTIONS: { id: Tab; label: string }[] = [
-  { id: 'report', label: 'Report' },
-  { id: 'events', label: 'Events' },
-  { id: 'rules', label: 'Rules' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'investigation', label: 'Investigation' },
   { id: 'cost', label: 'Cost' },
 ];
 

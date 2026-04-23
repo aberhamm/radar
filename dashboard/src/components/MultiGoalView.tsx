@@ -55,6 +55,11 @@ interface MultiGoalViewProps {
 const SCORE_ORDER: Record<string, number> = { red: 3, yellow: 2, green: 1 };
 const SEV_ORDER: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
+// Backend RankedRisk uses `findingId`; dashboard Scorecard expects `id`. Normalize at boundary.
+function normalizeRiskId(risk: { id?: string; findingId?: string; severity: string; title: string }): { id: string; severity: string; title: string } {
+  return { id: risk.id ?? risk.findingId ?? '', severity: risk.severity, title: risk.title };
+}
+
 function goalDisplayName(goal: string): string {
   const names: Record<string, string> = {
     onboarding: 'Onboarding',
@@ -152,8 +157,8 @@ function buildMergedScorecard(goals: MultiGoalGoal[], repoName: string, startedA
   }
 
   const seen = new Set<string>();
-  const allRisks = goals.flatMap(g => g.scorecard.topRisks ?? []).filter(r => {
-    if (seen.has(r.id)) return false;
+  const allRisks = goals.flatMap(g => (g.scorecard.topRisks ?? []).map(normalizeRiskId)).filter(r => {
+    if (!r.id || seen.has(r.id)) return false;
     seen.add(r.id);
     return true;
   }).sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0));
@@ -204,8 +209,9 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
   const seen = new Set<string>();
   const allRisks: Array<{ id: string; severity: string; title: string }> = [];
   for (const g of goals) {
-    for (const risk of g.scorecard.topRisks ?? []) {
-      if (!seen.has(risk.id)) {
+    for (const raw of g.scorecard.topRisks ?? []) {
+      const risk = normalizeRiskId(raw);
+      if (risk.id && !seen.has(risk.id)) {
         seen.add(risk.id);
         allRisks.push(risk);
       }
@@ -566,9 +572,9 @@ export function MultiGoalView({ data, activeTab: controlledTab, onTabChange }: M
             </div>
             {mergedScorecard.topRisks.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {mergedScorecard.topRisks.slice(0, 3).map(risk => (
+                {mergedScorecard.topRisks.slice(0, 3).map((risk, i) => (
                   <span
-                    key={risk.id}
+                    key={risk.id || `risk-${i}`}
                     className="text-[11px] px-2 py-0.5 rounded-md"
                     style={{
                       background: risk.severity === 'critical' || risk.severity === 'high'

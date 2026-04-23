@@ -1,4 +1,5 @@
 import type { AnalysisTurn, Finding } from '@/lib/runTransform';
+import type { Scorecard, RunMetrics } from '@/lib/agentSession';
 
 // ─── Sample data extracted from run sitecore-minimal-onboarding-2026-04-02T18-25-21-344Z ───
 
@@ -121,3 +122,73 @@ export const SAMPLE_FINDINGS: Finding[] = [
     evidenceFiles: ['tsconfig.json', 'tsconfig.json', 'tsconfig.json'], evidence: [], tags: ['typescript', 'configuration'],
     note: 'Green finding — TypeScript setup is correct and will help catch errors.' },
 ];
+
+export const SAMPLE_SCORECARD: Scorecard = {
+  repoName: 'sitecore-minimal',
+  goalType: 'onboarding',
+  generatedAt: '2026-04-02T18:30:45.000Z',
+  overallScore: 'red',
+  categories: [
+    { category: 'stack', score: 'yellow', findings: SAMPLE_FINDINGS.filter(f => f.category === 'stack').map(f => f.id), summary: 'JSS outdated, TypeScript configured well' },
+    { category: 'dependencies', score: 'yellow', findings: SAMPLE_FINDINGS.filter(f => f.category === 'dependencies').map(f => f.id), summary: 'Next.js and React behind latest major' },
+    { category: 'cms-integration', score: 'red', findings: SAMPLE_FINDINGS.filter(f => f.category === 'cms-integration').map(f => f.id), summary: 'Hybrid router architecture, incomplete migration' },
+    { category: 'preview-editing', score: 'red', findings: SAMPLE_FINDINGS.filter(f => f.category === 'preview-editing').map(f => f.id), summary: 'Editing integration non-functional' },
+    { category: 'security', score: 'red', findings: SAMPLE_FINDINGS.filter(f => f.category === 'security').map(f => f.id), summary: 'Hardcoded API key, missing security headers' },
+    { category: 'configuration', score: 'yellow', findings: SAMPLE_FINDINGS.filter(f => f.category === 'configuration').map(f => f.id), summary: 'Env vars documented but not explained' },
+    { category: 'architecture', score: 'red', findings: SAMPLE_FINDINGS.filter(f => f.category === 'architecture').map(f => f.id), summary: 'force-dynamic everywhere, no tests' },
+    { category: 'routing', score: 'red', findings: SAMPLE_FINDINGS.filter(f => f.category === 'routing').map(f => f.id), summary: 'No CMS path resolution' },
+    { category: 'deployment', score: 'yellow', findings: SAMPLE_FINDINGS.filter(f => f.category === 'deployment').map(f => f.id), summary: 'No deployment configuration' },
+  ],
+  topRisks: [
+    { id: 'SEC-HARDCODED-KEY', severity: 'critical', title: 'Potential hardcoded/redacted API key in middleware' },
+    { id: 'PREVIEW-INCOMPLETE', severity: 'high', title: 'Editing/preview integration is incomplete and non-functional' },
+    { id: 'ARCH-FORCE-DYNAMIC', severity: 'high', title: 'App Router routes marked force-dynamic, disabling all caching' },
+  ],
+};
+
+export const SAMPLE_METRICS: RunMetrics = {
+  startedAt: '2026-04-02T18:25:21.344Z',
+  completedAt: '2026-04-02T18:30:45.000Z',
+  durationMs: 324000,
+  toolCalls: 50,
+  models: {
+    'us.anthropic.claude-sonnet-4-6': {
+      bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
+      calls: 38,
+      inputTokens: 142000,
+      outputTokens: 18500,
+      cachedTokens: 0,
+      estimatedCostUsd: 0.62,
+    },
+    'us.anthropic.claude-haiku-4-5-20251001-v1:0': {
+      bedrockModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      calls: 12,
+      inputTokens: 48000,
+      outputTokens: 6200,
+      cachedTokens: 0,
+      estimatedCostUsd: 0.08,
+    },
+  },
+  totalEstimatedCostUsd: 0.70,
+};
+
+export const SAMPLE_BRIEF_MARKDOWN = `## Executive Summary
+
+This Sitecore JSS starter project has significant gaps across security, CMS integration, and architecture. The critical finding is a potential hardcoded API key in middleware. The editing/preview system is non-functional, routes disable all caching via \`force-dynamic\`, and the hybrid Pages + App Router architecture signals an incomplete migration.
+
+**Recommended priority:** Fix the hardcoded key immediately, then consolidate to App Router, implement Layout Service integration, and add basic test coverage before any production deployment.
+
+## Stack Overview
+
+- **Framework:** Next.js 14 with Sitecore JSS 21.6.0
+- **Language:** TypeScript (strict mode — good)
+- **Router:** Hybrid Pages + App Router (needs consolidation)
+- **Styling:** CSS Modules
+- **Testing:** None
+
+## Key Risks
+
+1. **Hardcoded API key** — Middleware contains a redacted key marker that may indicate a live secret was committed
+2. **No preview/editing** — Content editors have no way to preview draft content
+3. **force-dynamic everywhere** — Disables ISR and static generation, making every page request hit the server
+`;

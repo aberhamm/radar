@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import type { HistoryItem } from '@/lib/agentSession';
-import { groupByRepo, type SingleRun, type MultiGoalGroup } from '@/lib/historyGrouping';
+import { groupByRepo } from '@/lib/historyGrouping';
 
 interface HistoryPanelProps {
   history: HistoryItem[];
@@ -232,8 +232,6 @@ export function HistoryPanel({
         )}
         <div className="flex flex-col gap-0.5">
           {repoGroups.map(repoGroup => {
-            const isSingleRunRepo = repoGroup.runs.length === 1 && repoGroup.runs[0].type === 'single';
-            const isSoleMultiGoal = repoGroup.runs.length === 1 && repoGroup.runs[0].type === 'multigoal';
             const repoExpanded = expandedRepos.has(repoGroup.repoName);
             const scoreDot = repoGroup.worstScore === 'red'
               ? 'bg-danger'
@@ -243,55 +241,7 @@ export function HistoryPanel({
                   ? 'bg-success'
                   : null;
 
-            if (isSingleRunRepo) {
-              const entry = repoGroup.runs[0] as SingleRun;
-              const isCompareHighlighted = compareHighlight?.includes(entry.item.id);
-              const badgeIndex = compareHighlight ? compareHighlight.indexOf(entry.item.id) : -1;
-              return (
-                <div key={entry.item.id} className="relative">
-                  {renderHistoryRow(entry.item)}
-                  {isCompareHighlighted && (
-                    <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-tint text-white text-[9px] font-bold flex items-center justify-center">
-                      {badgeIndex + 1}
-                    </span>
-                  )}
-                </div>
-              );
-            }
-
-            if (isSoleMultiGoal) {
-              const entry = repoGroup.runs[0] as MultiGoalGroup;
-              const isActive = activeRunId === entry.parentId;
-              return (
-                <div key={repoGroup.repoName}>
-                  <button
-                    onClick={() => {
-                      if (!compareMode) onSelectHistory(entry.parentId);
-                    }}
-                    className={`w-full text-left rounded-lg p-2 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
-                      isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-[12px] font-semibold truncate ${isActive ? 'text-tint' : 'text-label group-hover:text-label'}`}>
-                          {repoGroup.repoName}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-[10px] text-tertiary-label">
-                            {entry.children.length} goals
-                          </span>
-                          {scoreDot && (
-                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              );
-            }
+            const runCount = repoGroup.runs.length;
 
             return (
               <div key={repoGroup.repoName}>
@@ -313,7 +263,7 @@ export function HistoryPanel({
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[10px] text-tertiary-label">
-                          {repoGroup.runs.length} run{repoGroup.runs.length !== 1 ? 's' : ''}
+                          {runCount} run{runCount !== 1 ? 's' : ''}
                         </span>
                         {scoreDot && (
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
@@ -342,6 +292,11 @@ export function HistoryPanel({
                       }
 
                       const isActive = activeRunId === entry.parentId;
+                      const d = new Date(entry.item.startedAt);
+                      const time = d.toLocaleString(undefined, {
+                        month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      });
                       return (
                         <div key={entry.parentId}>
                           <button
@@ -355,10 +310,10 @@ export function HistoryPanel({
                           >
                             <div className="flex items-center gap-1.5">
                               <div className="flex-1 min-w-0">
-                                <div className={`text-[12px] truncate transition-colors ${isActive ? 'font-semibold text-tint' : 'font-medium text-label group-hover:text-label'}`}>
-                                  all
-                                </div>
-                                <div className="flex items-center gap-1.5 mt-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`text-[12px] truncate transition-colors ${isActive ? 'font-semibold text-tint' : 'font-medium text-label group-hover:text-label'}`}>
+                                    Full audit
+                                  </span>
                                   <span className="text-[10px] text-tertiary-label">
                                     {entry.children.length} goals
                                   </span>
@@ -368,6 +323,7 @@ export function HistoryPanel({
                                     }`} />
                                   )}
                                 </div>
+                                <div className="text-[10px] text-tertiary-label mt-0.5">{time}</div>
                               </div>
                             </div>
                           </button>

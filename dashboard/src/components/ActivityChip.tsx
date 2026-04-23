@@ -46,16 +46,22 @@ export function ActivityChipButton({
       type="button"
       data-component="ActivityChipButton"
       onClick={hasContent ? onToggle : undefined}
-      className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg text-left ${hasContent ? 'cursor-pointer' : 'cursor-default'}`}
+      className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-1 py-1 rounded-lg text-left ${hasContent ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
-        ...(active || activity.pending ? {
-          background: `color-mix(in srgb, ${accentColor} 8%, transparent)`,
-          color: accentColor,
-        } : {
-          background: expanded ? `color-mix(in srgb, ${accentColor} 6%, var(--color-elevated))` : 'var(--color-elevated)',
-          color: expanded ? 'var(--color-secondary-label)' : 'var(--color-secondary-label)',
-        }),
-        ...(!entered ? { animation: `chip-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) ${index * 50}ms both` } : {}),
+        ...(active || activity.pending
+          ? {
+              background: `color-mix(in srgb, ${accentColor} 8%, transparent)`,
+              color: accentColor,
+            }
+          : {
+              background: expanded
+                ? `color-mix(in srgb, ${accentColor} 6%, var(--color-elevated))`
+                : 'var(--color-elevated)',
+              color: expanded ? 'var(--color-secondary-label)' : 'var(--color-secondary-label)',
+            }),
+        ...(!entered
+          ? { animation: `chip-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) ${index * 50}ms both` }
+          : {}),
         transition: 'background 0.3s ease, color 0.3s ease',
       }}
     >
@@ -66,26 +72,51 @@ export function ActivityChipButton({
         />
       ) : (
         <svg
-          width="10" height="10" viewBox="0 0 12 12" fill="none"
+          width="10"
+          height="10"
+          viewBox="0 0 12 12"
+          fill="none"
           className="shrink-0"
-          style={justCompleted ? { animation: 'check-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both' } : undefined}
+          style={
+            justCompleted
+              ? { animation: 'check-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both' }
+              : undefined
+          }
         >
-          <path d="M2.5 6.5L5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-            style={justCompleted ? {
-              strokeDasharray: 12,
-              strokeDashoffset: 12,
-              animation: 'check-draw 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards',
-            } : undefined}
+          <path
+            d="M2.5 6.5L5 9l4.5-6"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={
+              justCompleted
+                ? {
+                    strokeDasharray: 12,
+                    strokeDashoffset: 12,
+                    animation: 'check-draw 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards',
+                  }
+                : undefined
+            }
           />
         </svg>
       )}
       {activity.label}
       {hasContent && (
         <svg
-          width="8" height="8" viewBox="0 0 8 8" fill="none"
+          width="8"
+          height="8"
+          viewBox="0 0 8 8"
+          fill="none"
           className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
         >
-          <path d="M2 3l2 2 2-2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M2 3l2 2 2-2"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       )}
     </button>
@@ -106,7 +137,7 @@ export function ActivityChipGroup({
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   const handleToggle = (index: number) => {
-    setExpandedIndex(prev => prev === index ? null : index);
+    setExpandedIndex((prev) => (prev === index ? null : index));
   };
 
   const expandedActivity = expandedIndex !== null ? activities[expandedIndex] : null;
@@ -149,7 +180,9 @@ export function ActivityChipGroup({
                 <span
                   key={fi}
                   className="text-[9px] font-mono text-quaternary-label bg-canvas px-1.5 py-0.5 rounded"
-                  style={{ animation: `chip-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) ${fi * 30}ms both` }}
+                  style={{
+                    animation: `chip-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) ${fi * 30}ms both`,
+                  }}
                 >
                   {file}
                 </span>

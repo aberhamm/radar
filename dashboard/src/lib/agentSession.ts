@@ -464,6 +464,28 @@ export function getRunCount(): number {
   return readIndex().length;
 }
 
+/** Look up a single run by ID from the disk index (bypasses in-memory session). */
+export function findRunById(id: string): RunRecord | null {
+  const entries = readIndex();
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return null;
+  return {
+    id: entry.id,
+    goal: entry.goal,
+    repoName: entry.repoName,
+    startedAt: new Date(entry.startedAt),
+    completedAt: entry.completedAt ? new Date(entry.completedAt) : undefined,
+    overallScore: entry.overallScore,
+    findingsCount: entry.findingsCount,
+    events: [],
+    repoPath: entry.repoPath,
+    repoSource: entry.repoSource,
+    repoUrl: entry.repoUrl,
+    parentRunId: entry.parentRunId,
+    _dirPath: runDirPath(entry.id),
+  };
+}
+
 /** Load the envelope (Tier 2) for a specific run from disk. */
 export function loadRunEnvelope(record: RunRecord): RunEnvelope | null {
   const dirPath = record._dirPath;

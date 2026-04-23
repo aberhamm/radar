@@ -4,12 +4,11 @@ import type { Scorecard } from '@/lib/agentSession';
 import { scoreColor } from '@/lib/utils';
 import type { Tab } from '@/lib/useUrlState';
 
-type ContextStatus = 'running' | 'budget_paused' | 'complete' | 'error' | 'replaying' | 'comparing';
+type ContextStatus = 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing';
 
 const TAB_LABELS: Record<Tab, string> = {
-  report: 'Report',
-  events: 'Events',
-  rules: 'Rules',
+  overview: 'Overview',
+  investigation: 'Investigation',
   cost: 'Cost',
 };
 
@@ -21,8 +20,6 @@ interface ContextBarProps {
   toolCalls?: number;
   budget?: number;
   onStop: () => void;
-  onViewReport?: () => void;
-  onViewReplay?: () => void;
   onBudgetDecision?: (extend: boolean) => void;
   compareRunNames?: [string, string];
   compareSummary?: string;
@@ -31,10 +28,9 @@ interface ContextBarProps {
   activeTab?: Tab;
 }
 
-export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onViewReport, onViewReplay, onBudgetDecision, compareRunNames, compareSummary, onExitCompare, activeTab }: ContextBarProps) {
+export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onBudgetDecision, compareRunNames, compareSummary, onExitCompare, activeTab }: ContextBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
-  const isReplaying = status === 'replaying';
   const isComparing = status === 'comparing';
 
   return (
@@ -132,24 +128,6 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
           className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(255_59_48/0.3)]"
         >
           Stop
-        </button>
-      )}
-
-      {isReplaying && onViewReport && (
-        <button
-          onClick={onViewReport}
-          className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
-        >
-          View Report
-        </button>
-      )}
-
-      {isComplete && onViewReplay && (
-        <button
-          onClick={onViewReplay}
-          className="bg-elevated text-secondary-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:text-label hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
-        >
-          View Run
         </button>
       )}
 

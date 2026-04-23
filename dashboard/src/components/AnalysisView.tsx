@@ -31,7 +31,16 @@ interface AnalysisViewProps {
 
 // ─── Analysis View ───────────────────────────────────────────────
 
-export function AnalysisView({ runData, isLive, liveState, viewMode = 'instant', onStartReplay, budgetPaused, budgetPausedData, onBudgetDecision }: AnalysisViewProps) {
+export function AnalysisView({
+  runData,
+  isLive,
+  liveState,
+  viewMode = 'instant',
+  onStartReplay,
+  budgetPaused,
+  budgetPausedData,
+  onBudgetDecision,
+}: AnalysisViewProps) {
   // Use real data when provided, fall back to sample data
   const DATA_TURNS = runData?.analysisTurns ?? SAMPLE_ANALYSIS_TURNS;
   const DATA_FINDINGS: Finding[] = runData?.findings ?? SAMPLE_FINDINGS;
@@ -46,18 +55,29 @@ export function AnalysisView({ runData, isLive, liveState, viewMode = 'instant',
 
   // Animation hook — always called (hook rules) but ignored in instant mode.
   // Uses fastMode when replaying to reveal whole turns at ~200ms intervals.
-  const animState = useAnimationSequence(DATA_TURNS, DATA_FINDINGS, DATA_BATCHES, { fastMode: true });
+  const animState = useAnimationSequence(DATA_TURNS, DATA_FINDINGS, DATA_BATCHES, {
+    fastMode: true,
+  });
 
   // Pick state source: live > instant > animation
   const {
-    phase, turns, typingText, activeTurnIndex, coveredTopics,
-    examinedFiles, findings, scoreVisible, progressPercent, pendingActions,
+    phase,
+    turns,
+    typingText,
+    activeTurnIndex,
+    coveredTopics,
+    examinedFiles,
+    findings,
+    scoreVisible,
+    progressPercent,
+    pendingActions,
     statusMessage,
-  } = isLive && liveState
-    ? liveState
-    : instantState
-      ? instantState
-      : { ...animState, statusMessage: '' };
+  } =
+    isLive && liveState
+      ? liveState
+      : instantState
+        ? instantState
+        : { ...animState, statusMessage: '' };
 
   // Findings for score panel: live findings grow over time, instant/replay uses full set
   const scorePanelFindings = isLive ? findings : DATA_FINDINGS;
@@ -67,6 +87,7 @@ export function AnalysisView({ runData, isLive, liveState, viewMode = 'instant',
   const [findingsCollapsed, setFindingsCollapsed] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
   const filesScrollRef = useRef<HTMLDivElement>(null);
+  const findingsScrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [verbose, setVerbose] = useState(true);
   const isAutoScrolling = useRef(false);
@@ -109,12 +130,27 @@ export function AnalysisView({ runData, isLive, liveState, viewMode = 'instant',
     }
   }, [examinedFiles, filesCollapsed]);
 
+  // Auto-expand and auto-scroll the findings list when new findings arrive
+  useEffect(() => {
+    if (findings.length > 0 && findingsCollapsed) {
+      setFindingsCollapsed(false);
+    }
+    if (findingsScrollRef.current && !findingsCollapsed) {
+      findingsScrollRef.current.scrollTo({
+        top: findingsScrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
+  }, [findings.length, findingsCollapsed]);
+
   // Auto-scroll the stream (only when autoScroll is enabled)
   useEffect(() => {
     if (streamRef.current && autoScroll) {
       isAutoScrolling.current = true;
       streamRef.current.scrollTo({ top: streamRef.current.scrollHeight, behavior: 'smooth' });
-      setTimeout(() => { isAutoScrolling.current = false; }, 150);
+      setTimeout(() => {
+        isAutoScrolling.current = false;
+      }, 150);
     }
   }, [turns, typingText, activeTurnIndex, autoScroll]);
 
@@ -126,6 +162,19 @@ export function AnalysisView({ runData, isLive, liveState, viewMode = 'instant',
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
     setAutoScroll(atBottom);
   }, []);
+
+  // Auto-start animation when entering replay mode
+  const replayStarted = useRef(false);
+  const animRun = animState.run;
+  useEffect(() => {
+    if (!isLive && viewMode === 'replay' && !replayStarted.current) {
+      replayStarted.current = true;
+      animRun();
+    }
+    if (viewMode !== 'replay') {
+      replayStarted.current = false;
+    }
+  }, [isLive, viewMode, animRun]);
 
   // Replay controls (no-ops in live mode)
   const handleRun = useCallback(() => {
@@ -139,616 +188,859 @@ export function AnalysisView({ runData, isLive, liveState, viewMode = 'instant',
   }, [isLive, animState]);
 
   const isWriting = phase === 'recording' || phase === 'assembling';
-  const accentColor = isWriting || phase === 'done' ? 'var(--color-success)' : phase === 'switching' ? 'var(--color-warning)' : 'var(--color-tint)';
+  const accentColor =
+    isWriting || phase === 'done'
+      ? 'var(--color-success)'
+      : phase === 'switching'
+        ? 'var(--color-warning)'
+        : 'var(--color-tint)';
 
   return (
-      <div data-component="AnalysisView" className="flex flex-1 overflow-hidden relative">
-        {/* Left: phase bar + scrollable stream */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Phase progress rail */}
-          <div data-component="PhaseRail" className="h-10 px-4 flex items-center gap-4 border-b border-separator bg-surface-translucent backdrop-blur-sm shrink-0">
-            {/* Live indicator / Replay button / Play controls */}
-            {isLive ? (
-              <div className="flex items-center gap-2 shrink-0">
+    <div data-component="AnalysisView" className="flex flex-1 overflow-hidden relative">
+      {/* Left: phase bar + scrollable stream */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Phase progress rail */}
+        <div
+          data-component="PhaseRail"
+          className="h-10 px-4 flex items-center gap-4 border-b border-separator bg-surface-translucent backdrop-blur-sm shrink-0"
+        >
+          {/* Live indicator / Replay button / Play controls */}
+          {isLive ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <div
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{
+                  background: budgetPaused
+                    ? 'var(--color-warning)'
+                    : phase === 'done'
+                      ? 'var(--color-success)'
+                      : 'var(--color-tint)',
+                  animation: phase !== 'done' ? 'pulse-dot 1.5s ease-in-out infinite' : undefined,
+                }}
+              />
+              <span className="text-[10px] font-bold tracking-wider text-secondary-label">
+                {budgetPaused ? 'PAUSED' : phase === 'done' ? 'DONE' : 'LIVE'}
+              </span>
+            </div>
+          ) : isInstant ? (
+            <button
+              type="button"
+              onClick={onStartReplay}
+              className="px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 bg-elevated text-secondary-label hover:text-label"
+            >
+              Replay
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={phase === 'idle' || phase === 'done' ? handleRun : handleReset}
+              className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 ${
+                phase === 'idle' || phase === 'done'
+                  ? 'bg-tint text-white hover:brightness-110 active:scale-95'
+                  : 'bg-elevated text-tertiary-label hover:text-label'
+              }`}
+            >
+              {phase === 'idle' ? 'Play' : phase === 'done' ? 'Replay' : 'Reset'}
+            </button>
+          )}
+          {/* Status dot + label */}
+          <div className="flex items-center gap-2 shrink-0">
+            {phase !== 'idle' && !isLive && !isInstant && (
+              <div
+                className="w-1.5 h-1.5 rounded-full transition-all duration-500"
+                style={{
+                  background: accentColor,
+                  animation: phase !== 'done' ? 'pulse-dot 1.5s ease-in-out infinite' : undefined,
+                }}
+              />
+            )}
+            <span className="text-[11px] font-semibold text-label">
+              {statusMessage
+                ? statusMessage
+                : phase === 'idle'
+                  ? isLive
+                    ? 'Starting'
+                    : 'Ready'
+                  : phase === 'analyzing'
+                    ? 'Analyzing'
+                    : phase === 'switching'
+                      ? 'Switching'
+                      : phase === 'recording'
+                        ? 'Recording'
+                        : phase === 'assembling'
+                          ? 'Assembling'
+                          : 'Complete'}
+            </span>
+            {isLive && elapsed > 0 && (
+              <span className="text-[10px] font-mono text-tertiary-label">
+                {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+              </span>
+            )}
+          </div>
+
+          {/* Unified progress bar */}
+          {(() => {
+            const pct = progressPercent;
+            const fillColor =
+              phase === 'switching'
+                ? 'var(--color-warning)'
+                : phase === 'recording' || phase === 'assembling' || phase === 'done'
+                  ? 'var(--color-success)'
+                  : 'var(--color-tint)';
+            const isActive = phase !== 'done' && phase !== 'idle';
+            return (
+              <div
+                className="flex-1 h-[4px] rounded-full overflow-hidden relative"
+                style={{
+                  background: 'var(--color-elevated)',
+                  opacity: phase === 'idle' && !isLive ? 0 : 1,
+                  transition: 'opacity 0.4s ease',
+                }}
+              >
                 <div
-                  className="w-2 h-2 rounded-full shrink-0"
+                  className="absolute inset-y-0 left-0 rounded-full"
                   style={{
-                    background: budgetPaused ? 'var(--color-warning)' : phase === 'done' ? 'var(--color-success)' : 'var(--color-tint)',
-                    animation: phase !== 'done' ? 'pulse-dot 1.5s ease-in-out infinite' : undefined,
+                    width: `${pct}%`,
+                    background: `linear-gradient(90deg, ${fillColor}, color-mix(in srgb, ${fillColor} 85%, white))`,
+                    transition: 'width 1.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.6s ease',
                   }}
                 />
-                <span className="text-[10px] font-bold tracking-wider text-secondary-label">
-                  {budgetPaused ? 'PAUSED' : phase === 'done' ? 'DONE' : 'LIVE'}
-                </span>
-              </div>
-            ) : isInstant ? (
-              <button
-                type="button"
-                onClick={onStartReplay}
-                className="px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 bg-elevated text-secondary-label hover:text-label"
-              >
-                Replay
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={phase === 'idle' || phase === 'done' ? handleRun : handleReset}
-                className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 ${
-                  phase === 'idle' || phase === 'done'
-                    ? 'bg-tint text-white hover:brightness-110 active:scale-95'
-                    : 'bg-elevated text-tertiary-label hover:text-label'
-                }`}
-              >
-                {phase === 'idle' ? 'Play' : phase === 'done' ? 'Replay' : 'Reset'}
-              </button>
-            )}
-              {/* Status dot + label */}
-              <div className="flex items-center gap-2 shrink-0">
-                {phase !== 'idle' && !isLive && !isInstant && (
+                {isActive && (
                   <div
-                    className="w-1.5 h-1.5 rounded-full transition-all duration-500"
+                    className="absolute inset-y-0 left-0 rounded-full"
                     style={{
-                      background: accentColor,
-                      animation: phase !== 'done' ? 'pulse-dot 1.5s ease-in-out infinite' : undefined,
+                      width: `${pct}%`,
+                      background:
+                        'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%)',
+                      backgroundSize: '200% 100%',
+                      animation: 'progress-shimmer 2s ease-in-out infinite',
+                      transition: 'width 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
                     }}
                   />
                 )}
-                <span className="text-[11px] font-semibold text-label">
-                  {statusMessage
-                    ? statusMessage
-                    : phase === 'idle' ? (isLive ? 'Starting' : 'Ready') : phase === 'analyzing' ? 'Analyzing' : phase === 'switching' ? 'Switching' : phase === 'recording' ? 'Recording' : phase === 'assembling' ? 'Assembling' : 'Complete'}
-                </span>
-                {isLive && elapsed > 0 && (
-                  <span className="text-[10px] font-mono text-tertiary-label">
-                    {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
-                  </span>
+                {isActive && (
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+                    style={{
+                      left: `${pct}%`,
+                      transform: 'translate(-50%, -50%)',
+                      background: fillColor,
+                      opacity: 0.5,
+                      filter: 'blur(4px)',
+                      animation: 'progress-glow 1.8s ease-in-out infinite',
+                      transition: 'left 1.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.6s ease',
+                    }}
+                  />
                 )}
               </div>
+            );
+          })()}
 
-              {/* Unified progress bar */}
-              {(() => {
-                const pct = progressPercent;
-                const fillColor = phase === 'switching'
-                  ? 'var(--color-warning)'
-                  : phase === 'recording' || phase === 'assembling' || phase === 'done'
-                    ? 'var(--color-success)'
-                    : 'var(--color-tint)';
-                const isActive = phase !== 'done' && phase !== 'idle';
+          {/* Verbose toggle */}
+          <button
+            type="button"
+            onClick={() => setVerbose((v) => !v)}
+            className="ml-auto text-[10px] font-medium text-tertiary-label hover:text-label transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0">
+              {verbose ? (
+                <>
+                  <path
+                    d="M8 3C4.5 3 1.5 8 1.5 8s3 5 6.5 5 6.5-5 6.5-5-3-5-6.5-5z"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
+                </>
+              ) : (
+                <>
+                  <path
+                    d="M8 3C4.5 3 1.5 8 1.5 8s3 5 6.5 5 6.5-5 6.5-5-3-5-6.5-5z"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M3 13L13 3"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                  />
+                </>
+              )}
+            </svg>
+            {verbose ? 'Verbose' : 'Compact'}
+          </button>
+
+          {/* Panel toggle */}
+          <button
+            type="button"
+            onClick={() => setRightPanelOpen((p) => !p)}
+            className="text-[10px] font-medium text-tertiary-label hover:text-label transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+            aria-label={rightPanelOpen ? 'Hide findings panel' : 'Show findings panel'}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0">
+              <rect
+                x="1"
+                y="2"
+                width="14"
+                height="12"
+                rx="2"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+              <line x1="11" y1="2" x2="11" y2="14" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+            {rightPanelOpen ? 'Hide' : 'Panel'}
+          </button>
+        </div>
+        <div className="flex-1 relative overflow-hidden">
+          <div
+            ref={streamRef}
+            onScroll={handleStreamScroll}
+            className="absolute inset-0 overflow-y-auto p-4 space-y-1"
+          >
+            {/* Idle / loading state — only for replay mode, not instant view */}
+            {phase === 'idle' && !isLive && !isInstant && (
+              <div className="text-xs text-quaternary-label text-center pt-32">
+                Press Play to watch the full agent run
+              </div>
+            )}
+
+            {/* Live: waiting for first event */}
+            {isLive && turns.length === 0 && !typingText && (
+              <div className="flex flex-col items-center justify-center gap-3 pt-24 text-center animate-slide-up">
+                <StaggeredSpinner color={accentColor} size={22} />
+                <div>
+                  <div className="text-sm font-medium text-secondary-label">
+                    {pendingActions.length > 0
+                      ? pendingActions.length === 1
+                        ? pendingActions[0].replace(/_/g, ' ')
+                        : `Running ${pendingActions.length} tools in parallel`
+                      : 'Agent is starting up'}
+                  </div>
+                  <div className="text-xs text-tertiary-label mt-0.5">
+                    Events will stream in real-time
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Committed turns */}
+            <div data-component="ReasoningStream" className="relative">
+              {/* Vertical connector rail — count typing indicator as an item so the rail
+                      is already visible before a turn commits (prevents rightward shift) */}
+              {turns.length +
+                (typingText || (isLive && phase !== 'done' && phase !== 'idle') ? 1 : 0) >
+                1 && (
+                <div
+                  className="absolute left-[9px] top-4 bottom-4 w-px"
+                  style={{
+                    background: `linear-gradient(to bottom, var(--color-separator), color-mix(in srgb, ${accentColor} 30%, var(--color-separator)), var(--color-separator))`,
+                  }}
+                />
+              )}
+
+              {turns.map((turn, i) => {
+                if (turn.isSwitch) {
+                  return (
+                    <div
+                      data-component="ModelSwitchMarker"
+                      key={`switch-${i}`}
+                      className="flex items-center gap-2.5 py-2 my-1 relative z-[1]"
+                      style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                    >
+                      <div
+                        className="w-[20px] h-[20px] rounded-full bg-[rgba(255,159,10,0.1)] flex items-center justify-center shrink-0 relative z-[1]"
+                        style={{ boxShadow: '0 0 0 1px rgba(255,159,10,0.3)' }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                          <path
+                            d="M3 8h10M10 5l3 3-3 3M6 11L3 8l3-3"
+                            stroke="var(--color-warning)"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-warning">Analysis Complete</div>
+                        <div className="text-[10px] text-tertiary-label">
+                          Switching to fast model for writing
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (turn.isPassBoundary) {
+                  return (
+                    <div
+                      data-component="PassBoundaryMarker"
+                      key={`pass-${i}`}
+                      className="flex items-center gap-2.5 py-2 my-1 relative z-[1]"
+                      style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                    >
+                      <div
+                        className="w-[20px] h-[20px] rounded-full bg-[rgba(0,113,227,0.1)] flex items-center justify-center shrink-0 relative z-[1]"
+                        style={{ boxShadow: '0 0 0 1px rgba(0,113,227,0.3)' }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                          <path
+                            d="M2 8h12M8 2v12"
+                            stroke="var(--color-tint)"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-tint">
+                          {turn.passName ?? 'Next Pass'}
+                        </div>
+                        <div className="text-[10px] text-tertiary-label">
+                          Starting specialist investigation
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const isRecent = isInstant || i >= turns.length - 2;
+                const isActive = activeTurnIndex === i;
+                const isWrite = turn.phase === 'write';
+                const hasActivities = turn.activities.length > 0;
+
+                // Derive turn status icon
+                let iconColor = 'var(--color-tertiary-label)';
+                let icon: React.ReactNode;
+
+                if (isActive) {
+                  // Active: pulsing dot
+                  iconColor = accentColor;
+                  icon = (
+                    <div
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{
+                        background: accentColor,
+                        animation: 'pulse-dot 1.2s ease-in-out infinite',
+                      }}
+                    />
+                  );
+                } else if (isWrite) {
+                  // Write phase: pen icon
+                  iconColor = 'var(--color-success)';
+                  icon = (
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M8.5 1.5l2 2L4 10H2v-2l6.5-6.5z"
+                        stroke="var(--color-success)"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  );
+                } else if (hasActivities) {
+                  // Investigative: magnifying glass
+                  iconColor = 'var(--color-tertiary-label)';
+                  icon = (
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.2" />
+                      <path
+                        d="M7.5 7.5L10 10"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  );
+                } else {
+                  // Complete: checkmark
+                  icon = (
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M2.5 6.5L5 9l4.5-6"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  );
+                }
+
                 return (
                   <div
-                    className="flex-1 h-[4px] rounded-full overflow-hidden relative"
+                    data-component="ReasoningTurn"
+                    key={i}
+                    className={`flex gap-2.5 py-2 transition-opacity duration-300 ${isRecent ? 'opacity-100' : 'opacity-40 hover:opacity-100 focus-within:opacity-100'}`}
+                  >
+                    {/* Status icon waypoint */}
+                    <div
+                      data-component="TurnIcon"
+                      className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1] transition-all duration-300"
+                      style={{
+                        background: isActive
+                          ? `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`
+                          : 'var(--color-surface)',
+                        color: iconColor,
+                        boxShadow: isActive
+                          ? `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`
+                          : '0 0 0 1px var(--color-separator)',
+                      }}
+                    >
+                      {icon}
+                    </div>
+
+                    {/* Turn content */}
+                    <div data-component="TurnContent" className="flex-1 min-w-0">
+                      {turn.reasoning && (
+                        <div
+                          className={`md-content text-[13px] leading-relaxed ${
+                            isWrite ? 'text-success' : 'text-secondary-label'
+                          }`}
+                        >
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {verbose
+                              ? turn.reasoning
+                              : turn.reasoning.length > 150
+                                ? turn.reasoning.slice(0, 150) + '\u2026'
+                                : turn.reasoning}
+                          </ReactMarkdown>
+                        </div>
+                      )}
+
+                      {hasActivities && (
+                        <ActivityChipGroup
+                          activities={turn.activities}
+                          active={isActive}
+                          accentColor={accentColor}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Currently typing — inside ReasoningStream so it aligns with the turn icons and connector rail */}
+              {typingText && (
+                <div data-component="TypingIndicator" className="flex gap-2.5 py-2">
+                  {/* Active pulsing dot — matches TurnIcon layout */}
+                  <div
+                    className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
                     style={{
-                      background: 'var(--color-elevated)',
-                      opacity: phase === 'idle' && !isLive ? 0 : 1,
-                      transition: 'opacity 0.4s ease',
+                      background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
+                      boxShadow: `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`,
                     }}
                   >
                     <div
-                      className="absolute inset-y-0 left-0 rounded-full"
+                      className="w-2.5 h-2.5 rounded-full"
                       style={{
-                        width: `${pct}%`,
-                        background: `linear-gradient(90deg, ${fillColor}, color-mix(in srgb, ${fillColor} 85%, white))`,
-                        transition: 'width 1.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.6s ease',
+                        background: accentColor,
+                        animation: 'pulse-dot 1.2s ease-in-out infinite',
                       }}
                     />
-                    {isActive && (
-                      <div
-                        className="absolute inset-y-0 left-0 rounded-full"
-                        style={{
-                          width: `${pct}%`,
-                          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%)',
-                          backgroundSize: '200% 100%',
-                          animation: 'progress-shimmer 2s ease-in-out infinite',
-                          transition: 'width 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                        }}
-                      />
-                    )}
-                    {isActive && (
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
-                        style={{
-                          left: `${pct}%`,
-                          transform: 'translate(-50%, -50%)',
-                          background: fillColor,
-                          opacity: 0.5,
-                          filter: 'blur(4px)',
-                          animation: 'progress-glow 1.8s ease-in-out infinite',
-                          transition: 'left 1.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.6s ease',
-                        }}
-                      />
-                    )}
                   </div>
-                );
-              })()}
-
-              {/* Verbose toggle */}
-              <button
-                type="button"
-                onClick={() => setVerbose(v => !v)}
-                className="ml-auto text-[10px] font-medium text-tertiary-label hover:text-label transition-colors cursor-pointer shrink-0 flex items-center gap-1"
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0">
-                  {verbose ? (
-                    <>
-                      <path d="M8 3C4.5 3 1.5 8 1.5 8s3 5 6.5 5 6.5-5 6.5-5-3-5-6.5-5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
-                    </>
-                  ) : (
-                    <>
-                      <path d="M8 3C4.5 3 1.5 8 1.5 8s3 5 6.5 5 6.5-5 6.5-5-3-5-6.5-5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M3 13L13 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                    </>
-                  )}
-                </svg>
-                {verbose ? 'Verbose' : 'Compact'}
-              </button>
-
-              {/* Panel toggle */}
-              <button
-                type="button"
-                onClick={() => setRightPanelOpen(p => !p)}
-                className="text-[10px] font-medium text-tertiary-label hover:text-label transition-colors cursor-pointer shrink-0 flex items-center gap-1"
-                aria-label={rightPanelOpen ? 'Hide findings panel' : 'Show findings panel'}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0">
-                  <rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.3" />
-                  <line x1="11" y1="2" x2="11" y2="14" stroke="currentColor" strokeWidth="1.3" />
-                </svg>
-                {rightPanelOpen ? 'Hide' : 'Panel'}
-              </button>
-            </div>
-            <div className="flex-1 relative overflow-hidden">
-              <div
-                ref={streamRef}
-                onScroll={handleStreamScroll}
-                className="absolute inset-0 overflow-y-auto p-4 space-y-1"
-              >
-                {/* Idle / loading state — only for replay mode, not instant view */}
-                {phase === 'idle' && !isLive && !isInstant && (
-                  <div className="text-xs text-quaternary-label text-center pt-32">
-                    Press Play to watch the full agent run
-                  </div>
-                )}
-
-                {/* Live: waiting for first event */}
-                {isLive && turns.length === 0 && !typingText && (
-                  <div className="flex flex-col items-center justify-center gap-3 pt-24 text-center animate-slide-up">
-                    <StaggeredSpinner color={accentColor} size={22} />
-                    <div>
-                      <div className="text-sm font-medium text-secondary-label">
-                        {pendingActions.length > 0
-                          ? pendingActions.length === 1
-                            ? pendingActions[0].replace(/_/g, ' ')
-                            : `Running ${pendingActions.length} tools in parallel`
-                          : 'Agent is starting up'}
-                      </div>
-                      <div className="text-xs text-tertiary-label mt-0.5">Events will stream in real-time</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Committed turns */}
-                <div data-component="ReasoningStream" className="relative">
-                  {/* Vertical connector rail — count typing indicator as an item so the rail
-                      is already visible before a turn commits (prevents rightward shift) */}
-                  {(turns.length + (typingText || (isLive && phase !== 'done' && phase !== 'idle') ? 1 : 0)) > 1 && (
+                  {/* Text content — matches TurnContent layout */}
+                  <div className="flex-1 min-w-0">
                     <div
-                      className="absolute left-[9px] top-4 bottom-4 w-px"
-                      style={{
-                        background: `linear-gradient(to bottom, var(--color-separator), color-mix(in srgb, ${accentColor} 30%, var(--color-separator)), var(--color-separator))`,
-                      }}
-                    />
-                  )}
-
-                  {turns.map((turn, i) => {
-                    if (turn.isSwitch) {
-                      return (
-                        <div
-                          data-component="ModelSwitchMarker"
-                          key={`switch-${i}`}
-                          className="flex items-center gap-2.5 py-2 my-1 relative z-[1]"
-                          style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
-                        >
-                          <div className="w-[20px] h-[20px] rounded-full bg-[rgba(255,159,10,0.1)] flex items-center justify-center shrink-0 relative z-[1]" style={{ boxShadow: '0 0 0 1px rgba(255,159,10,0.3)' }}>
-                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
-                              <path d="M3 8h10M10 5l3 3-3 3M6 11L3 8l3-3" stroke="var(--color-warning)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold text-warning">Analysis Complete</div>
-                            <div className="text-[10px] text-tertiary-label">Switching to fast model for writing</div>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (turn.isPassBoundary) {
-                      return (
-                        <div
-                          data-component="PassBoundaryMarker"
-                          key={`pass-${i}`}
-                          className="flex items-center gap-2.5 py-2 my-1 relative z-[1]"
-                          style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
-                        >
-                          <div className="w-[20px] h-[20px] rounded-full bg-[rgba(0,113,227,0.1)] flex items-center justify-center shrink-0 relative z-[1]" style={{ boxShadow: '0 0 0 1px rgba(0,113,227,0.3)' }}>
-                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
-                              <path d="M2 8h12M8 2v12" stroke="var(--color-tint)" strokeWidth="1.5" strokeLinecap="round" />
-                            </svg>
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold text-tint">{turn.passName ?? 'Next Pass'}</div>
-                            <div className="text-[10px] text-tertiary-label">Starting specialist investigation</div>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    const isRecent = isInstant || i >= turns.length - 2;
-                    const isActive = activeTurnIndex === i;
-                    const isWrite = turn.phase === 'write';
-                    const hasActivities = turn.activities.length > 0;
-
-                    // Derive turn status icon
-                    let iconColor = 'var(--color-tertiary-label)';
-                    let icon: React.ReactNode;
-
-                    if (isActive) {
-                      // Active: pulsing dot
-                      iconColor = accentColor;
-                      icon = (
-                        <div
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{ background: accentColor, animation: 'pulse-dot 1.2s ease-in-out infinite' }}
-                        />
-                      );
-                    } else if (isWrite) {
-                      // Write phase: pen icon
-                      iconColor = 'var(--color-success)';
-                      icon = (
-                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                          <path d="M8.5 1.5l2 2L4 10H2v-2l6.5-6.5z" stroke="var(--color-success)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      );
-                    } else if (hasActivities) {
-                      // Investigative: magnifying glass
-                      iconColor = 'var(--color-tertiary-label)';
-                      icon = (
-                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                          <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.2" />
-                          <path d="M7.5 7.5L10 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                        </svg>
-                      );
-                    } else {
-                      // Complete: checkmark
-                      icon = (
-                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                          <path d="M2.5 6.5L5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      );
-                    }
-
-                    return (
-                      <div
-                        data-component="ReasoningTurn"
-                        key={i}
-                        className={`flex gap-2.5 py-2 transition-opacity duration-300 ${isRecent ? 'opacity-100' : 'opacity-40 hover:opacity-100 focus-within:opacity-100'}`}
-                      >
-                        {/* Status icon waypoint */}
-                        <div
-                          data-component="TurnIcon"
-                          className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1] transition-all duration-300"
-                          style={{
-                            background: isActive
-                              ? `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`
-                              : 'var(--color-surface)',
-                            color: iconColor,
-                            boxShadow: isActive
-                              ? `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`
-                              : '0 0 0 1px var(--color-separator)',
-                          }}
-                        >
-                          {icon}
-                        </div>
-
-                        {/* Turn content */}
-                        <div data-component="TurnContent" className="flex-1 min-w-0">
-                          {turn.reasoning && (
-                            <div className={`md-content text-[13px] leading-relaxed ${
-                              isWrite ? 'text-success' : 'text-secondary-label'
-                            }`}>
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {verbose ? turn.reasoning : (turn.reasoning.length > 150 ? turn.reasoning.slice(0, 150) + '\u2026' : turn.reasoning)}
-                              </ReactMarkdown>
-                            </div>
-                          )}
-
-                          {hasActivities && (
-                            <ActivityChipGroup activities={turn.activities} active={isActive} accentColor={accentColor} />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Currently typing — inside ReasoningStream so it aligns with the turn icons and connector rail */}
-                  {typingText && (
-                  <div data-component="TypingIndicator" className="flex gap-2.5 py-2">
-                    {/* Active pulsing dot — matches TurnIcon layout */}
-                    <div
-                      className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
-                      style={{
-                        background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
-                        boxShadow: `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`,
-                      }}
+                      className={`md-content text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}
                     >
-                      <div
-                        className="w-2.5 h-2.5 rounded-full"
-                        style={{ background: accentColor, animation: 'pulse-dot 1.2s ease-in-out infinite' }}
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{typingText}</ReactMarkdown>
+                      <span
+                        className="inline-block w-[1.5px] h-[12px] ml-0.5 align-text-bottom rounded-full"
+                        style={{
+                          background: accentColor,
+                          animation: 'pulse-dot 0.8s step-end infinite',
+                        }}
                       />
                     </div>
-                    {/* Text content — matches TurnContent layout */}
-                    <div className="flex-1 min-w-0">
-                      <div className={`md-content text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{typingText}</ReactMarkdown>
-                        <span
-                          className="inline-block w-[2px] h-[14px] ml-0.5 align-text-bottom rounded-full"
-                          style={{ background: accentColor, animation: 'pulse-dot 0.8s step-end infinite' }}
-                        />
-                      </div>
-                    </div>
                   </div>
-                )}
-                  {/* Thinking indicator — on the rail with matching turn layout (live mode only) */}
-                  {isLive && !typingText && turns.length > 0 && phase !== 'done' && (
-                    <div
-                      data-component="ThinkingIndicator"
-                      className="flex gap-2.5 py-2"
-                      style={{ animation: 'fadeIn 0.4s ease 0.6s both' }}
-                    >
-                      {/* Icon waypoint — bouncing dots inside the same 20px circle */}
-                      <div
-                        className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
-                        style={{
-                          background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
-                          boxShadow: `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`,
-                        }}
-                      >
-                        <div className="flex items-center gap-[3px]">
-                          {[0, 1, 2].map(j => (
-                            <div
+                </div>
+              )}
+              {/* Thinking / recording indicator — on the rail with matching turn layout (live mode only) */}
+              {isLive && !typingText && turns.length > 0 && phase !== 'done' && (
+                <div
+                  data-component="ThinkingIndicator"
+                  className="flex gap-2.5 py-2"
+                  style={{ animation: 'fadeIn 0.4s ease 0.6s both' }}
+                >
+                  {/* Icon waypoint */}
+                  <div
+                    className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
+                    style={{
+                      background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
+                      boxShadow: `0 0 0 2px color-mix(in srgb, ${accentColor} 20%, transparent)`,
+                    }}
+                  >
+                    {phase === 'recording' ? (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <circle
+                          cx="5"
+                          cy="5"
+                          r="3"
+                          fill="var(--color-success)"
+                          style={{ animation: 'pulse-dot 1.5s ease-in-out infinite' }}
+                        />
+                      </svg>
+                    ) : (
+                      <div className="flex items-center gap-[3px]">
+                        {[0, 1, 2].map((j) => (
+                          <div
+                            key={j}
+                            className="w-[3px] h-[3px] rounded-full"
+                            style={{
+                              background: accentColor,
+                              animation: `pulse-dot 1.2s ease-in-out ${j * 0.2}s infinite`,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Label */}
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    {phase === 'recording' ? (
+                      <>
+                        <span className="text-[12px] font-semibold text-success">
+                          Recording findings
+                        </span>
+                        <span className="text-[11px] font-mono text-tertiary-label">
+                          {findings.length} so far
+                        </span>
+                        <span className="flex gap-[3px]">
+                          {[0, 1, 2].map((j) => (
+                            <span
                               key={j}
-                              className="w-[3px] h-[3px] rounded-full"
+                              className="block w-[3px] h-[3px] rounded-full bg-success"
                               style={{
-                                background: accentColor,
                                 animation: `pulse-dot 1.2s ease-in-out ${j * 0.2}s infinite`,
                               }}
                             />
                           ))}
-                        </div>
-                      </div>
-                      {/* Pending action label */}
-                      <div className="flex-1 min-w-0 flex items-center">
-                        {pendingActions.length > 0 && (
-                          <span className="text-[11px] text-tertiary-label" style={{ animation: 'fadeIn 0.2s ease both' }}>
-                            {pendingActions.length === 1
-                              ? pendingActions[0].replace(/_/g, ' ')
-                              : `${pendingActions.length} tools in parallel`}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                        </span>
+                      </>
+                    ) : pendingActions.length > 0 ? (
+                      <span
+                        className="text-[11px] text-tertiary-label"
+                        style={{ animation: 'fadeIn 0.2s ease both' }}
+                      >
+                        {pendingActions.length === 1
+                          ? pendingActions[0].replace(/_/g, ' ')
+                          : `${pendingActions.length} tools in parallel`}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
+          </div>
 
-              {/* Resume autoscroll button */}
-              {!autoScroll && phase !== 'idle' && phase !== 'done' && (
-                <button
-                  type="button"
-                  onClick={() => setAutoScroll(true)}
-                  className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-separator shadow-card text-[10px] font-medium text-secondary-label cursor-pointer hover:bg-elevated transition-all"
-                  style={{ animation: 'fadeIn 0.2s ease both' }}
+          {/* Resume autoscroll button */}
+          {!autoScroll && phase !== 'idle' && phase !== 'done' && (
+            <button
+              type="button"
+              onClick={() => setAutoScroll(true)}
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-separator shadow-card text-[10px] font-medium text-secondary-label cursor-pointer hover:bg-elevated transition-all"
+              style={{ animation: 'fadeIn 0.2s ease both' }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path
+                  d="M5 2v6M3 6l2 2 2-2"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Resume
+            </button>
+          )}
+        </div>
+
+        {/* Bottom: topic coverage */}
+        <div
+          data-component="TopicCoverage"
+          className="border-t border-separator bg-surface-translucent shrink-0"
+        >
+          <div className="px-4 pt-2 pb-1 flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
+              Topics
+            </div>
+            {coveredTopics.size > 0 && (
+              <span className="text-[10px] font-mono text-quaternary-label">
+                {coveredTopics.size}/{CATEGORIES.length}
+              </span>
+            )}
+          </div>
+          <div className="px-4 pb-2 flex flex-wrap gap-1">
+            {CATEGORIES.map((cat) => {
+              const isTouched = coveredTopics.has(cat.id);
+              const hasFindings = findings.some((f) => f.category === cat.id);
+              // 3 levels: not started → touched (tool calls) → confirmed (findings)
+              const level = hasFindings ? 2 : isTouched ? 1 : 0;
+
+              return (
+                <span
+                  key={cat.id}
+                  className="relative text-[9px] font-medium px-2 py-0.5 rounded-md transition-all duration-300 overflow-hidden"
+                  style={{
+                    color:
+                      level === 2
+                        ? 'var(--color-tint)'
+                        : level === 1
+                          ? 'var(--color-secondary-label)'
+                          : 'var(--color-quaternary-label)',
+                    background: level === 0 ? 'transparent' : undefined,
+                  }}
                 >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <path d="M5 2v6M3 6l2 2 2-2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Fill bar background */}
+                  {level > 0 && (
+                    <span
+                      className="absolute inset-0 rounded-md transition-all duration-500"
+                      style={{
+                        background: level === 2 ? 'rgba(0,113,227,0.08)' : 'rgba(0,113,227,0.03)',
+                        width: level === 2 ? '100%' : '50%',
+                      }}
+                    />
+                  )}
+                  <span className="relative">
+                    {level === 2 && (
+                      <svg
+                        width="8"
+                        height="8"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        className="inline mr-0.5 -mt-px"
+                      >
+                        <path
+                          d="M2.5 6.5L5 9l4.5-6"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                    {level === 1 && (
+                      <svg
+                        width="8"
+                        height="8"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        className="inline mr-0.5 -mt-px"
+                      >
+                        <circle cx="6" cy="6" r="2" fill="currentColor" opacity="0.4" />
+                      </svg>
+                    )}
+                    {cat.label}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Right sidebar: files examined + findings */}
+      <div
+        data-component="RightPanel"
+        className={`border-l border-separator bg-canvas flex flex-col shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${rightPanelOpen ? 'w-[260px]' : 'w-0 border-l-0'}`}
+      >
+        <div className="w-[260px] flex flex-col h-full">
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            {/* Files examined section */}
+            <div data-component="FilesExamined" className="shrink-0">
+              <button
+                type="button"
+                onClick={() => setFilesCollapsed((p) => !p)}
+                className="w-full h-10 px-3 flex items-center justify-between cursor-pointer hover:bg-elevated/50 transition-colors border-b border-separator bg-surface"
+              >
+                <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
+                  Files Examined
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {examinedFiles.length > 0 && (
+                    <span className="text-[10px] font-mono text-quaternary-label">
+                      {examinedFiles.length}
+                    </span>
+                  )}
+                  <svg
+                    width="8"
+                    height="8"
+                    viewBox="0 0 8 8"
+                    fill="none"
+                    className={`text-quaternary-label transition-transform duration-200 ${filesCollapsed ? '-rotate-90' : ''}`}
+                  >
+                    <path
+                      d="M2 3l2 2 2-2"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
-                  Resume
-                </button>
+                </div>
+              </button>
+              {!filesCollapsed && (
+                <div
+                  ref={filesScrollRef}
+                  className="px-2 py-2 h-[200px] overflow-y-auto"
+                  style={{ animation: 'expand-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                >
+                  <FileTree files={examinedFiles} />
+                </div>
               )}
             </div>
 
-            {/* Bottom: topic coverage */}
-            <div data-component="TopicCoverage" className="border-t border-separator bg-surface-translucent shrink-0">
-              <div className="px-4 pt-2 pb-1 flex items-center justify-between">
-                <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">Topics</div>
-                {coveredTopics.size > 0 && (
-                  <span className="text-[10px] font-mono text-quaternary-label">{coveredTopics.size}/{CATEGORIES.length}</span>
-                )}
-              </div>
-              <div className="px-4 pb-2 flex flex-wrap gap-1">
-                {CATEGORIES.map(cat => {
-                  const isTouched = coveredTopics.has(cat.id);
-                  const hasFindings = findings.some(f => f.category === cat.id);
-                  // 3 levels: not started → touched (tool calls) → confirmed (findings)
-                  const level = hasFindings ? 2 : isTouched ? 1 : 0;
-
-                  return (
-                    <span
-                      key={cat.id}
-                      className="relative text-[9px] font-medium px-2 py-0.5 rounded-md transition-all duration-300 overflow-hidden"
-                      style={{
-                        color: level === 2
-                          ? 'var(--color-tint)'
-                          : level === 1
-                            ? 'var(--color-secondary-label)'
-                            : 'var(--color-quaternary-label)',
-                        background: level === 0 ? 'transparent' : undefined,
-                      }}
-                    >
-                      {/* Fill bar background */}
-                      {level > 0 && (
-                        <span
-                          className="absolute inset-0 rounded-md transition-all duration-500"
-                          style={{
-                            background: level === 2
-                              ? 'rgba(0,113,227,0.08)'
-                              : 'rgba(0,113,227,0.03)',
-                            width: level === 2 ? '100%' : '50%',
-                          }}
-                        />
-                      )}
-                      <span className="relative">
-                        {level === 2 && (
-                          <svg width="8" height="8" viewBox="0 0 12 12" fill="none" className="inline mr-0.5 -mt-px">
-                            <path d="M2.5 6.5L5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                        {level === 1 && (
-                          <svg width="8" height="8" viewBox="0 0 12 12" fill="none" className="inline mr-0.5 -mt-px">
-                            <circle cx="6" cy="6" r="2" fill="currentColor" opacity="0.4" />
-                          </svg>
-                        )}
-                        {cat.label}
-                      </span>
+            {/* Findings section */}
+            <div
+              data-component="FindingsPanel"
+              className="flex-1 flex flex-col overflow-hidden min-h-0"
+            >
+              <button
+                type="button"
+                onClick={() => setFindingsCollapsed((p) => !p)}
+                className="w-full h-10 px-3 flex items-center justify-between cursor-pointer hover:bg-elevated/50 transition-colors border-b border-separator bg-surface"
+              >
+                <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
+                  Findings
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {findings.length > 0 && (
+                    <span className="text-[10px] font-mono text-quaternary-label">
+                      {findings.length}
                     </span>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Right sidebar: files examined + findings */}
-          <div data-component="RightPanel" className={`border-l border-separator bg-canvas flex flex-col shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${rightPanelOpen ? 'w-[260px]' : 'w-0 border-l-0'}`}>
-          <div className="w-[260px] flex flex-col h-full">
-            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-              {/* Files examined section */}
-              <div data-component="FilesExamined" className="shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setFilesCollapsed(p => !p)}
-                  className="w-full h-10 px-3 flex items-center justify-between cursor-pointer hover:bg-elevated/50 transition-colors border-b border-separator bg-surface"
-                >
-                  <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
-                    Files Examined
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {examinedFiles.length > 0 && (
-                      <span className="text-[10px] font-mono text-quaternary-label">{examinedFiles.length}</span>
-                    )}
-                    <svg
-                      width="8" height="8" viewBox="0 0 8 8" fill="none"
-                      className={`text-quaternary-label transition-transform duration-200 ${filesCollapsed ? '-rotate-90' : ''}`}
-                    >
-                      <path d="M2 3l2 2 2-2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </div>
-                </button>
-                {!filesCollapsed && (
-                  <div
-                    ref={filesScrollRef}
-                    className="px-2 py-2 h-[200px] overflow-y-auto"
-                    style={{ animation: 'expand-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                  )}
+                  <svg
+                    width="8"
+                    height="8"
+                    viewBox="0 0 8 8"
+                    fill="none"
+                    className={`text-quaternary-label transition-transform duration-200 ${findingsCollapsed ? '-rotate-90' : ''}`}
                   >
-                    <FileTree files={examinedFiles} />
-                  </div>
-                )}
-              </div>
-
-              {/* Findings section */}
-              <div data-component="FindingsPanel" className="flex-1 flex flex-col overflow-hidden min-h-0">
-                <button
-                  type="button"
-                  onClick={() => setFindingsCollapsed(p => !p)}
-                  className="w-full h-10 px-3 flex items-center justify-between cursor-pointer hover:bg-elevated/50 transition-colors border-b border-separator bg-surface"
+                    <path
+                      d="M2 3l2 2 2-2"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+              </button>
+              {!findingsCollapsed && (
+                <div
+                  ref={findingsScrollRef}
+                  className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5 min-h-0"
+                  style={{ animation: 'expand-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                 >
-                  <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
-                    Findings
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {findings.length > 0 && (
-                      <span className="text-[10px] font-mono text-quaternary-label">{findings.length}</span>
-                    )}
-                    <svg
-                      width="8" height="8" viewBox="0 0 8 8" fill="none"
-                      className={`text-quaternary-label transition-transform duration-200 ${findingsCollapsed ? '-rotate-90' : ''}`}
-                    >
-                      <path d="M2 3l2 2 2-2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </div>
-                </button>
-                {!findingsCollapsed && (
-                  <div
-                    className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5 min-h-0"
-                    style={{ animation: 'expand-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
-                  >
-                    {findings.length === 0 && (phase !== 'idle' || isLive) && (
-                      <div className="text-[10px] text-quaternary-label text-center pt-1 pb-2">
-                        Findings appear after analysis
-                      </div>
-                    )}
-                    {findings.length === 0 && phase === 'idle' && !isLive && (
-                      <div className="text-[10px] text-quaternary-label text-center pt-1 pb-2">
-                        &mdash;
-                      </div>
-                    )}
-
-                    {findings.map((f, i) => (
-                      <FindingCard key={`${f.id}-${i}`} finding={f} index={i} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Scorecard at bottom */}
-            <div data-component="ScorePanel" className="border-t border-separator bg-surface-translucent shrink-0">
-              <div className="px-3 pt-2 pb-1 flex items-center justify-between">
-                <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">Score</div>
-                {scoreVisible && (
-                  <span
-                    className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgba(255,59,48,0.08)] text-danger"
-                    style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
-                  >RED</span>
-                )}
-              </div>
-              <div className="px-3 pb-2 flex gap-1.5">
-                {[
-                  { n: scorePanelFindings.filter(f => f.severity === 'critical').length, l: 'Crit', c: 'var(--color-danger)' },
-                  { n: scorePanelFindings.filter(f => f.severity === 'high').length, l: 'High', c: 'var(--color-danger)' },
-                  { n: scorePanelFindings.filter(f => f.severity === 'medium').length, l: 'Med', c: 'var(--color-warning)' },
-                  { n: scorePanelFindings.filter(f => f.severity === 'low' || f.severity === 'info').length, l: 'Low', c: 'var(--color-success)' },
-                ].map(s => {
-                  const showCount = isLive ? findings.length > 0 : scoreVisible;
-                  return (
-                    <div
-                      key={s.l}
-                      className={`flex-1 text-center rounded-md py-0.5 transition-all duration-500 ${showCount ? (scoreVisible ? 'opacity-100' : 'opacity-40') : 'opacity-30'}`}
-                      style={showCount ? {
-                        background: `color-mix(in srgb, ${s.c} 6%, transparent)`,
-                        animation: scoreVisible ? 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' : undefined,
-                      } : undefined}
-                    >
-                      <div className="text-xs font-bold font-brand" style={{ color: showCount ? s.c : 'var(--color-quaternary-label)' }}>
-                        {showCount ? s.n : '\u2014'}
-                      </div>
-                      <div className="text-[8px] text-tertiary-label leading-none">{s.l}</div>
+                  {findings.length === 0 && (phase !== 'idle' || isLive) && (
+                    <div className="text-[10px] text-quaternary-label text-center pt-1 pb-2">
+                      Findings appear after analysis
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                  {findings.length === 0 && phase === 'idle' && !isLive && (
+                    <div className="text-[10px] text-quaternary-label text-center pt-1 pb-2">
+                      &mdash;
+                    </div>
+                  )}
+
+                  {findings.map((f, i) => (
+                    <FindingCard key={`${f.id}-${i}`} finding={f} index={i} />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-          </div>
 
-        {/* Budget pause overlay (live mode only) */}
-        {isLive && budgetPaused && budgetPausedData && onBudgetDecision && (
-          <BudgetPausedView
-            findings={budgetPausedData.findings}
-            toolCalls={budgetPausedData.toolCalls}
-            budget={budgetPausedData.budget}
-            onDecision={onBudgetDecision}
-          />
-        )}
+          {/* Scorecard at bottom */}
+          <div
+            data-component="ScorePanel"
+            className="border-t border-separator bg-surface-translucent shrink-0"
+          >
+            <div className="px-3 pt-2 pb-1 flex items-center justify-between">
+              <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
+                Score
+              </div>
+              {scoreVisible && (
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgba(255,59,48,0.08)] text-danger"
+                  style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
+                >
+                  RED
+                </span>
+              )}
+            </div>
+            <div className="px-3 pb-2 flex gap-1.5">
+              {[
+                {
+                  n: scorePanelFindings.filter((f) => f.severity === 'critical').length,
+                  l: 'Crit',
+                  c: 'var(--color-danger)',
+                },
+                {
+                  n: scorePanelFindings.filter((f) => f.severity === 'high').length,
+                  l: 'High',
+                  c: 'var(--color-danger)',
+                },
+                {
+                  n: scorePanelFindings.filter((f) => f.severity === 'medium').length,
+                  l: 'Med',
+                  c: 'var(--color-warning)',
+                },
+                {
+                  n: scorePanelFindings.filter((f) => f.severity === 'low' || f.severity === 'info')
+                    .length,
+                  l: 'Low',
+                  c: 'var(--color-success)',
+                },
+              ].map((s) => {
+                const showCount = isLive ? findings.length > 0 : scoreVisible;
+                return (
+                  <div
+                    key={s.l}
+                    className={`flex-1 text-center rounded-md py-0.5 transition-all duration-500 ${showCount ? (scoreVisible ? 'opacity-100' : 'opacity-40') : 'opacity-30'}`}
+                    style={
+                      showCount
+                        ? {
+                            background: `color-mix(in srgb, ${s.c} 6%, transparent)`,
+                            animation: scoreVisible
+                              ? 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both'
+                              : undefined,
+                          }
+                        : undefined
+                    }
+                  >
+                    <div
+                      className="text-xs font-bold font-brand"
+                      style={{ color: showCount ? s.c : 'var(--color-quaternary-label)' }}
+                    >
+                      {showCount ? s.n : '\u2014'}
+                    </div>
+                    <div className="text-[8px] text-tertiary-label leading-none">{s.l}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Budget pause overlay (live mode only) */}
+      {isLive && budgetPaused && budgetPausedData && onBudgetDecision && (
+        <BudgetPausedView
+          findings={budgetPausedData.findings}
+          toolCalls={budgetPausedData.toolCalls}
+          budget={budgetPausedData.budget}
+          onDecision={onBudgetDecision}
+        />
+      )}
+    </div>
   );
 }

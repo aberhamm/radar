@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
             repoSource: (repoSource as 'github' | 'local') ?? 'local',
             repoUrl: repoUrl,
             ...(appRoot ? { appRoot } : {}),
-            budget: requestedBudget ?? 100,
+            budget: requestedBudget ?? 30,
             onStep: (event: StepEvent) => {
               const run = session.currentRun;
               if (!run) return;
@@ -182,6 +182,7 @@ export async function POST(req: NextRequest) {
         ...(repoUrl ? { repoUrl } : {}),
         ...(appRoot ? { appRoot } : {}),
         goal: goal as 'onboarding' | 'audit' | 'audit-generic' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility',
+        ...(requestedBudget ? { toolCallBudget: requestedBudget } : {}),
         verbose: true,
         onStep: (event) => {
           const run = session.currentRun;
@@ -266,6 +267,6 @@ export async function POST(req: NextRequest) {
     abortController.abort();
   });
 
-  const effectiveBudget = requestedBudget ?? (goal === 'all' ? 100 : 45);
+  const effectiveBudget = requestedBudget ?? (goal === 'all' ? 30 : 45);
   return NextResponse.json({ ok: true, repoName, goal, runId, budget: effectiveBudget });
 }

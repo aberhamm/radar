@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Scorecard, RunMetrics, CategoryScore, StepEvent } from '@/lib/agentSession';
@@ -13,10 +13,10 @@ import {
   exportCostCSV,
   costToMarkdown,
 } from '@/lib/export';
-import { EventStream } from './EventStream';
+import { AnalysisView } from './AnalysisView';
 import { FindingCard } from './FindingCard';
-import { FindingsLoadingSkeleton, RulesLoadingSkeleton, EventsLoadingSkeleton } from './Skeleton';
-import { normalizeFindings, type Finding } from '@/lib/runTransform';
+import { FindingsLoadingSkeleton, EventsLoadingSkeleton } from './Skeleton';
+import { normalizeFindings, transformRunData, type Finding, type TransformedRunData } from '@/lib/runTransform';
 import { CreateIssuesModal } from './CreateIssuesModal';
 import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
 import type { Tab } from '@/lib/useUrlState';
@@ -35,6 +35,8 @@ interface CompleteViewProps {
   activeTab?: Tab;
   /** Callback when tab changes (syncs to URL). */
   onTabChange?: (tab: Tab) => void;
+  /** Pre-transformed run data for investigation replay (optional — lazy-loads events if not provided). */
+  investigationRunData?: import('@/lib/runTransform').TransformedRunData;
 }
 
 // ─── Exec Summary Banner ───────────────────────────────────────
@@ -360,44 +362,6 @@ export function CostTab({ metrics }: { metrics: RunMetrics }) {
   );
 }
 
-function RulesTab({ goal }: { goal: string }) {
-  const [rules, setRules] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`/api/rules?goal=${encodeURIComponent(goal)}`)
-      .then(r => r.json())
-      .then(data => {
-        setRules(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [goal]);
-
-  if (loading) {
-    return <div className="p-6"><RulesLoadingSkeleton /></div>;
-  }
-
-  if (Object.keys(rules).length === 0) {
-    return <div className="p-6 text-tertiary-label text-sm">No rules found for goal: {goal}</div>;
-  }
-
-  return (
-    <div className="py-6">
-      {Object.entries(rules).map(([filename, content]) => (
-        <div key={filename} className="mb-8">
-          <div className="text-[11px] text-tertiary-label font-mono uppercase tracking-wide mb-3 font-medium">
-            {filename}
-          </div>
-          <div className="bg-surface rounded-lg border border-separator shadow-sm p-4 text-xs font-mono text-secondary-label whitespace-pre-wrap leading-relaxed">
-            {content}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function ExportButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
@@ -420,18 +384,18 @@ export function CopiedToast({ visible }: { visible: boolean }) {
   );
 }
 
-export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId, repoUrl, activeTab: controlledTab, onTabChange }: CompleteViewProps) {
-  const [internalTab, setInternalTab] = useState<Tab>('report');
+export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId, repoUrl, activeTab: controlledTab, onTabChange, investigationRunData }: CompleteViewProps) {
+  const [internalTab, setInternalTab] = useState<Tab>('overview');
   const activeTab = controlledTab ?? internalTab;
   const [copied, setCopied] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
-  const [lazyEvents, setLazyEvents] = useState<StepEvent[] | null>(null);
+  const [lazyRunData, setLazyRunData] = useState<TransformedRunData | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const eventsFailed = useRef(false);
   const [lazyFindings, setLazyFindings] = useState<Finding[] | null>(null);
   const [findingsLoading, setFindingsLoading] = useState(false);
   const [issueModalOpen, setIssueModalOpen] = useState(false);
-
-  const resolvedEvents = events.length > 0 ? events : lazyEvents ?? [];
+  const [replayAnimated, setReplayAnimated] = useState(false);
 
   // Normalize findings from props, or use lazy-loaded findings
   const typedFindings: Finding[] = lazyFindings
@@ -445,29 +409,84 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
         .then(r => r.json())
         .then(data => {
           const raw = data.result?.state?.findings;
-          // Always set lazyFindings (even to []) so we don't re-fetch in a loop
           setLazyFindings(raw && raw.length > 0 ? normalizeFindings(raw) : []);
         })
         .catch(err => {
           console.warn('[findings] Failed to load:', err);
-          setLazyFindings([]); // Prevent infinite retry on error
+          setLazyFindings([]);
         })
         .finally(() => setFindingsLoading(false));
     }
   }, [runId, typedFindings.length, findingsLoading, lazyFindings]);
 
+  // Resolve investigation run data: prop > lazy-loaded > null
+  const resolvedRunData = investigationRunData ?? lazyRunData;
+
+  // Lazy-load events when investigation tab is active on mount (direct URL navigation)
+  useEffect(() => {
+    if (activeTab === 'investigation' && !resolvedRunData && !eventsLoading && !eventsFailed.current && runId && !runId.startsWith('__')) {
+      setEventsLoading(true);
+      fetch(`/api/history/${encodeURIComponent(runId)}/events`)
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then(data => {
+          if (data.events) {
+            const rd = transformRunData(data.events, {
+              scorecard,
+              metrics,
+              terminationReason: 'completed',
+              briefMarkdown: '',
+              outputPaths: [],
+              state: { findings: findings ?? [] },
+            });
+            setLazyRunData(rd);
+          } else {
+            eventsFailed.current = true;
+          }
+        })
+        .catch(err => {
+          console.warn('[events] Failed to load:', err);
+          eventsFailed.current = true;
+        })
+        .finally(() => setEventsLoading(false));
+    }
+  }, [activeTab, resolvedRunData, eventsLoading, runId, scorecard, metrics, findings]);
+
   const handleTabChange = useCallback((tab: Tab) => {
     if (onTabChange) onTabChange(tab);
     else setInternalTab(tab);
-    if (tab === 'events' && events.length === 0 && !lazyEvents && !eventsLoading && runId) {
+    // Lazy-load events when switching to investigation tab
+    if (tab === 'investigation' && !resolvedRunData && !eventsLoading && !eventsFailed.current && runId && !runId.startsWith('__')) {
       setEventsLoading(true);
       fetch(`/api/history/${encodeURIComponent(runId)}/events`)
-        .then(r => r.json())
-        .then(data => { if (data.events) setLazyEvents(data.events); })
-        .catch(err => console.warn('[events] Failed to load:', err))
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then(data => {
+          if (data.events) {
+            const rd = transformRunData(data.events, {
+              scorecard,
+              metrics,
+              terminationReason: 'completed',
+              briefMarkdown: '',
+              outputPaths: [],
+              state: { findings: findings ?? [] },
+            });
+            setLazyRunData(rd);
+          } else {
+            eventsFailed.current = true;
+          }
+        })
+        .catch(err => {
+          console.warn('[events] Failed to load:', err);
+          eventsFailed.current = true;
+        })
         .finally(() => setEventsLoading(false));
     }
-  }, [events, lazyEvents, eventsLoading, runId, onTabChange]);
+  }, [resolvedRunData, eventsLoading, runId, onTabChange, scorecard, metrics, findings]);
 
   const flash = useCallback(() => {
     setCopied(true);
@@ -475,9 +494,8 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
   }, []);
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'report', label: 'Report' },
-    { id: 'events', label: 'Events' },
-    { id: 'rules', label: 'Rules' },
+    { id: 'overview', label: 'Overview' },
+    { id: 'investigation', label: 'Investigation' },
     { id: 'cost', label: 'Cost' },
   ];
 
@@ -510,7 +528,7 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
         <div className="ml-auto flex items-center gap-2">
           <CopiedToast visible={copied} />
 
-          {activeTab === 'report' && (
+          {activeTab === 'overview' && (
             <>
               <ExportButton
                 label="Copy Markdown"
@@ -528,7 +546,6 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
                 onClick={async () => {
                   setPdfExporting(true);
                   try {
-                    // Lazy-load findings if not already present (slim mode defers them)
                     let resolvedFindings = findings ?? [];
                     if (resolvedFindings.length === 0 && runId) {
                       try {
@@ -554,10 +571,10 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
             </>
           )}
 
-          {activeTab === 'events' && (
+          {activeTab === 'investigation' && resolvedRunData && (
             <ExportButton
               label="Export CSV"
-              onClick={() => exportEventsCSV(resolvedEvents, scorecard.repoName)}
+              onClick={() => exportEventsCSV(events, scorecard.repoName)}
             />
           )}
 
@@ -580,9 +597,9 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
       </div>
 
       {/* Tab content */}
-      <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'events' ? '' : 'px-6'}`}>
+      <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'investigation' ? '' : 'px-6'}`}>
         <div key={activeTab} role="tabpanel" aria-label={activeTab} className="animate-slide-up flex-1 flex flex-col">
-          {activeTab === 'report' && (
+          {activeTab === 'overview' && (
             <div className="max-w-[860px] pt-5 pb-8">
               <ScorecardGrid scorecard={scorecard} metrics={metrics} />
               {findingsLoading && <FindingsLoadingSkeleton />}
@@ -595,24 +612,24 @@ export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, 
             </div>
           )}
 
-          {activeTab === 'events' && (
-            <div className="flex-1 flex flex-col">
+          {activeTab === 'investigation' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
               {eventsLoading ? (
                 <div className="p-6"><EventsLoadingSkeleton /></div>
-              ) : (
-                <EventStream
-                  events={resolvedEvents}
-                  onNewEvent={() => {}}
-                  onBudgetPaused={() => {}}
-                  onRunComplete={() => {}}
-                  onRunError={() => {}}
-                  readonly
+              ) : resolvedRunData ? (
+                <AnalysisView
+                  runData={resolvedRunData}
+                  viewMode={replayAnimated ? 'replay' : 'instant'}
+                  onStartReplay={() => setReplayAnimated(true)}
                 />
+              ) : (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <p className="text-sm text-tertiary-label">No investigation events available.</p>
+                </div>
               )}
             </div>
           )}
 
-          {activeTab === 'rules' && <RulesTab goal={goal} />}
           {activeTab === 'cost' && <CostTab metrics={metrics} />}
         </div>
       </div>

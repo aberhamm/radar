@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, loadRunEnvelope, loadRunFindings } from '@/lib/agentSession';
+import { getSession, loadRunEnvelope, loadRunFindings, findRunById } from '@/lib/agentSession';
 
 export async function GET(
   req: NextRequest,
@@ -8,7 +8,12 @@ export async function GET(
   const { id } = await params;
   const slim = req.nextUrl.searchParams.get('slim') === '1';
   const session = getSession();
-  const record = session.history.find(r => r.id === id);
+  let record = session.history.find(r => r.id === id);
+
+  // Fallback: look up from disk index (survives HMR / session loss)
+  if (!record) {
+    record = findRunById(id) ?? undefined;
+  }
 
   if (!record) {
     return NextResponse.json({ error: 'Run not found' }, { status: 404 });

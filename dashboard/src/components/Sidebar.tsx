@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import type { HistoryItem } from '@/lib/agentSession';
 import type { Tab } from '@/lib/useUrlState';
-import { groupByRepo, type RepoGroup, type SingleRun, type MultiGoalGroup } from '@/lib/historyGrouping';
+import { groupByRepo, type RepoGroup } from '@/lib/historyGrouping';
 
 // Re-export for any external consumers
 export { groupByRepo, type RepoGroup };
@@ -258,9 +258,8 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
               </div>
               <div className="flex flex-col gap-0.5">
                 {([
-                  { id: 'report' as Tab, label: 'Report' },
-                  { id: 'events' as Tab, label: 'Events' },
-                  { id: 'rules' as Tab, label: 'Rules' },
+                  { id: 'overview' as Tab, label: 'Overview' },
+                  { id: 'investigation' as Tab, label: 'Investigation' },
                   { id: 'cost' as Tab, label: 'Cost' },
                 ]).map(section => (
                   <button
@@ -306,9 +305,6 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
             )}
             <div className="flex flex-col gap-1">
               {repoGroups.map(repoGroup => {
-                const isSingleRunRepo = repoGroup.runs.length === 1 && repoGroup.runs[0].type === 'single';
-                // When a repo has exactly one multi-goal group, flatten: show goals directly under repo header
-                const isSoleMultiGoal = repoGroup.runs.length === 1 && repoGroup.runs[0].type === 'multigoal';
                 const repoExpanded = expandedRepos.has(repoGroup.repoName);
                 const scoreDot = repoGroup.worstScore === 'red'
                   ? 'bg-danger'
@@ -318,58 +314,8 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                       ? 'bg-success'
                       : null;
 
-                // Single-run repos render directly (no expand/collapse)
-                if (isSingleRunRepo) {
-                  const entry = repoGroup.runs[0] as SingleRun;
-                  const isCompareHighlighted = compareHighlight?.includes(entry.item.id);
-                  const badgeIndex = compareHighlight ? compareHighlight.indexOf(entry.item.id) : -1;
-                  return (
-                    <div key={entry.item.id} className="relative">
-                      {renderHistoryRow(entry.item)}
-                      {isCompareHighlighted && (
-                        <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-tint text-white text-[9px] font-bold flex items-center justify-center">
-                          {badgeIndex + 1}
-                        </span>
-                      )}
-                    </div>
-                  );
-                }
+                const runCount = repoGroup.runs.length;
 
-                // Sole multi-goal group: single clickable row, no child expansion
-                if (isSoleMultiGoal) {
-                  const entry = repoGroup.runs[0] as MultiGoalGroup;
-                  const isActive = activeRunId === entry.parentId;
-                  return (
-                    <div key={repoGroup.repoName}>
-                      <button
-                        onClick={() => {
-                          if (!compareMode) onSelectHistory(entry.parentId);
-                        }}
-                        className={`w-full text-left rounded-lg p-2.5 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
-                          isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className={`text-[13px] font-semibold truncate ${isActive ? 'text-tint' : 'text-label group-hover:text-label'}`}>
-                              {repoGroup.repoName}
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-[10px] text-tertiary-label">
-                                {entry.children.length} goals
-                              </span>
-                              {scoreDot && (
-                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                  );
-                }
-
-                // Multi-run repos get a collapsible header
                 return (
                   <div key={repoGroup.repoName}>
                     <button
@@ -390,7 +336,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-[10px] text-tertiary-label">
-                              {repoGroup.runs.length} run{repoGroup.runs.length !== 1 ? 's' : ''}
+                              {runCount} run{runCount !== 1 ? 's' : ''}
                             </span>
                             {scoreDot && (
                               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scoreDot}`} />
@@ -418,8 +364,12 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                             );
                           }
 
-                          // Multi-goal group within repo — navigate directly, no child expansion
                           const isActive = activeRunId === entry.parentId;
+                          const d = new Date(entry.item.startedAt);
+                          const time = d.toLocaleString(undefined, {
+                            month: 'short', day: 'numeric',
+                            hour: '2-digit', minute: '2-digit',
+                          });
                           return (
                             <div key={entry.parentId}>
                               <button
@@ -433,10 +383,10 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                               >
                                 <div className="flex items-center gap-2">
                                   <div className="flex-1 min-w-0">
-                                    <div className={`text-[12px] truncate transition-colors ${isActive ? 'font-semibold text-tint' : 'font-medium text-label group-hover:text-label'}`}>
-                                      all
-                                    </div>
-                                    <div className="flex items-center gap-2 mt-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[12px] truncate transition-colors ${isActive ? 'font-semibold text-tint' : 'font-medium text-label group-hover:text-label'}`}>
+                                        Full audit
+                                      </span>
                                       <span className="text-[10px] text-tertiary-label">
                                         {entry.children.length} goals
                                       </span>
@@ -446,6 +396,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                                         }`} />
                                       )}
                                     </div>
+                                    <div className="text-[10px] text-tertiary-label mt-0.5">{time}</div>
                                   </div>
                                 </div>
                               </button>

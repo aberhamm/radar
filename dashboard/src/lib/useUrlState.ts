@@ -5,8 +5,8 @@ import { usePathname, useSearchParams } from 'next/navigation';
 
 // ─── Types ──────────────────────────────────────────────────────
 
-export type Tab = 'report' | 'events' | 'rules' | 'cost';
-export type MultiTab = 'overview' | 'investigation' | 'cost';
+export type Tab = 'overview' | 'investigation' | 'cost';
+export type MultiTab = Tab;
 
 export type UrlView =
   | { view: 'idle' }
@@ -14,8 +14,8 @@ export type UrlView =
   | { view: 'compare'; compareIds: [string, string] }
   | { view: 'multi'; parentId: string; tab?: MultiTab };
 
-const VALID_TABS = new Set<Tab>(['report', 'events', 'rules', 'cost']);
-const VALID_MULTI_TABS = new Set<MultiTab>(['overview', 'investigation', 'cost']);
+const VALID_TABS = new Set<Tab>(['overview', 'investigation', 'cost']);
+const VALID_MULTI_TABS = VALID_TABS;
 
 // ─── Pure Functions ─────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ export function buildUrl(state: UrlView): string {
       return '/';
     case 'run': {
       const base = `/run/${state.runId}`;
-      return state.tab && state.tab !== 'report' ? `${base}?tab=${state.tab}` : base;
+      return state.tab && state.tab !== 'overview' ? `${base}?tab=${state.tab}` : base;
     }
     case 'compare':
       return `/compare/${state.compareIds[0]}/${state.compareIds[1]}`;

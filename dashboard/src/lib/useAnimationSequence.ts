@@ -101,7 +101,7 @@ export function useAnimationSequence(
             setProgressPercent(Math.round(turnPct));
             setTurns(prev => [...prev, { reasoning: '', activities: [], phase: 'analyze', isSwitch: true }]);
           }, d);
-          d += 300;
+          d += 800;
           t(() => setPhase('analyzing'), d);
           return;
         }
@@ -112,7 +112,7 @@ export function useAnimationSequence(
             setProgressPercent(Math.round(turnPct));
             setTurns(prev => [...prev, { reasoning: turn.passName ?? 'Next pass', activities: [], phase: 'analyze', isPassBoundary: true, passName: turn.passName }]);
           }, d);
-          d += 200;
+          d += 500;
           return;
         }
 
@@ -125,9 +125,9 @@ export function useAnimationSequence(
           setExaminedFiles(prev => { const combined = [...prev, ...newFiles.filter(f => !prev.includes(f))]; return combined; });
           setCoveredTopics(prev => { const next = new Set(prev); turn.categoriesCovered.forEach(c => next.add(c)); return next; });
         }, d);
-        d += 200;
+        d += 600;
         t(() => setActiveTurnIndex(null), d);
-        d += 50;
+        d += 150;
       });
 
       // Recording — reveal all findings at once
@@ -142,7 +142,7 @@ export function useAnimationSequence(
           phase: 'write',
         }]);
       }, d);
-      d += 400;
+      d += 1000;
 
       // Assembling
       t(() => {
@@ -154,7 +154,7 @@ export function useAnimationSequence(
           phase: 'write',
         }]);
       }, d);
-      d += 500;
+      d += 1000;
 
       // Done
       t(() => {

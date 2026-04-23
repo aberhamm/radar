@@ -480,6 +480,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   /** Shared batchId for all tool calls in the same parallel assistant turn */
   let currentBatchId: string = randomUUID();
 
+  let budgetExhaustedFired = false;
+
   // beforeToolCall: budget enforcement
   const beforeToolCall = async (
     ctx: BeforeToolCallContext,
@@ -535,11 +537,16 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       if (toolName === 'assemble_output') {
         return undefined;
       }
+      // Allow writing tools through so the agent can finish recording
+      // even without a budget extension.
+      if (WRITING_TOOLS.has(toolName)) {
+        return undefined;
+      }
 
-      // Budget exhausted — ask whether to extend.
-      // Fire for ANY tool (including record_finding) so the user always gets
-      // the extend prompt when budget is fully spent, even mid-recording.
-      if (config.onBudgetExhausted) {
+      // Fire budget exhaustion callback at the moment a tool is actually
+      // blocked — this is the user-facing moment where the agent can't proceed.
+      if (!budgetExhaustedFired && config.onBudgetExhausted) {
+        budgetExhaustedFired = true;
         const shouldExtend = await config.onBudgetExhausted({
           findings: state.findings.length,
           toolCalls: state.toolCallCount,
@@ -548,6 +555,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         if (shouldExtend) {
           currentBudget += 50;
           state.toolCallBudget = currentBudget;
+          budgetExhaustedFired = false;
           config.onStep?.({
             step: stepCount,
             action: 'budget_extended',
@@ -555,16 +563,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
             newBudget: currentBudget,
             result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
           });
-          // Allow this tool call to proceed
-          return undefined;
+          return undefined; // Allow the blocked tool through
         }
       }
-      // Decline or no callback — save checkpoint before blocking.
-      // Still allow record_finding and switch_to_fast_model through so the
-      // agent can finish writing even without an extension.
-      if (WRITING_TOOLS.has(toolName)) {
-        return undefined;
-      }
+
       if (checkpointInterval > 0) {
         try {
           saveCheckpoint(outputDir, repoSlug,
