@@ -41,13 +41,17 @@ export function AnalysisView({
   budgetPausedData,
   onBudgetDecision,
 }: AnalysisViewProps) {
+  // Self-contained replay: manage own viewMode when parent doesn't control it
+  const [internalReplay, setInternalReplay] = useState(false);
+  const effectiveViewMode = onStartReplay ? viewMode : (internalReplay ? 'replay' : viewMode);
+
   // Use real data when provided, fall back to sample data
   const DATA_TURNS = runData?.analysisTurns ?? SAMPLE_ANALYSIS_TURNS;
   const DATA_FINDINGS: Finding[] = runData?.findings ?? SAMPLE_FINDINGS;
   const DATA_BATCHES = runData?.findingBatches ?? [4, 5, 4];
 
   // Build instant state when viewing completed run without animation
-  const isInstant = !isLive && viewMode === 'instant';
+  const isInstant = !isLive && effectiveViewMode === 'instant';
   const instantState = useMemo(() => {
     if (isInstant && runData) return buildInstantState(runData);
     return null;
@@ -163,18 +167,13 @@ export function AnalysisView({
     setAutoScroll(atBottom);
   }, []);
 
-  // Auto-start animation when entering replay mode
-  const replayStarted = useRef(false);
-  const animRun = animState.run;
-  useEffect(() => {
-    if (!isLive && viewMode === 'replay' && !replayStarted.current) {
-      replayStarted.current = true;
-      animRun();
-    }
-    if (viewMode !== 'replay') {
-      replayStarted.current = false;
-    }
-  }, [isLive, viewMode, animRun]);
+  // Start replay: switch to animation state source and kick off the animation
+  const startReplay = useCallback(() => {
+    if (!onStartReplay) setInternalReplay(true);
+    else onStartReplay();
+    setAutoScroll(true);
+    animState.run();
+  }, [onStartReplay, animState]);
 
   // Replay controls (no-ops in live mode)
   const handleRun = useCallback(() => {
@@ -225,7 +224,7 @@ export function AnalysisView({
           ) : isInstant ? (
             <button
               type="button"
-              onClick={onStartReplay}
+              onClick={startReplay}
               className="px-3 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer shrink-0 bg-elevated text-secondary-label hover:text-label"
             >
               Replay

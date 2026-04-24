@@ -503,7 +503,6 @@ export default function DashboardPage() {
         budget: 45,
       });
       setBudgetPausedData(null);
-      setSampleInvestigation(null);
       setSelectedRunId(id);
       setStatus('complete');
       setActiveTab(initialTab ?? 'overview');
