@@ -28,9 +28,10 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
 
   useEffect(() => {
     if (!startedAt) return;
+    setElapsed(Date.now() - startedAt.getTime());
     const interval = setInterval(() => {
       setElapsed(Date.now() - startedAt.getTime());
-    }, 1000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [startedAt]);
 
@@ -38,12 +39,16 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
   const severityCounts: Record<string, number> = {};
   for (const ev of findingEvents) {
     let sev = 'info';
-    try {
-      const result = JSON.parse(ev.result ?? '{}');
-      if (result.severity) sev = result.severity;
-    } catch {
-      const match = (ev.result ?? '').match(/\[(critical|high|medium|low|info)\]/i);
-      if (match) sev = match[1].toLowerCase();
+    if (ev.details?.severity && typeof ev.details.severity === 'string') {
+      sev = ev.details.severity;
+    } else {
+      try {
+        const result = JSON.parse(ev.result ?? '{}');
+        if (result.severity) sev = result.severity;
+      } catch {
+        const match = (ev.result ?? '').match(/\[(critical|high|medium|low|info)\]/i);
+        if (match) sev = match[1].toLowerCase();
+      }
     }
     severityCounts[sev] = (severityCounts[sev] ?? 0) + 1;
   }

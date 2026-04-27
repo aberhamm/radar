@@ -122,17 +122,9 @@ async function isFileUnchanged(state: AgentState, repoRoot: string, filePath: st
     const absPath = pathResolve(repoRoot, filePath);
     const stats = await fsStat(absPath);
     const cached = state.fileReadCache.get(filePath);
-    if (!cached || cached.mtime !== stats.mtimeMs) return false;
-    // mtime matches — verify content hash of first 1KB
-    const fh = await fsOpen(absPath, 'r');
-    try {
-      const buf = Buffer.alloc(1024);
-      const { bytesRead } = await fh.read(buf, 0, 1024, 0);
-      const hash = createHash('sha256').update(buf.subarray(0, bytesRead)).digest('hex');
-      return cached.contentHash === hash;
-    } finally {
-      await fh.close();
-    }
+    if (!cached || cached.mtime !== stats.mtimeMs || cached.size !== stats.size) return false;
+    // mtime + size match — sufficient for unchanged detection during a single run
+    return true;
   } catch {
     return false;
   }
@@ -142,17 +134,8 @@ async function updateFileCache(state: AgentState, repoRoot: string, filePath: st
   try {
     const absPath = pathResolve(repoRoot, filePath);
     const stats = await fsStat(absPath);
-    const fh = await fsOpen(absPath, 'r');
-    try {
-      const buf = Buffer.alloc(1024);
-      const { bytesRead } = await fh.read(buf, 0, 1024, 0);
-      const hash = createHash('sha256').update(buf.subarray(0, bytesRead)).digest('hex');
-      // Build a short content summary so dedup responses carry context
-      const summary = content ? buildFileSummary(filePath, content) : undefined;
-      state.fileReadCache.set(filePath, { mtime: stats.mtimeMs, contentHash: hash, summary });
-    } finally {
-      await fh.close();
-    }
+    const summary = content ? buildFileSummary(filePath, content) : undefined;
+    state.fileReadCache.set(filePath, { mtime: stats.mtimeMs, size: stats.size, summary });
   } catch { /* ignore — dedup is best-effort */ }
 }
 
@@ -348,12 +331,13 @@ export function buildPiTools(
   const spill = createSpillContext();
 
   /** Wrap a tool result as Pi's AgentToolResult format with per-tool size limits. */
-  function ok(toolName: string, result: unknown): AgentToolResult<unknown> {
+  function ok(toolName: string, result: unknown, opts?: { details?: Record<string, unknown>; terminate?: boolean }): AgentToolResult<unknown> {
     const json = JSON.stringify(result);
     const text = spill.spillAndTruncate(toolName, json);
     return {
       content: [{ type: 'text' as const, text }],
-      details: {},
+      details: opts?.details ?? {},
+      ...(opts?.terminate ? { terminate: true } : {}),
     };
   }
   const assembledRef: AssembledSections = { sections: null };
@@ -437,7 +421,9 @@ export function buildPiTools(
             await updateFileCache(state, repoRoot(), filePath, result.content);
           }
 
-          return ok('read_file', result);
+          return ok('read_file', result, {
+            details: { lineCount: result.lineCount ?? 0, language: result.language, cached: false },
+          });
         } catch (e) { return err('read_file', e as Error); }
       },
     ),
@@ -526,8 +512,12 @@ export function buildPiTools(
         sortByMtime: Type.Optional(Type.Boolean({ description: 'Sort results by file modification time (most recent first)' })),
       }),
       async (_id, params) => {
-        try { return ok('grep_pattern', await grepPattern(repoRoot(), norm(params))); }
-        catch (e) { return err('grep_pattern', e as Error); }
+        try {
+          const result = await grepPattern(repoRoot(), norm(params));
+          return ok('grep_pattern', result, {
+            details: { matchCount: result.matches?.length ?? 0, truncated: !!result.truncated },
+          });
+        } catch (e) { return err('grep_pattern', e as Error); }
       },
     ),
 
@@ -759,8 +749,13 @@ export function buildPiTools(
         }),
       }),
       async (_id, params) => {
-        try { return ok('record_finding', await recordFinding(state, norm(params))); }
-        catch (e) { return err('record_finding', e as Error); }
+        try {
+          const result = await recordFinding(state, norm(params));
+          const f = (norm(params) as { finding: { id: string; severity: string; evidence: unknown[] } }).finding;
+          return ok('record_finding', result, {
+            details: { findingId: f.id, severity: f.severity, evidenceCount: f.evidence?.length ?? 0 },
+          });
+        } catch (e) { return err('record_finding', e as Error); }
       },
     ),
 
@@ -815,8 +810,12 @@ export function buildPiTools(
         if (assembledRef.sections !== null) {
           console.warn('[assemble_output] Called twice — overwriting previous sections');
         }
-        assembledRef.sections = (params as { sections: Record<string, string> }).sections;
-        return ok('assemble_output', { status: 'acknowledged', message: 'Output assembly triggered.' });
+        const sections = (params as { sections: Record<string, string> }).sections;
+        assembledRef.sections = sections;
+        return ok('assemble_output', { status: 'acknowledged', message: 'Output assembly triggered.' }, {
+          details: { sectionCount: Object.keys(sections).length },
+          terminate: true,
+        });
       },
     ),
 
@@ -836,14 +835,13 @@ export function buildPiTools(
     ),
   ];
 
-  // Wrap stateful tools with a mutex so they serialize even when Pi fires
-  // them concurrently in parallel mode. Read-only tools stay fully parallel.
-  //
-  // Note: this mutex is created inside buildPiTools(), so each call gets its
-  // own independent mutex. That's intentional — each agent run is isolated.
+  // Stateful tools get Pi's native per-tool executionMode: 'sequential' so Pi
+  // serializes them at the framework level. The mutex stays as defense-in-depth
+  // since our drain() call at run end depends on it.
   const mutex = new StatefulToolMutex();
   for (const tool of tools) {
     if (isStateful(tool.name)) {
+      tool.executionMode = 'sequential';
       const original = tool.execute;
       tool.execute = (id, params, signal?, onUpdate?) =>
         mutex.serialize(() => original(id, params, signal, onUpdate));

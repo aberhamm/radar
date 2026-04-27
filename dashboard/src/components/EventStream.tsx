@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import type { StepEvent } from '@/lib/agentSession';
 
 interface EventStreamProps {
@@ -29,6 +29,9 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
   let current: Turn | null = null;
 
   for (const ev of events) {
+    // Transient streaming events — superseded by text_response / tool_call
+    if (ev.type === 'text_delta' || ev.type === 'tool_start') continue;
+
     if (ev.type === 'text_response') {
       if (current) turns.push(current);
       current = {
@@ -73,7 +76,25 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
 
 // ─── Finding card ─────────────────────────────────────────────────
 
-function parseFinding(ev: StepEvent): { id: string; category: string; severity: string; title: string; description: string } | null {
+function parseFinding(ev: StepEvent): { id: string; category: string; severity: string; title: string; description: string; evidenceCount?: number } | null {
+  // Prefer structured details from Pi tool result
+  const d = ev.details;
+  if (d?.findingId) {
+    // details has findingId + severity + evidenceCount; full content still in args
+    try {
+      const args = JSON.parse(ev.args ?? '{}');
+      const f = args.finding ?? args;
+      return {
+        id: String(d.findingId),
+        category: f.category ?? '',
+        severity: String(d.severity ?? f.severity ?? 'info'),
+        title: f.title ?? ev.action,
+        description: f.description ?? '',
+        evidenceCount: typeof d.evidenceCount === 'number' ? d.evidenceCount : undefined,
+      };
+    } catch { /* fall through */ }
+  }
+  // Fallback: parse from args JSON
   try {
     const args = JSON.parse(ev.args ?? '{}');
     const f = args.finding ?? args;
@@ -99,7 +120,7 @@ function severityColor(sev: string): string {
   }
 }
 
-function FindingCard({ event }: { event: StepEvent }) {
+const FindingCard = memo(function FindingCard({ event }: { event: StepEvent }) {
   const finding = parseFinding(event);
   if (!finding) return null;
 
@@ -120,6 +141,11 @@ function FindingCard({ event }: { event: StepEvent }) {
         <span className="text-[10px] text-tertiary-label uppercase tracking-wide">
           {finding.category}
         </span>
+        {finding.evidenceCount != null && finding.evidenceCount > 0 && (
+          <span className="text-[10px] text-quaternary-label">
+            {finding.evidenceCount} file{finding.evidenceCount > 1 ? 's' : ''}
+          </span>
+        )}
         <span className="text-[10px] font-mono text-quaternary-label ml-auto">
           {finding.id}
         </span>
@@ -132,7 +158,7 @@ function FindingCard({ event }: { event: StepEvent }) {
       </div>
     </div>
   );
-}
+});
 
 // ─── Dependency detection ─────────────────────────────────────────
 
@@ -184,7 +210,22 @@ function buildFileOriginMap(events: StepEvent[]): Map<string, number> {
 
 // ─── Tool call chip ───────────────────────────────────────────────
 
-function ToolCallChip({ event, isExpanded, onToggle, backRef }: { event: StepEvent; isExpanded: boolean; onToggle: () => void; backRef?: number | null }) {
+function ToolDetailsBadge({ action, details }: { action: string; details: Record<string, unknown> }) {
+  let label: string | null = null;
+  if (action === 'grep_pattern' && typeof details.matchCount === 'number') {
+    label = details.matchCount === 0 ? 'no matches' : `${details.matchCount} match${details.matchCount > 1 ? 'es' : ''}`;
+  } else if (action === 'read_file' && typeof details.lineCount === 'number' && details.lineCount > 0) {
+    label = `${details.lineCount} lines`;
+  }
+  if (!label) return null;
+  return (
+    <span className="text-[9px] text-quaternary-label bg-canvas rounded px-1.5 py-0.5 shrink-0">
+      {label}
+    </span>
+  );
+}
+
+const ToolCallChip = memo(function ToolCallChip({ event, isExpanded, onToggle, backRef }: { event: StepEvent; isExpanded: boolean; onToggle: () => void; backRef?: number | null }) {
   const hasDetail = !!(event.args || event.fullResult);
   let parsedArgs: string | null = null;
   try {
@@ -209,6 +250,7 @@ function ToolCallChip({ event, isExpanded, onToggle, backRef }: { event: StepEve
         {backRef != null && (
           <span className="text-[9px] text-tint opacity-60 shrink-0">← #{backRef}</span>
         )}
+        {event.details && <ToolDetailsBadge action={event.action} details={event.details} />}
         {event.result && (
           <span className="text-tertiary-label overflow-hidden text-ellipsis whitespace-nowrap flex-1 text-[11px]">
             {event.result}
@@ -247,7 +289,7 @@ function ToolCallChip({ event, isExpanded, onToggle, backRef }: { event: StepEve
       )}
     </div>
   );
-}
+});
 
 // ─── Special event badges ─────────────────────────────────────────
 

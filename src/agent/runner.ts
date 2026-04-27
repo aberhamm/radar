@@ -19,6 +19,7 @@ import { withRetry } from './retry.js';
 import { renderInvestigationHtml } from '../output/investigationHtml.js';
 import { buildPiTools, type AssembledSections } from '../tools/piToolAdapter.js';
 import { verifyFindingEvidence } from '../tools/analysis/verifyEvidence.js';
+import { resolveAndRead, type ResolveResult } from '../tools/utils/resolveAndRead.js';
 import { deduplicateFindings } from '../tools/analysis/deduplicateFindings.js';
 import { detectAppRoots } from '../tools/analysis/detectAppRoots.js';
 import { parsePackageJson } from '../tools/config/parsePackageJson.js';
@@ -119,6 +120,8 @@ export interface StepEvent {
   newBudget?: number;
   /** ISO timestamp when this event was emitted */
   timestamp?: string;
+  /** Structured metadata from the tool result (e.g. findingId, severity, matchCount) */
+  details?: Record<string, unknown>;
 }
 
 export interface RunResult {
@@ -489,11 +492,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   ): Promise<BeforeToolCallResult | undefined> => {
     const toolName = ctx.toolCall.name;
 
-    // If assemble_output already fired, abort on the next tool call.
-    // This allows tools in the same batch as assemble_output to complete
-    // while preventing additional turns from starting.
+    // If assemble_output already fired, block further tool calls.
+    // When assemble_output is the only tool in a batch, Pi's terminate: true
+    // skips the next LLM call automatically. When it shares a batch with
+    // record_finding (which lacks terminate), this guard catches the extra turn.
     if (terminationReason === 'completed' && toolName !== 'record_finding') {
-      agent.abort();
       return { block: true, reason: 'Output assembly complete.' };
     }
 
@@ -632,6 +635,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // Emit step event
     const isFinding = toolName === 'record_finding';
     const isAssemble = toolName === 'assemble_output';
+    const toolDetails = ctx.result?.details && typeof ctx.result.details === 'object' && Object.keys(ctx.result.details as object).length > 0
+      ? ctx.result.details as Record<string, unknown>
+      : undefined;
     config.onStep?.({
       step: stepCount,
       action: toolName,
@@ -639,6 +645,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       result: redactedResult.slice(0, 100),
       type: isAssemble ? 'assemble_output' : isFinding ? 'finding' : 'tool_call',
       batchId: currentBatchId,
+      ...(toolDetails ? { details: toolDetails } : {}),
       ...(config.verbose ? {
         fullReasoning: reasoning,
         fullResult: redactedResult,
@@ -686,13 +693,13 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
 
     // If assemble_output was called, set termination flag.
-    // DON'T abort immediately — other tools in the same parallel batch
-    // (e.g., record_finding) may not have executed yet, and Pi's abort
-    // cancels pending tool executions at the framework level.
-    // Instead, abort via beforeToolCall on the NEXT turn.
+    // The tool result already has terminate: true, so Pi will skip the next
+    // LLM call when assemble_output is the only tool in the batch.
+    // When it shares a batch with record_finding, beforeToolCall blocks
+    // further investigation on the extra turn.
     if (isAssemble && assembledRef.sections !== null) {
       terminationReason = 'completed';
-      return undefined;
+      return { terminate: true };
     }
 
     // Sanitize → boundary-wrap → return to LLM context.
@@ -802,28 +809,43 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const summaryCache = new Map<string, string>();
   const WRITING_TOOL_NAMES = new Set(['record_finding', 'assemble_output', 'switch_to_fast_model']);
 
+  // Cache evidence-derived sets — only rebuild when findings count changes
+  let cachedEvidenceFiles: Set<string> | null = null;
+  let cachedPinnedToolCallIds: Set<string> | null = null;
+  let cachedFindingsCount = -1;
+
+  function normPath(p: string): string {
+    return p.replace(/\\/g, '/').replace(/^\.\//, '');
+  }
+
   const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
     const keepRecent = snipBoundaryActive ? KEEP_RECENT_SNIP : KEEP_RECENT_NORMAL;
     if (messages.length <= keepRecent) return messages;
 
-    // Build the set of file paths cited as evidence in recorded findings
-    const evidenceFiles = new Set<string>();
-    for (const f of state.findings) {
-      for (const ev of f.evidence) {
-        evidenceFiles.add(ev.filePath.replace(/\\/g, '/').replace(/^\.\//, ''));
-      }
-    }
-
-    // Determine which toolCallIds are pinned (produced evidence)
-    const pinnedToolCallIds = new Set<string>();
-    for (const [tcId, files] of toolCallIdToFiles) {
-      for (const file of files) {
-        if (evidenceFiles.has(file.replace(/\\/g, '/').replace(/^\.\//, ''))) {
-          pinnedToolCallIds.add(tcId);
-          break;
+    // Rebuild evidence and pinned sets only when findings change
+    if (cachedFindingsCount !== state.findings.length) {
+      cachedEvidenceFiles = new Set<string>();
+      for (const f of state.findings) {
+        for (const ev of f.evidence) {
+          cachedEvidenceFiles.add(normPath(ev.filePath));
         }
       }
+
+      cachedPinnedToolCallIds = new Set<string>();
+      for (const [tcId, files] of toolCallIdToFiles) {
+        for (const file of files) {
+          if (cachedEvidenceFiles.has(normPath(file))) {
+            cachedPinnedToolCallIds.add(tcId);
+            break;
+          }
+        }
+      }
+
+      cachedFindingsCount = state.findings.length;
     }
+
+    const evidenceFiles = cachedEvidenceFiles!;
+    const pinnedToolCallIds = cachedPinnedToolCallIds!;
 
     // Build stale-read map: for each file, which is the latest toolCallId that read it?
     const latestReadByFile = new Map<string, string>();
@@ -833,7 +855,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       if (tr.role !== 'toolResult' || !tr.toolCallId) continue;
       const files = toolCallIdToFiles.get(tr.toolCallId);
       if (files) {
-        for (const f of files) latestReadByFile.set(f.replace(/\\/g, '/').replace(/^\.\//, ''), tr.toolCallId);
+        for (const f of files) latestReadByFile.set(normPath(f), tr.toolCallId);
       }
     }
 
@@ -842,8 +864,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     for (const [tcId, files] of toolCallIdToFiles) {
       if (pinnedToolCallIds.has(tcId)) continue;
       for (const f of files) {
-        const nf = f.replace(/\\/g, '/').replace(/^\.\//, '');
-        const latest = latestReadByFile.get(nf);
+        const latest = latestReadByFile.get(normPath(f));
         if (latest && latest !== tcId) {
           staleToolCallIds.add(tcId);
           break;
@@ -933,6 +954,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     toolExecution: 'parallel',
     transformContext,
     onPayload,
+    sessionId,
     ...(apiKey ? { getApiKey: async () => apiKey } : {}),
     beforeToolCall,
     afterToolCall,
@@ -946,7 +968,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
 
   // Subscribe to events for usage tracking, reasoning capture, and batchId rotation
   let streamingText = ''; // accumulates text deltas within a single message
-  agent.subscribe((event: AgentEvent) => {
+  agent.subscribe((event: AgentEvent, _signal: AbortSignal) => {
     if (event.type === 'message_start' && event.message && 'role' in event.message && event.message.role === 'assistant') {
       // New assistant turn — rotate the batchId so parallel tool calls in this turn share it
       currentBatchId = randomUUID();
@@ -1004,8 +1026,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         if (textParts.length > 0) {
           lastAssistantReasoning = textParts.join('\n').trim();
 
-          // Emit as a text_response step for verbose mode
-          if (config.verbose && lastAssistantReasoning) {
+          // Emit as a text_response step so reasoning is always available
+          if (lastAssistantReasoning) {
             config.onStep?.({
               step: stepCount,
               action: 'reasoning',
@@ -1038,11 +1060,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // (terminationReason may have been set to 'completed' by afterToolCall hook)
     if (assembledRef.sections === null && (terminationReason as string) !== 'completed') {
       // Ensure fast model for retry nudges — just needs to write, not reason
-      // Post-loop: setModel works here since continue() starts a new _runLoop
+      // Post-loop: agent.state.model updates _state for the new _runLoop
       if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
         switchModelInPlace();
-        agent.setModel(piModel); // also update _state for the new _runLoop
+        agent.state.model = piModel;
       }
       // Retry with nudge (max 2)
       for (let retry = 0; retry < 2; retry++) {
@@ -1081,9 +1103,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
     }
   } catch (err) {
-    // Pi aborts throw — check if it was our intentional abort from assemble_output
+    // With terminate: true, clean exits no longer throw. But an abort from
+    // budget exhaustion or external cancellation can still throw here.
     if (terminationReason === 'completed') {
-      // Expected — assemble_output called agent.abort()
+      // Expected — assemble_output triggered termination
     } else {
       terminationReason = 'error';
       errorDetail = (err as Error).message;
@@ -1125,11 +1148,20 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     result: `Verifying evidence for ${state.findings.length} findings...`,
   });
 
+  // Pre-load all unique evidence files once to avoid redundant reads across findings.
+  const uniqueEvidencePaths = new Set<string>();
+  for (const f of state.findings) {
+    for (const ev of f.evidence) uniqueEvidencePaths.add(ev.filePath);
+  }
+  const fileContentCache = new Map<string, ResolveResult>();
+  await Promise.all([...uniqueEvidencePaths].map(async (fp) => {
+    fileContentCache.set(fp, await resolveAndRead(config.repoPath, fp));
+  }));
+
   // Post-investigation verification pass: re-verify all evidence against actual files.
   // Removes findings where ALL evidence is unverifiable (likely hallucinated).
-  // Parallelize file reads — each finding's evidence is independent.
   const verificationResults = await Promise.all(
-    state.findings.map((finding) => verifyFindingEvidence(config.repoPath, finding)),
+    state.findings.map((finding) => verifyFindingEvidence(config.repoPath, finding, fileContentCache)),
   );
 
   const removedFindingIds: string[] = [];

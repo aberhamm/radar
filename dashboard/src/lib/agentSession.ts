@@ -64,6 +64,8 @@ export interface StepEvent {
   batchId?: string;
   newBudget?: number;
   timestamp?: string;
+  /** Structured metadata from the tool result (e.g. findingId, severity, matchCount) */
+  details?: Record<string, unknown>;
 }
 
 export interface RunResult {

@@ -24,18 +24,25 @@ export function formatVerboseStep(step: StepEvent, repoPrefix?: string): void {
     }
 
     case 'finding': {
+      const d = step.details;
+      const findingId = d?.findingId ?? '?';
+      const severity = d?.severity ? String(d.severity).toUpperCase() : null;
+      const evidenceCount = typeof d?.evidenceCount === 'number' ? d.evidenceCount : null;
+
       try {
         const parsed = JSON.parse(step.fullResult ?? step.result ?? '{}');
         if (parsed.error) {
           console.log(`${prefix} ${RED}Finding error: ${parsed.error}${RESET}`);
         } else {
-          console.log(`${prefix} ${GREEN}${BOLD}FINDING RECORDED: ${parsed.findingId}${RESET} (${parsed.totalFindings} total)`);
+          const total = parsed.totalFindings ?? '';
+          const evHint = evidenceCount != null ? ` [${evidenceCount} evidence file${evidenceCount > 1 ? 's' : ''}]` : '';
+          console.log(`${prefix} ${GREEN}${BOLD}FINDING RECORDED: ${findingId}${RESET}${total ? ` (${total} total)` : ''}${evHint}`);
           if (step.args) {
             try {
               const args = JSON.parse(step.args);
               const finding = args.finding ?? args;
               if (finding.title) {
-                console.log(`  ${BOLD}${finding.severity?.toUpperCase() ?? 'INFO'}:${RESET} ${finding.title}`);
+                console.log(`  ${BOLD}${severity ?? finding.severity?.toUpperCase() ?? 'INFO'}:${RESET} ${finding.title}`);
               }
               if (finding.description) {
                 const desc = finding.description.slice(0, 200);
