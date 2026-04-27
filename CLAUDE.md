@@ -6,18 +6,7 @@ This is **repo-audit-delivery-agent** — an agentic consulting tool that invest
 
 ## Spec
 
-The full implementation spec is in `docs/spec.md`. Read the entire spec before writing any code. It contains the architecture, data models, tool definitions, consulting rules, output schemas, and implementation sequence.
-
-## Implementation order
-
-Follow the phased build order in section 15 of the spec exactly:
-
-1. **Phase 1: Tools** — Implement all deterministic tools first (repo, search, config parsing, dependencies, analysis, web). Each tool is a standalone function with typed inputs and outputs. Unit test each tool against fixture repos before moving on.
-2. **Phase 2: Rules + references** — Write the consulting rule markdown files and reference knowledge base files. Implement the rule loader and system prompt assembler.
-3. **Phase 3: Agent integration** — Wire tools into Pi Agent, implement goal prompts, output assembler, scorecard computation, and renderers.
-4. **Phase 4: CLI + polish** — Build the CLI, investigation log renderer, and run end-to-end against target repos.
-
-Do not skip ahead. Each phase depends on the previous one being solid.
+The original implementation spec is archived at `docs/archive/spec.md`. It's a historical design reference — for current architecture, read `docs/code-walkthrough.md` and the code itself.
 
 ## Key architectural principles
 
@@ -39,25 +28,14 @@ Do not skip ahead. Each phase depends on the previous one being solid.
 
 ## Provider setup
 
-Portkey AI gateway routes to Amazon Bedrock. No virtual key needed — uses base URL + provider header.
+Provider-agnostic: supports OpenAI, Portkey (→ Bedrock), Azure OpenAI, and any OpenAI-compatible endpoint (Ollama, Together, Groq, vLLM). See `.env.example` for all options.
 
-Required environment variables (add to `.env`, never commit):
+Core env vars (add to `.env`, never commit):
 
 ```
-PORTKEY_API_KEY=your-portkey-api-key
-PORTKEY_BASE_URL=https://portkeygateway.example.com/v1
-PORTKEY_PROVIDER=@aws-bedrock-use2
-PROVIDER_TYPE=portkey
-
+PROVIDER_TYPE=portkey          # openai | portkey | azure-openai | generic
 AGENT_MODEL=us.anthropic.claude-sonnet-4-6
 FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
-
-# Optional: enable web search (Brave Search API)
-# SEARCH_ENGINE=brave
-# SEARCH_API_KEY=your-brave-search-api-key
-
-# Optional: enable GitHub issue creation from findings
-# GITHUB_TOKEN=ghp_... (needs repo scope)
 ```
 
 Model IDs are provider-agnostic env vars. `AGENT_MODEL` handles the investigation phase (reasoning, tool selection, evidence gathering). `FAST_MODEL` handles finding recording and brief assembly. Both models are built by `src/config/piModel.ts`. Swap to any provider's model IDs without code changes.
@@ -77,21 +55,22 @@ The switch is **agent-initiated**, not timer-based or budget-based. The agent kn
 
 This pattern was chosen over classifier-based routing (RouteLLM), cascading (FrugalGPT), and per-tool routing after evaluating common multi-model cost optimization approaches. The two-phase structure matches the natural investigate-then-write shape of consulting work.
 
-Verified in Chunk 0 spike (`docs/pi-api-notes.md`):
+Verified in Chunk 0 spike:
 - Both models connect and respond via Portkey gateway
 - Tool calling works (finish reason: `tool_use`)
 - Cache tokens not surfaced by Portkey (defaults to 0 in RunMetrics)
 
 ## Goal types
 
-Six analysis goals, each with its own rules file and prompt:
+Nine analysis goals (defined in `src/types/state.ts`), each with its own rules file and prompt:
 
 | Goal | Rule file | Use case | Output |
 |------|-----------|----------|--------|
 | `onboarding` | `goal-onboarding.md` | New developer joining project | Full brief with 12 sections |
-| `audit` | `goal-audit.md` | Architecture assessment | Scored scorecard + findings |
+| `audit` | `goal-audit.md` | CMS-specific architecture assessment | Scored scorecard + findings |
+| `audit-generic` | `goal-audit-generic.md` | Stack-agnostic architecture assessment | 8-category scorecard + findings |
 | `migration` | `goal-migration.md` | Upgrade readiness | Migration hotspots + complexity |
-| `component-map` | — | Component inventory | Structured component map |
+| `component-map` | `goal-component-map.md` | Component inventory | Structured component map |
 | `ci-check` | `goal-ci-check.md` | CI health check (fast) | Pass/fail + compact PR comment |
 | `security-review` | `goal-security-review.md` | Security audit | 6-category security scorecard |
 | `nextjs` | `goal-nextjs.md` | Next.js framework health | 7-category framework scorecard |

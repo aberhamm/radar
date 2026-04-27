@@ -30,15 +30,19 @@ Radar is an agentic tool, not a static linter. It decides what to investigate ba
 
 ## Assessment Types
 
+Nine goal types covering the full engagement lifecycle:
+
 | Type | Use Case | Output |
 |------|----------|--------|
 | **Onboarding** | New team member joining a project | 12-section brief with architecture, patterns, gotchas |
-| **Audit** | Architecture health assessment | Scored scorecard + categorized findings |
+| **Audit** | CMS-specific architecture assessment | Scored scorecard + categorized findings |
+| **Audit (Generic)** | Stack-agnostic architecture assessment | 8-category scorecard + findings |
 | **Security Review** | Security posture evaluation | 6-category security scorecard, secrets archaeology |
 | **Next.js Health** | Framework-specific deep dive | 7-category framework scorecard |
 | **Accessibility** | WCAG 2.1 AA compliance check | 6-category a11y scorecard |
 | **CI Check** | PR-level quick scan | Pass/fail for CI pipelines, compact PR comment |
 | **Migration** | Upgrade readiness | Migration hotspots + complexity assessment |
+| **Component Map** | Component inventory | Structured component map |
 
 For multi-goal runs, Radar chains a core investigation with specialist passes (Next.js, accessibility) using deterministic budget planning — no wasted compute on irrelevant analysis.
 
