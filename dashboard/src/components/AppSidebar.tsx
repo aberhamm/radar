@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import type { SidebarProps } from '@/components/Sidebar';
 import { HomePanel } from '@/components/sidebar/HomePanel';
 import { HistoryPanel } from '@/components/sidebar/HistoryPanel';
+import { InfoPanel } from '@/components/sidebar/InfoPanel';
 import { SettingsPanel } from '@/components/sidebar/SettingsPanel';
 
 // ─── Feature flag ──────────────────────────────────────────────
@@ -41,13 +42,23 @@ function IconSettings({ className = '' }: { className?: string }) {
   );
 }
 
+function IconInfo({ className = '' }: { className?: string }) {
+  return (
+    <svg className={`w-4 h-4 ${className}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 7v4M8 5.5v-.01" />
+    </svg>
+  );
+}
+
 // ─── Types ─────────────────────────────────────────────────────
 
-type Section = 'home' | 'history' | 'settings';
+type Section = 'home' | 'history' | 'info' | 'settings';
 
 const NAV_ITEMS: { id: Section; icon: typeof IconHome; label: string }[] = [
   { id: 'home', icon: IconHome, label: 'Home' },
   { id: 'history', icon: IconHistory, label: 'History' },
+  { id: 'info', icon: IconInfo, label: 'Info' },
 ];
 
 // ─── Rail button ───────────────────────────────────────────────
@@ -173,6 +184,13 @@ function DetailPanel({
             hasMore={props.hasMore}
             onLoadMore={props.onLoadMore}
             compareHighlight={props.compareHighlight}
+          />
+        )}
+
+        {activeSection === 'info' && (
+          <InfoPanel
+            activePage={props.activeInfoPage}
+            onNavigate={(page) => props.onInfoNavigate?.(page)}
           />
         )}
 

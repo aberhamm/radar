@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import type { Tab } from '@/lib/useUrlState';
 
 interface HomePanelProps {
@@ -78,19 +77,6 @@ export function HomePanel({
         </div>
       )}
 
-      {/* Spacer + bottom link */}
-      <div className="flex-1" />
-      <Link
-        href="/how-it-works"
-        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12px] text-tertiary-label hover:text-secondary-label hover:bg-surface transition-colors"
-      >
-        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="8" cy="8" r="6" />
-          <path d="M6 6.5a2 2 0 0 1 3.94.5c0 1-1.44 1.5-1.44 1.5" />
-          <circle cx="8" cy="11.5" r="0.5" fill="currentColor" stroke="none" />
-        </svg>
-        How It Works
-      </Link>
     </div>
   );
 }

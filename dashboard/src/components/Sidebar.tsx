@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import type { HistoryItem } from '@/lib/agentSession';
-import type { Tab } from '@/lib/useUrlState';
+import type { Tab, InfoPage } from '@/lib/useUrlState';
 import { groupByRepo, type RepoGroup } from '@/lib/historyGrouping';
 
 // Re-export for any external consumers
@@ -35,6 +35,10 @@ export interface SidebarProps {
   showSections?: boolean;
   /** Compare mode: IDs of the two runs being compared, for dual highlight */
   compareHighlight?: [string, string] | null;
+  /** Currently active info page (how-it-works, changelog) */
+  activeInfoPage?: InfoPage;
+  /** Navigate to an info page */
+  onInfoNavigate?: (page: InfoPage) => void;
 }
 
 export function Sidebar({ open, history, activeRunId, currentRepoName, currentGoal, isRunning, onSelectHistory, onPrefetch, onNewRun, onClose, compareMode, compareSelections = [], onToggleCompare, onCompareSelect, onCompare, hasMore, onLoadMore, activeTab, onSectionClick, showSections, compareHighlight }: SidebarProps) {

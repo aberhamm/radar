@@ -8,11 +8,14 @@ import { usePathname, useSearchParams } from 'next/navigation';
 export type Tab = 'overview' | 'investigation' | 'cost';
 export type MultiTab = Tab;
 
+export type InfoPage = 'how-it-works' | 'changelog';
+
 export type UrlView =
   | { view: 'idle' }
   | { view: 'run'; runId: string; tab?: Tab }
   | { view: 'compare'; compareIds: [string, string] }
-  | { view: 'multi'; parentId: string; tab?: MultiTab };
+  | { view: 'multi'; parentId: string; tab?: MultiTab }
+  | { view: 'info'; page: InfoPage };
 
 const VALID_TABS = new Set<Tab>(['overview', 'investigation', 'cost']);
 const VALID_MULTI_TABS = VALID_TABS;
@@ -52,6 +55,10 @@ export function parseUrl(pathname: string, searchParams?: URLSearchParams): UrlV
     };
   }
 
+  if (segments[0] === 'how-it-works' || segments[0] === 'changelog') {
+    return { view: 'info', page: segments[0] };
+  }
+
   // Unknown path → idle (will redirect)
   return { view: 'idle' };
 }
@@ -71,6 +78,8 @@ export function buildUrl(state: UrlView): string {
       const base = `/multi/${state.parentId}`;
       return state.tab && state.tab !== 'overview' ? `${base}?tab=${state.tab}` : base;
     }
+    case 'info':
+      return `/${state.page}`;
   }
 }
 

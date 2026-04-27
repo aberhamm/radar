@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { StepEvent, Scorecard, RunMetrics, HistoryItem } from '@/lib/agentSession';
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
-import { useUrlState, buildUrl, type Tab, type MultiTab } from '@/lib/useUrlState';
+import { useUrlState, buildUrl, type Tab, type MultiTab, type InfoPage } from '@/lib/useUrlState';
 import { ContextBar } from '@/components/ContextBar';
 import { Sidebar } from '@/components/Sidebar';
 import { AppSidebar, USE_SIDEBAR_V2 } from '@/components/AppSidebar';
@@ -15,6 +15,8 @@ import { CompareView, type CompareData } from '@/components/CompareView';
 import { AnalysisView } from '@/components/AnalysisView';
 import { MultiGoalView, type MultiGoalData } from '@/components/MultiGoalView';
 import { RunLoadingSkeleton } from '@/components/Skeleton';
+import { HowItWorksPanel } from '@/components/HowItWorksPanel';
+import { ChangelogView } from '@/components/ChangelogView';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
 import type { TransformedRunData } from '@/lib/runTransform';
@@ -49,7 +51,7 @@ function friendlyError(raw: string): string {
 
 // ─── Types ──────────────────────────────────────────────────────
 
-type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing' | 'multigoal';
+type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing' | 'multigoal' | 'info';
 
 interface CurrentRun {
   repoPath: string;
@@ -101,6 +103,7 @@ export default function DashboardPage() {
   const [sampleInvestigation, setSampleInvestigation] = useState<TransformedRunData | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [multiTab, setMultiTab] = useState<MultiTab>('overview');
+  const [activeInfoPage, setActiveInfoPage] = useState<InfoPage | undefined>(undefined);
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
   const { urlView, pushUrl, replaceUrl } = useUrlState();
   const urlHandledRef = useRef(false);
@@ -179,7 +182,10 @@ export default function DashboardPage() {
     if (!ready || urlHandledRef.current) return;
     urlHandledRef.current = true;
 
-    if (urlView.view === 'run' && urlView.runId) {
+    if (urlView.view === 'info') {
+      setStatus('info');
+      setActiveInfoPage(urlView.page);
+    } else if (urlView.view === 'run' && urlView.runId) {
       handleSelectHistory(urlView.runId, urlView.tab);
     } else if (urlView.view === 'compare') {
       // Load compare directly from URL
@@ -234,7 +240,10 @@ export default function DashboardPage() {
     if (!ready) return;
 
     // When URL changes externally (back/forward), sync internal state
-    if (urlView.view === 'idle' && status !== 'idle' && status !== 'running' && status !== 'budget_paused') {
+    if (urlView.view === 'info') {
+      setStatus('info');
+      setActiveInfoPage(urlView.page);
+    } else if (urlView.view === 'idle' && status !== 'idle' && status !== 'running' && status !== 'budget_paused') {
       setStatus('idle');
       setResult(null);
       setCurrentRun(null);
@@ -245,6 +254,18 @@ export default function DashboardPage() {
       handleSelectHistory(urlView.runId, urlView.tab);
     }
   }, [urlView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleInfoNavigate = useCallback((page: InfoPage) => {
+    setStatus('info');
+    setActiveInfoPage(page);
+    setResult(null);
+    setCurrentRun(null);
+    setSelectedRunId(null);
+    setMultiGoalData(null);
+    setCompareData(null);
+    pushUrl({ view: 'info', page });
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  }, [pushUrl]);
 
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
@@ -603,8 +624,15 @@ export default function DashboardPage() {
 
   // Prefetch a run on hover — fires the request and populates the cache
   // so that the subsequent click is instant.
+  const groupParentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const h of history) { if (h.parentRunId) ids.add(h.parentRunId); }
+    return ids;
+  }, [history]);
+
   const handlePrefetch = useCallback((id: string) => {
     if (id === SAMPLE_RUN_ID) return;
+    if (groupParentIds.has(id)) return;
     if (runCacheRef.current.has(id)) return;
     if (prefetchingRef.current.has(id)) return;
     prefetchingRef.current.add(id);
@@ -622,7 +650,7 @@ export default function DashboardPage() {
       })
       .catch(() => {})
       .finally(() => { prefetchingRef.current.delete(id); });
-  }, []);
+  }, [groupParentIds]);
 
   const isRunningOrPaused = status === 'running' || status === 'budget_paused';
 
@@ -655,6 +683,8 @@ export default function DashboardPage() {
       cmds.push({ id: 'exit-compare', label: 'Exit Compare', action: handleExitCompare });
     }
     cmds.push(
+      { id: 'how-it-works', label: 'How It Works', action: () => handleInfoNavigate('how-it-works') },
+      { id: 'changelog', label: 'Changelog', action: () => handleInfoNavigate('changelog') },
       { id: 'theme-light', label: 'Theme: Light', action: () => setThemeMode('light') },
       { id: 'theme-dark', label: 'Theme: Dark', action: () => setThemeMode('dark') },
       { id: 'theme-system', label: 'Theme: System', action: () => setThemeMode('system') },
@@ -667,7 +697,7 @@ export default function DashboardPage() {
       });
     }
     return cmds;
-  }, [isRunningOrPaused, status, fullHistory, handleNewRun, handleStop, handleSelectHistory, handleToggleCompareMode, handleExitCompare, setThemeMode]);
+  }, [isRunningOrPaused, status, fullHistory, handleNewRun, handleStop, handleSelectHistory, handleToggleCompareMode, handleExitCompare, handleInfoNavigate, setThemeMode]);
 
   useKeyboardShortcuts({
     onNewRun: handleNewRun,
@@ -818,6 +848,8 @@ export default function DashboardPage() {
             onSectionClick={handleTabChange}
             showSections={(status === 'complete' || status === 'error') && !!result}
             compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
+            activeInfoPage={status === 'info' ? activeInfoPage : undefined}
+            onInfoNavigate={handleInfoNavigate}
           />
         ) : (
           <Sidebar
@@ -842,6 +874,8 @@ export default function DashboardPage() {
             onSectionClick={handleTabChange}
             showSections={(status === 'complete' || status === 'error') && !!result}
             compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
+            activeInfoPage={status === 'info' ? activeInfoPage : undefined}
+            onInfoNavigate={handleInfoNavigate}
           />
         )}
 
@@ -873,6 +907,19 @@ export default function DashboardPage() {
           {status === 'comparing' && compareData && !compareLoading && (
             <div key="comparing" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <CompareView data={compareData} />
+            </div>
+          )}
+
+          {status === 'info' && activeInfoPage && (
+            <div key={`info-${activeInfoPage}`} className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              {activeInfoPage === 'how-it-works' && (
+                <div className="flex-1 overflow-y-auto">
+                  <div className="max-w-xl mx-auto px-6 py-10">
+                    <HowItWorksPanel />
+                  </div>
+                </div>
+              )}
+              {activeInfoPage === 'changelog' && <ChangelogView />}
             </div>
           )}
 

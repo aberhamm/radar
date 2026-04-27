@@ -4,6 +4,55 @@ All notable changes to repo-audit-delivery-agent (radar).
 
 ## [Unreleased]
 
+## 2026-04-24
+
+### Added
+- **Client-ready PDF export.** `--export-pdf` generates branded PDF reports (cover page, executive summary, scorecard, findings) from CLI and dashboard. Dashboard gets a one-click PDF download button.
+- **Universal investigation (`--goal all`).** Runs all applicable goals in a single session with tiered budget allocation, per-pass tracking, and post-core rebalancing. Universal goal prompt and rules, `goalBriefWriter` and `multiGoalSummary` renderers, `mergeState()` for cross-goal state accumulation. 42 new tests.
+- **Dashboard multi-goal view.** Single-page layout with collapsible per-goal sections, direct URL navigation, provider abstraction layer, and multi-goal history rendering.
+- **Dashboard URL routing.** Deep-linkable routes for reports, history, compare, and individual runs. Sidebar nav, cross-linking, run cache with hover prefetch.
+- **Sidebar v2.** Icon rail + sliding detail panel. History as default view, "New Analysis" moved to header. Auto-close on mobile deep-link navigation.
+- **Parallel compare.** Side-by-side run comparison with pre-computation layer and per-turn timing.
+- **File tree viewer.** Visual file tree component in dashboard.
+- **Reasoning UI enhancements.** Connector rail, status icons, richer tool-call interactions, replay stream indicators aligned on vertical rail, writing-phase turn filtering.
+- **Skeleton loading states.** Shimmer placeholders across dashboard views with test coverage.
+- **Evidence verification v2.** `sourceContext` and coherence checks added to the verification system. Dashboard renders verification badges on evidence.
+- **Executive summary renderer.** Standalone renderer for brief executive summaries.
+- **Audit-generic mode.** Platform-agnostic audit with monorepo root selection for non-CMS codebases.
+- **`radar gauntlet` command.** Cross-repo quality runs for batch validation.
+- **`clone_repo` tool.** Clone remote repositories for analysis without local checkout.
+- **GitHub issue creation.** Create issues directly from findings (requires `GITHUB_TOKEN`).
+- **CI fingerprint dedup.** Improved cross-run finding matching for trend tracking.
+- **Tiered run storage.** Disk-backed storage with rerun-from-history, compare, and history APIs. Lazy-loads 34MB event files on demand.
+- **DESIGN.md design system.** Formal design system applied to dashboard — CSS variables replace hardcoded colors, ARIA attributes added to navigation.
+- **Optional snippets.** Evidence snippets now optional in findings for lighter output.
+- **Scorecard metadata.** Enriched scorecard entries with additional context fields.
+- **Dev-mode loader.** Simplified loader that always uses `dist/`, with `predev` build step.
+
+### Fixed
+- Replay findings missing from dashboard playback.
+- Mutex drain and recording gate enforcement to prevent finding loss under concurrency.
+- Deferred abort on `assemble_output` to preserve batched findings.
+- Budget allocation and recording prompt corrections for `--goal all`.
+- Stale closure in `handleSelectHistory` breaking multi-goal view.
+- Infinite redirect loop in dashboard routing.
+- Stale `goal=all` checkpoint duplicating sidebar entries.
+- History clicks now land on reports page correctly.
+- Stale Turbopack cache + duplicate scorecard keys.
+- PDF export 500 error, CLI dry-run and budget validation edge cases.
+- Granular finding categories to eliminate cross-goal scorecard contamination.
+- Granular a11y finding categories for accessibility goal.
+- Context compression, budget exhaustion handling, file dedup summaries, post-assembly progress.
+- Tab deep-links, mobile sidebar, and tile accessible names.
+- `onBudgetExhausted` wired into multi-goal runs, React key warnings resolved.
+- Replay button, infinite event polling, and sample run data in dashboard.
+
+### Changed
+- Portkey gateway config extracted to shared module.
+- Per-pass budget tracking with reworked defaults for `--goal all`.
+- Deterministic budget planning with post-core rebalancing for multi-goal runs.
+- Hardcoded hex colors replaced with CSS variables; hardcoded hover colors replaced with theme-aware values.
+
 ## 2026-04-09
 
 ### Added
