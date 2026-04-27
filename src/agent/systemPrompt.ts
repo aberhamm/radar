@@ -1,4 +1,5 @@
-import fs from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { GoalType } from '../types/state.js';
 
@@ -8,13 +9,21 @@ import type { GoalType } from '../types/state.js';
  */
 const RULES_DIR = path.resolve(import.meta.dirname, '..', 'rules');
 
+/** Module-level cache — rules are static for the lifetime of the process. */
+const ruleCache = new Map<string, string>();
+
 /**
- * Load a single rule file by name. Returns the file content or null if not found.
+ * Load a single rule file by name. Cached after first read.
  */
-export function loadRule(filename: string): string | null {
+export async function loadRule(filename: string): Promise<string | null> {
+  const cached = ruleCache.get(filename);
+  if (cached !== undefined) return cached;
+
   const filePath = path.join(RULES_DIR, filename);
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    const content = await readFile(filePath, 'utf-8');
+    ruleCache.set(filename, content);
+    return content;
   } catch {
     return null;
   }
@@ -29,18 +38,18 @@ export function loadRule(filename: string): string | null {
  * Rules are joined with markdown separators.
  * Platform rules are optional — if the platform is 'unknown', they're skipped.
  */
-export function buildSystemPrompt(goal: GoalType | 'universal', platform: string): string {
+export async function buildSystemPrompt(goal: GoalType | 'universal', platform: string): Promise<string> {
   const parts: string[] = [];
 
-  const core = loadRule('core.md');
+  const core = await loadRule('core.md');
   if (core) parts.push(core);
 
   if (platform !== 'unknown') {
-    const platformRule = loadRule(`platform-${platform}.md`);
+    const platformRule = await loadRule(`platform-${platform}.md`);
     if (platformRule) parts.push(platformRule);
   }
 
-  const goalRule = loadRule(`goal-${goal}.md`);
+  const goalRule = await loadRule(`goal-${goal}.md`);
   if (goalRule) parts.push(goalRule);
 
   return parts.join('\n\n---\n\n');
@@ -50,9 +59,9 @@ export function buildSystemPrompt(goal: GoalType | 'universal', platform: string
  * List all available rule files in the rules directory.
  * Useful for validation and the CLI --dry-run command.
  */
-export function listRuleFiles(): string[] {
+export async function listRuleFiles(): Promise<string[]> {
   try {
-    return fs.readdirSync(RULES_DIR).filter((f) => f.endsWith('.md'));
+    return (await readdir(RULES_DIR)).filter((f) => f.endsWith('.md'));
   } catch {
     return [];
   }
@@ -70,6 +79,6 @@ export function validateRules(goal: GoalType, platform: string): string[] {
 
   return expected.filter((filename) => {
     const filePath = path.join(RULES_DIR, filename);
-    return !fs.existsSync(filePath);
+    return !existsSync(filePath);
   });
 }

@@ -14,6 +14,9 @@ export function formatVerboseStep(step: StepEvent, repoPrefix?: string): void {
   const prefix = `${tag}${DIM}[Step ${step.step}]${RESET}`;
 
   switch (step.type) {
+    case 'text_delta':
+    case 'tool_start':
+      return; // transient streaming events — skip in verbose output
     case 'text_response': {
       console.log(`\n${prefix} ${MAGENTA}${BOLD}Agent thinking:${RESET}`);
       const text = step.fullReasoning ?? step.reasoning ?? '';

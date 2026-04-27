@@ -7,48 +7,48 @@ import {
 } from '../../src/agent/systemPrompt.js';
 
 describe('loadRule', () => {
-  it('loads core.md', () => {
-    const content = loadRule('core.md');
+  it('loads core.md', async () => {
+    const content = await loadRule('core.md');
     expect(content).not.toBeNull();
     expect(content).toContain('Core investigation rules');
   });
 
-  it('returns null for non-existent file', () => {
-    expect(loadRule('does-not-exist.md')).toBeNull();
+  it('returns null for non-existent file', async () => {
+    expect(await loadRule('does-not-exist.md')).toBeNull();
   });
 });
 
 describe('buildSystemPrompt', () => {
-  it('assembles core + goal for unknown platform', () => {
-    const prompt = buildSystemPrompt('onboarding', 'unknown');
+  it('assembles core + goal for unknown platform', async () => {
+    const prompt = await buildSystemPrompt('onboarding', 'unknown');
     expect(prompt).toContain('Core investigation rules');
     expect(prompt).toContain('Onboarding brief rules');
     expect(prompt).not.toContain('Sitecore');
     expect(prompt).not.toContain('Optimizely');
   });
 
-  it('includes platform rules for sitecore', () => {
-    const prompt = buildSystemPrompt('audit', 'sitecore');
+  it('includes platform rules for sitecore', async () => {
+    const prompt = await buildSystemPrompt('audit', 'sitecore');
     expect(prompt).toContain('Core investigation rules');
     expect(prompt).toContain('Sitecore-specific investigation rules');
     expect(prompt).toContain('Architecture Audit Rules');
   });
 
-  it('includes platform rules for optimizely', () => {
-    const prompt = buildSystemPrompt('migration', 'optimizely');
+  it('includes platform rules for optimizely', async () => {
+    const prompt = await buildSystemPrompt('migration', 'optimizely');
     expect(prompt).toContain('Optimizely-specific investigation rules');
     expect(prompt).toContain('Migration Scout Rules');
   });
 
-  it('joins sections with markdown separator', () => {
-    const prompt = buildSystemPrompt('onboarding', 'sitecore');
+  it('joins sections with markdown separator', async () => {
+    const prompt = await buildSystemPrompt('onboarding', 'sitecore');
     expect(prompt).toContain('\n\n---\n\n');
   });
 });
 
 describe('listRuleFiles', () => {
-  it('returns all markdown rule files', () => {
-    const files = listRuleFiles();
+  it('returns all markdown rule files', async () => {
+    const files = await listRuleFiles();
     expect(files).toContain('core.md');
     expect(files).toContain('platform-sitecore.md');
     expect(files).toContain('platform-optimizely.md');
@@ -67,14 +67,14 @@ describe('listRuleFiles', () => {
 });
 
 describe('component-map goal', () => {
-  it('goal-component-map.md loads without error', () => {
-    const content = loadRule('goal-component-map.md');
+  it('goal-component-map.md loads without error', async () => {
+    const content = await loadRule('goal-component-map.md');
     expect(content).not.toBeNull();
     expect(content).toContain('Component Map Rules');
   });
 
-  it('buildSystemPrompt includes component-map rules', () => {
-    const prompt = buildSystemPrompt('component-map', 'unknown');
+  it('buildSystemPrompt includes component-map rules', async () => {
+    const prompt = await buildSystemPrompt('component-map', 'unknown');
     expect(prompt).toContain('Core investigation rules');
     expect(prompt).toContain('Component Map Rules');
   });
@@ -85,14 +85,14 @@ describe('component-map goal', () => {
 });
 
 describe('security-review goal', () => {
-  it('goal-security-review.md loads without error', () => {
-    const content = loadRule('goal-security-review.md');
+  it('goal-security-review.md loads without error', async () => {
+    const content = await loadRule('goal-security-review.md');
     expect(content).not.toBeNull();
     expect(content).toContain('Security Review Goal');
   });
 
-  it('buildSystemPrompt includes security-review rules', () => {
-    const prompt = buildSystemPrompt('security-review', 'unknown');
+  it('buildSystemPrompt includes security-review rules', async () => {
+    const prompt = await buildSystemPrompt('security-review', 'unknown');
     expect(prompt).toContain('Core investigation rules');
     expect(prompt).toContain('Security Review Goal');
   });
@@ -101,8 +101,8 @@ describe('security-review goal', () => {
     expect(validateRules('security-review', 'unknown')).toEqual([]);
   });
 
-  it('includes secrets archaeology patterns', () => {
-    const content = loadRule('goal-security-review.md');
+  it('includes secrets archaeology patterns', async () => {
+    const content = await loadRule('goal-security-review.md');
     expect(content).toContain('Secrets Archaeology');
     expect(content).toContain('AKIA');
     expect(content).toContain('ghp_');
@@ -113,14 +113,14 @@ describe('security-review goal', () => {
 });
 
 describe('nextjs goal', () => {
-  it('goal-nextjs.md loads without error', () => {
-    const content = loadRule('goal-nextjs.md');
+  it('goal-nextjs.md loads without error', async () => {
+    const content = await loadRule('goal-nextjs.md');
     expect(content).not.toBeNull();
     expect(content).toContain('Next.js Audit Rules');
   });
 
-  it('buildSystemPrompt includes nextjs rules', () => {
-    const prompt = buildSystemPrompt('nextjs', 'unknown');
+  it('buildSystemPrompt includes nextjs rules', async () => {
+    const prompt = await buildSystemPrompt('nextjs', 'unknown');
     expect(prompt).toContain('Core investigation rules');
     expect(prompt).toContain('Next.js Audit Rules');
   });
@@ -131,14 +131,14 @@ describe('nextjs goal', () => {
 });
 
 describe('accessibility goal', () => {
-  it('goal-accessibility.md loads without error', () => {
-    const content = loadRule('goal-accessibility.md');
+  it('goal-accessibility.md loads without error', async () => {
+    const content = await loadRule('goal-accessibility.md');
     expect(content).not.toBeNull();
     expect(content).toContain('WCAG Accessibility Audit Rules');
   });
 
-  it('buildSystemPrompt includes accessibility rules', () => {
-    const prompt = buildSystemPrompt('accessibility', 'unknown');
+  it('buildSystemPrompt includes accessibility rules', async () => {
+    const prompt = await buildSystemPrompt('accessibility', 'unknown');
     expect(prompt).toContain('Core investigation rules');
     expect(prompt).toContain('WCAG Accessibility Audit Rules');
   });

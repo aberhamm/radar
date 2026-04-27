@@ -80,10 +80,10 @@ export async function handleAnalyze(opts: {
     console.log(`Platform: ${platform}`);
     console.log(`Budget:   ${budget} tool calls`);
     console.log(`Output:   ${outputDir}`);
-    console.log(`\nSystem prompt (${buildSystemPrompt(goal, platform).length} chars)`);
+    console.log(`\nSystem prompt (${(await buildSystemPrompt(goal, platform)).length} chars)`);
     console.log(`Goal prompt (${buildGoalPrompt(goal, repoPath, budget, 5).length} chars)`);
     console.log(`Tools: 20 registered`);
-    console.log(`Rules: ${listRuleFiles().length} files`);
+    console.log(`Rules: ${(await listRuleFiles()).length} files`);
     const missing = validateRules(goal, platform);
     if (missing.length > 0) {
       console.log(`\nMissing rules: ${missing.join(', ')}`);
@@ -133,7 +133,7 @@ export async function handleAnalyze(opts: {
     onStep: (step) => {
       if (verbose) {
         formatVerboseStep(step);
-      } else {
+      } else if (step.type !== 'text_delta' && step.type !== 'tool_start') {
         const truncated = step.result?.slice(0, 60) ?? '';
         console.log(`  [Step ${step.step}] ${step.action} → ${truncated}`);
       }

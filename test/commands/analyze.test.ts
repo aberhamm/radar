@@ -36,8 +36,8 @@ vi.mock('../../src/ci/orchestrator.js', () => ({
   orchestrateCi: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('../../src/agent/systemPrompt.js', () => ({
-  buildSystemPrompt: vi.fn().mockReturnValue('system prompt'),
-  listRuleFiles: vi.fn().mockReturnValue(['rule1.md', 'rule2.md']),
+  buildSystemPrompt: vi.fn().mockResolvedValue('system prompt'),
+  listRuleFiles: vi.fn().mockResolvedValue(['rule1.md', 'rule2.md']),
   validateRules: vi.fn().mockReturnValue([]),
 }));
 vi.mock('../../src/agent/goalPrompts.js', () => ({
@@ -122,8 +122,8 @@ describe('handleAnalyze', () => {
       downloadPreviousArtifact: vi.fn().mockResolvedValue(null),
       uploadArtifact: vi.fn().mockResolvedValue(undefined),
     } as any);
-    vi.mocked(buildSystemPrompt).mockReturnValue('system prompt');
-    vi.mocked(listRuleFiles).mockReturnValue(['rule1.md', 'rule2.md']);
+    vi.mocked(buildSystemPrompt).mockResolvedValue('system prompt');
+    vi.mocked(listRuleFiles).mockResolvedValue(['rule1.md', 'rule2.md']);
     vi.mocked(validateRules).mockReturnValue([]);
     vi.mocked(buildGoalPrompt).mockReturnValue('goal prompt');
     // Suppress console output during tests

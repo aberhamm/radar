@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   GetSpecialistPromptsInput,
@@ -21,6 +21,9 @@ interface SpecialistMapping {
   relevance: 'high' | 'medium' | 'low';
   match: (root: AppRoot) => boolean;
 }
+
+/** Module-level cache — specialist files are static for the process lifetime. */
+const specialistCache = new Map<string, string>();
 
 const SPECIALIST_MAPPINGS: SpecialistMapping[] = [
   {
@@ -85,13 +88,16 @@ export async function getSpecialistPrompts(
     const isMatch = input.roots.some((root) => mapping.match(root));
     if (!isMatch) continue;
 
-    const filePath = path.join(SPECIALISTS_DIR, mapping.file);
-    let checklist: string;
-    try {
-      checklist = fs.readFileSync(filePath, 'utf-8');
-    } catch {
-      // Specialist file missing — skip silently
-      continue;
+    let checklist = specialistCache.get(mapping.file);
+    if (!checklist) {
+      const filePath = path.join(SPECIALISTS_DIR, mapping.file);
+      try {
+        checklist = await readFile(filePath, 'utf-8');
+        specialistCache.set(mapping.file, checklist);
+      } catch {
+        // Specialist file missing — skip silently
+        continue;
+      }
     }
 
     matched.add(mapping.id);

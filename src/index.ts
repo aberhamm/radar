@@ -94,8 +94,8 @@ program
   .command('rules')
   .description('Validate consulting rule files')
   .option('--validate', 'Check all expected rule files exist')
-  .action(() => {
-    const files = listRuleFiles();
+  .action(async () => {
+    const files = await listRuleFiles();
     console.log(`\nRule files (${files.length}):\n`);
     for (const f of files) {
       console.log(`  ${f}`);

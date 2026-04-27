@@ -411,7 +411,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   }
 
   // Build prompts
-  const systemPrompt = buildSystemPrompt(config.goal, platform) + '\n\n---\n\n' + BOUNDARY_SYSTEM_INSTRUCTION;
+  const systemPrompt = await buildSystemPrompt(config.goal, platform) + '\n\n---\n\n' + BOUNDARY_SYSTEM_INSTRUCTION;
   let goalPrompt = buildGoalPrompt(config.goal, config.repoPath, toolCallBudget, webSearchBudget);
 
   // Inject pre-computed context into the goal prompt
@@ -475,7 +475,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       name: piFastModel.name,
       cost: piFastModel.cost,
       maxTokens: piFastModel.maxTokens,
+      reasoning: piFastModel.reasoning ?? false,
     });
+    agent.state.thinkingLevel = 'off';
   }
   // Capture assistant reasoning text from message events for the investigation log.
   // Pi sends text content blocks alongside tool calls in the same assistant message.
@@ -948,7 +950,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     initialState: {
       systemPrompt,
       model: piModel,
-      thinkingLevel: 'off',
+      thinkingLevel: 'low',
       tools,
     },
     toolExecution: 'parallel',

@@ -121,7 +121,7 @@ function severityColor(sev: string): string {
 }
 
 const FindingCard = memo(function FindingCard({ event }: { event: StepEvent }) {
-  const finding = parseFinding(event);
+  const finding = useMemo(() => parseFinding(event), [event]);
   if (!finding) return null;
 
   return (
@@ -227,13 +227,16 @@ function ToolDetailsBadge({ action, details }: { action: string; details: Record
 
 const ToolCallChip = memo(function ToolCallChip({ event, isExpanded, onToggle, backRef }: { event: StepEvent; isExpanded: boolean; onToggle: () => void; backRef?: number | null }) {
   const hasDetail = !!(event.args || event.fullResult);
-  let parsedArgs: string | null = null;
-  try {
-    if (event.args) {
-      const obj = JSON.parse(event.args);
-      parsedArgs = JSON.stringify(obj, null, 2);
-    }
-  } catch { /* keep null */ }
+  const parsedArgs = useMemo(() => {
+    if (!event.args) return null;
+    try { return JSON.stringify(JSON.parse(event.args), null, 2); }
+    catch { return null; }
+  }, [event.args]);
+  const parsedResult = useMemo(() => {
+    if (!event.fullResult) return null;
+    try { return JSON.stringify(JSON.parse(event.fullResult), null, 2); }
+    catch { return event.fullResult; }
+  }, [event.fullResult]);
 
   return (
     <div className="flex-[1_1_auto] min-w-0">
@@ -275,13 +278,13 @@ const ToolCallChip = memo(function ToolCallChip({ event, isExpanded, onToggle, b
               </pre>
             </div>
           )}
-          {event.fullResult && (
+          {parsedResult && (
             <div>
               <div className="px-3 py-1 text-[10px] text-tertiary-label font-semibold uppercase tracking-wide bg-canvas">
                 Result
               </div>
               <pre className="px-3 py-2 m-0 text-secondary-label whitespace-pre-wrap break-words leading-relaxed max-h-[200px] overflow-y-auto">
-                {(() => { try { return JSON.stringify(JSON.parse(event.fullResult!), null, 2); } catch { return event.fullResult; } })()}
+                {parsedResult}
               </pre>
             </div>
           )}

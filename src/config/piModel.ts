@@ -45,7 +45,6 @@ export function buildPiModel(overrides?: Partial<PiModelConfig>): {
     provider: config.providerType,
     baseUrl: config.baseUrl,
     headers: config.headers,
-    reasoning: false,
     input: ['text'] as ('text' | 'image')[],
     compat: {
       supportsDeveloperRole: false,
@@ -57,6 +56,7 @@ export function buildPiModel(overrides?: Partial<PiModelConfig>): {
 
   const model: Model<'openai-completions'> = {
     ...sharedConfig,
+    reasoning: true,
     id: config.agentModelId,
     name: `${config.agentModelId} via ${config.providerType}`,
     cost: { input: 0.003, output: 0.015, cacheRead: 0.0003, cacheWrite: 0 },
@@ -66,6 +66,7 @@ export function buildPiModel(overrides?: Partial<PiModelConfig>): {
 
   const fastModel: Model<'openai-completions'> = {
     ...sharedConfig,
+    reasoning: false,
     id: config.fastModelId,
     name: `${config.fastModelId} via ${config.providerType} (fast)`,
     cost: { input: 0.0008, output: 0.004, cacheRead: 0.00008, cacheWrite: 0 },
