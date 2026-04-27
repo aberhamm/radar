@@ -31,30 +31,31 @@ export async function GET(
     findingsCount: number;
   }> = [];
 
-  for (const child of children) {
+  const goalResults = await Promise.all(children.map(async (child) => {
     if (child.result) {
-      goals.push({
+      return {
         id: child.id,
         goal: child.goal,
         scorecard: child.result.scorecard,
         metrics: child.result.metrics,
         briefMarkdown: child.result.briefMarkdown ?? '',
         findingsCount: (child.result.state?.findings as unknown[])?.length ?? 0,
-      });
-    } else {
-      const envelope = loadRunEnvelope(child);
-      if (envelope) {
-        goals.push({
-          id: child.id,
-          goal: child.goal,
-          scorecard: envelope.scorecard,
-          metrics: envelope.metrics,
-          briefMarkdown: envelope.briefMarkdown ?? '',
-          findingsCount: envelope.findingsSummary?.length ?? 0,
-        });
-      }
+      };
     }
-  }
+    const envelope = loadRunEnvelope(child);
+    if (envelope) {
+      return {
+        id: child.id,
+        goal: child.goal,
+        scorecard: envelope.scorecard,
+        metrics: envelope.metrics,
+        briefMarkdown: envelope.briefMarkdown ?? '',
+        findingsCount: envelope.findingsSummary?.length ?? 0,
+      };
+    }
+    return null;
+  }));
+  for (const g of goalResults) { if (g) goals.push(g); }
 
   // Load events from the first child (all children share the same event stream)
   const events = loadRunEvents(children[0]);

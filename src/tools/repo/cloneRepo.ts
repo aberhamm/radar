@@ -54,6 +54,8 @@ export async function listCachedRepos(): Promise<Array<{
   const owners = fs.readdirSync(root, { withFileTypes: true })
     .filter(d => d.isDirectory());
 
+  const pending: Array<Promise<typeof results[number] | null>> = [];
+
   for (const ownerDir of owners) {
     const ownerPath = path.join(root, ownerDir.name);
     const repos = fs.readdirSync(ownerPath, { withFileTypes: true })
@@ -63,23 +65,31 @@ export async function listCachedRepos(): Promise<Array<{
       const repoPath = path.join(ownerPath, repoDir.name);
       if (!fs.existsSync(path.join(repoPath, '.git'))) continue;
 
-      try {
-        const { stdout: branchOut } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath });
-        const { stdout: commitOut } = await execAsync('git log -1 --format=%H%n%aI', { cwd: repoPath });
-        const [hash, date] = commitOut.trim().split('\n');
-
-        results.push({
-          owner: ownerDir.name,
-          repo: repoDir.name,
-          localPath: repoPath,
-          defaultBranch: branchOut.trim(),
-          lastCommit: { hash, date },
-        });
-      } catch {
-        // Skip repos with broken git state
-      }
+      pending.push(
+        (async () => {
+          try {
+            const [branchRes, commitRes] = await Promise.all([
+              execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath }),
+              execAsync('git log -1 --format=%H%n%aI', { cwd: repoPath }),
+            ]);
+            const [hash, date] = commitRes.stdout.trim().split('\n');
+            return {
+              owner: ownerDir.name,
+              repo: repoDir.name,
+              localPath: repoPath,
+              defaultBranch: branchRes.stdout.trim(),
+              lastCommit: { hash, date },
+            };
+          } catch {
+            return null;
+          }
+        })(),
+      );
     }
   }
+
+  const settled = await Promise.all(pending);
+  for (const r of settled) { if (r) results.push(r); }
 
   return results;
 }

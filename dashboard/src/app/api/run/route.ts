@@ -114,10 +114,6 @@ export async function POST(req: NextRequest) {
             onStep: (event: StepEvent) => {
               const run = session.currentRun;
               if (!run) return;
-              if (event.type === 'text_delta' || event.type === 'tool_start') {
-                sendStreamEvent(run.streamController, event);
-                return;
-              }
               run.events.push(event);
               sendStreamEvent(run.streamController, event);
               if (run.events.length % 10 === 0) {
@@ -187,14 +183,6 @@ export async function POST(req: NextRequest) {
         onStep: (event) => {
           const run = session.currentRun;
           if (!run) return;
-
-          // Stream transient events to client but don't persist
-          // text_delta: high-frequency, replaced by text_response on message_end
-          // tool_start: replaced by tool_call after execution completes
-          if (event.type === 'text_delta' || event.type === 'tool_start') {
-            sendStreamEvent(run.streamController, event);
-            return;
-          }
 
           run.events.push(event);
           sendStreamEvent(run.streamController, event);
