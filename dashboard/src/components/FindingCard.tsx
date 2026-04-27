@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { Finding, sevColor, sevBg } from '@/lib/runTransform';
 
 const VERIFICATION_COLORS: Record<string, { text: string; bg: string; label: string }> = {
@@ -9,7 +9,7 @@ const VERIFICATION_COLORS: Record<string, { text: string; bg: string; label: str
   unverifiable: { text: 'var(--color-danger)', bg: 'rgba(255,59,48,0.10)', label: 'Unverifiable' },
 };
 
-export function FindingCard({ finding, index }: { finding: Finding; index?: number }) {
+export const FindingCard = memo(function FindingCard({ finding, index }: { finding: Finding; index?: number }) {
   const [expanded, setExpanded] = useState(false);
   const hasEvidence = finding.evidence && finding.evidence.length > 0;
   const hasDetail = finding.note || finding.evidenceFiles.length > 0 || hasEvidence;
@@ -122,4 +122,4 @@ export function FindingCard({ finding, index }: { finding: Finding; index?: numb
       )}
     </div>
   );
-}
+});

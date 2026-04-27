@@ -1,4 +1,4 @@
-import { readdir, stat as fsStat, access } from 'node:fs/promises';
+import { readdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import type { FindFilesInput, FindFilesOutput } from '../../types/tools.js';
 
@@ -39,35 +39,28 @@ async function walk(
   maxResults: number,
 ): Promise<void> {
   if (results.length >= maxResults) return;
-  let entries: string[];
+  let entries: import('node:fs').Dirent[];
   try {
-    entries = await readdir(dir);
+    entries = await readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
 
-  for (const name of entries) {
-    if (EXCLUDED_DIRS.has(name)) continue;
+  for (const entry of entries) {
+    if (EXCLUDED_DIRS.has(entry.name)) continue;
 
-    const fullPath = path.join(dir, name);
-    let stats;
-    try {
-      stats = await fsStat(fullPath);
-    } catch {
-      continue;
-    }
-
+    const fullPath = path.join(dir, entry.name);
     const relativePath = path.relative(repoRoot, fullPath).replace(/\\/g, '/');
 
     if (results.length >= maxResults) return;
 
-    if (stats.isDirectory()) {
-      if (matchPattern(name, pattern) && typeFilter !== 'file') {
+    if (entry.isDirectory()) {
+      if (matchPattern(entry.name, pattern) && typeFilter !== 'file') {
         results.push(relativePath);
       }
       await walk(fullPath, repoRoot, pattern, typeFilter, results, maxResults);
-    } else if (stats.isFile()) {
-      if (matchPattern(name, pattern) && typeFilter !== 'directory') {
+    } else if (entry.isFile()) {
+      if (matchPattern(entry.name, pattern) && typeFilter !== 'directory') {
         results.push(relativePath);
       }
     }

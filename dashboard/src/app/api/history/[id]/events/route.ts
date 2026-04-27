@@ -17,6 +17,10 @@ export async function GET(
     return NextResponse.json({ error: 'Run not found' }, { status: 404 });
   }
 
+  const cacheHeaders: HeadersInit = record.completedAt
+    ? { 'Cache-Control': 'public, max-age=300, immutable' }
+    : { 'Cache-Control': 'no-cache' };
+
   const events = loadRunEvents(record);
-  return NextResponse.json({ events });
+  return NextResponse.json({ events }, { headers: cacheHeaders });
 }

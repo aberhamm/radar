@@ -17,12 +17,16 @@ export async function GET(
     return NextResponse.json({ error: 'Run not found' }, { status: 404 });
   }
 
+  const cacheHeaders: HeadersInit = record.completedAt
+    ? { 'Cache-Control': 'public, max-age=300, immutable' }
+    : { 'Cache-Control': 'no-cache' };
+
   // In-memory result has findings directly
   if (record.result?.state?.findings) {
-    return NextResponse.json({ findings: record.result.state.findings });
+    return NextResponse.json({ findings: record.result.state.findings }, { headers: cacheHeaders });
   }
 
   // Otherwise load from disk
   const findings = loadRunFindings(record);
-  return NextResponse.json({ findings });
+  return NextResponse.json({ findings }, { headers: cacheHeaders });
 }

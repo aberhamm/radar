@@ -78,36 +78,49 @@ function mergeFindings(primary: Finding, secondary: Finding): Finding {
 
 /**
  * Deduplicate findings with overlapping evidence and matching category + severity.
+ * Groups by (category, severity) first so only findings that could match are compared.
  */
 export function deduplicateFindings(findings: Finding[]): DeduplicationResult {
   if (findings.length <= 1) return { findings: [...findings], mergedCount: 0 };
 
-  // Track which findings have been absorbed into another
+  // Group findings by (category, severity) — only compare within same group
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < findings.length; i++) {
+    const key = `${findings[i].category}:${findings[i].severity}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = [];
+      groups.set(key, group);
+    }
+    group.push(i);
+  }
+
   const absorbed = new Set<number>();
   const result: Finding[] = [];
 
-  for (let i = 0; i < findings.length; i++) {
-    if (absorbed.has(i)) continue;
+  for (const indices of groups.values()) {
+    for (let gi = 0; gi < indices.length; gi++) {
+      const i = indices[gi];
+      if (absorbed.has(i)) continue;
 
-    let current = findings[i];
+      let current = findings[i];
 
-    for (let j = i + 1; j < findings.length; j++) {
-      if (absorbed.has(j)) continue;
+      for (let gj = gi + 1; gj < indices.length; gj++) {
+        const j = indices[gj];
+        if (absorbed.has(j)) continue;
 
-      const other = findings[j];
+        const other = findings[j];
 
-      // Must match category + severity
-      if (current.category !== other.category || current.severity !== other.severity) continue;
+        // Must have 50%+ evidence file overlap
+        if (evidenceOverlap(current, other) < 0.5) continue;
 
-      // Must have 50%+ evidence file overlap
-      if (evidenceOverlap(current, other) < 0.5) continue;
+        // Merge
+        current = mergeFindings(current, other);
+        absorbed.add(j);
+      }
 
-      // Merge
-      current = mergeFindings(current, other);
-      absorbed.add(j);
+      result.push(current);
     }
-
-    result.push(current);
   }
 
   return {

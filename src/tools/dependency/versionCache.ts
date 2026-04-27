@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import type { ResolvedVersion } from '../../types/state.js';
@@ -12,48 +12,54 @@ interface CacheEntry {
   timestamp: string;
 }
 
-/**
- * Read the version cache. Returns null if cache doesn't exist or is expired.
- */
-export function readCache(): CacheEntry | null {
+async function cacheExists(): Promise<boolean> {
   try {
-    if (!fs.existsSync(CACHE_FILE)) return null;
-    const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
-    const entry: CacheEntry = JSON.parse(raw);
-    const age = Date.now() - new Date(entry.timestamp).getTime();
-    if (age > TTL_MS) return null;
-    return entry;
+    await access(CACHE_FILE);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readCacheFile(): Promise<CacheEntry | null> {
+  try {
+    if (!(await cacheExists())) return null;
+    const raw = await readFile(CACHE_FILE, 'utf-8');
+    return JSON.parse(raw) as CacheEntry;
   } catch {
     return null;
   }
+}
+
+/**
+ * Read the version cache. Returns null if cache doesn't exist or is expired.
+ */
+export async function readCache(): Promise<CacheEntry | null> {
+  const entry = await readCacheFile();
+  if (!entry) return null;
+  const age = Date.now() - new Date(entry.timestamp).getTime();
+  if (age > TTL_MS) return null;
+  return entry;
 }
 
 /**
  * Read the cache even if expired (fallback on network failure).
  */
-export function readStaleCache(): CacheEntry | null {
-  try {
-    if (!fs.existsSync(CACHE_FILE)) return null;
-    const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+export async function readStaleCache(): Promise<CacheEntry | null> {
+  return readCacheFile();
 }
 
 /**
  * Write versions to cache.
  */
-export function writeCache(versions: Record<string, ResolvedVersion>): void {
+export async function writeCache(versions: Record<string, ResolvedVersion>): Promise<void> {
   try {
-    if (!fs.existsSync(CACHE_DIR)) {
-      fs.mkdirSync(CACHE_DIR, { recursive: true });
-    }
+    await mkdir(CACHE_DIR, { recursive: true });
     const entry: CacheEntry = {
       versions,
       timestamp: new Date().toISOString(),
     };
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(entry, null, 2), 'utf-8');
+    await writeFile(CACHE_FILE, JSON.stringify(entry, null, 2), 'utf-8');
   } catch {
     // Silently fail — cache is optional
   }
@@ -62,11 +68,10 @@ export function writeCache(versions: Record<string, ResolvedVersion>): void {
 /**
  * Get the age of the cache as a human-readable string.
  */
-export function cacheAge(): string | undefined {
+export async function cacheAge(): Promise<string | undefined> {
   try {
-    if (!fs.existsSync(CACHE_FILE)) return undefined;
-    const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
-    const entry: CacheEntry = JSON.parse(raw);
+    const entry = await readCacheFile();
+    if (!entry) return undefined;
     const ms = Date.now() - new Date(entry.timestamp).getTime();
     const hours = Math.floor(ms / (60 * 60 * 1000));
     const mins = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));

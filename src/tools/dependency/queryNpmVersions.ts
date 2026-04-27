@@ -68,7 +68,7 @@ export async function queryNpmVersions(
   const { packages } = input;
 
   // Check cache first
-  const cached = readCache();
+  const cached = await readCache();
   if (cached) {
     // Check if all requested packages are in cache
     const allCached = packages.every((p) => p in cached.versions);
@@ -78,7 +78,7 @@ export async function queryNpmVersions(
       for (const p of packages) {
         filtered[p] = cached.versions[p];
       }
-      return { versions: filtered, fromCache: true, cacheAge: cacheAge() };
+      return { versions: filtered, fromCache: true, cacheAge: await cacheAge() };
     }
   }
 
@@ -96,14 +96,14 @@ export async function queryNpmVersions(
   // If we got results, update cache
   if (Object.keys(results).length > 0) {
     // Merge with existing cache to preserve other packages
-    const existing = readStaleCache();
+    const existing = await readStaleCache();
     const merged = { ...(existing?.versions ?? {}), ...results };
-    writeCache(merged);
+    await writeCache(merged);
     return { versions: results, fromCache: false };
   }
 
   // Fall back to stale cache on total network failure
-  const stale = readStaleCache();
+  const stale = await readStaleCache();
   if (stale) {
     const filtered: Record<string, ResolvedVersion> = {};
     for (const p of packages) {
@@ -112,7 +112,7 @@ export async function queryNpmVersions(
       }
     }
     if (Object.keys(filtered).length > 0) {
-      return { versions: filtered, fromCache: true, cacheAge: cacheAge() };
+      return { versions: filtered, fromCache: true, cacheAge: await cacheAge() };
     }
   }
 

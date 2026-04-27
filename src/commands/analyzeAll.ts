@@ -225,123 +225,151 @@ export async function handleAnalyzeAll(opts: {
     }
   }
 
-  // --- Pass 2: Next.js specialist ---
+  // --- Pass 2 & 3: Specialist passes (parallel when both active) ---
+  // Both specialists start from Core's shared state snapshot. They investigate
+  // independently, so we run them concurrently and merge findings afterward.
+  const coreSharedState = { ...sharedState };
+
+  const specialistTasks: Array<Promise<{ pass: string; budget: number; result?: RunResult; error?: string; durationMs: number }>> = [];
+
   if (!skipNextjs && nextjsBudget > 0) {
     allEvents.push({ step: -1, action: 'pass_boundary', result: 'Next.js Specialist', timestamp: new Date().toISOString() });
-    const nextjsStart = Date.now();
     console.log(`\n[Next.js] Starting specialist pass (budget: ${nextjsBudget})...`);
-    try {
-      const nextjsResult = await runAgent({
-        repoPath,
-        repoName,
-        repoSource,
-        repoUrl,
-        goal: 'nextjs' as GoalType,
-        platform: platform !== 'unknown' ? platform : undefined,
-        toolCallBudget: nextjsBudget,
-        outputDir,
-        verbose,
-        initialState: sharedState,
-        onBudgetExhausted,
-        onStep: (step) => {
-          allEvents.push(step);
-          if (verbose) formatVerboseStep(step, '[Next.js]');
-          else console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
-        },
-      });
-      const nextjsDuration = Date.now() - nextjsStart;
-      passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, result: nextjsResult, durationMs: nextjsDuration });
-      allInvestigationLogs.push(...nextjsResult.state.investigationLog);
-      sharedState = {
-        findings: nextjsResult.state.findings,
-        filesRead: nextjsResult.state.filesRead,
-        fileReadCache: nextjsResult.state.fileReadCache,
-        resolvedVersions: nextjsResult.state.resolvedVersions,
-        stackProfile: nextjsResult.state.stackProfile,
-        fetchedDocs: nextjsResult.state.fetchedDocs,
-        modelUsage: nextjsResult.state.modelUsage,
-      };
-      allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Next.js Specialist', toolCalls: nextjsResult.metrics.toolCalls, budget: nextjsBudget, terminationReason: nextjsResult.terminationReason }), timestamp: new Date().toISOString() });
-      console.log(`[Next.js] Done: ${nextjsResult.state.findings.length} total findings, ${nextjsResult.metrics.toolCalls}/${nextjsBudget} calls`);
-    } catch (err) {
-      const nextjsDuration = Date.now() - nextjsStart;
-      passResults.push({ pass: 'Next.js Specialist', budget: nextjsBudget, error: (err as Error).message, durationMs: nextjsDuration });
-      console.warn(`[Next.js] Specialist failed (graceful degradation): ${(err as Error).message}`);
-    }
+    specialistTasks.push((async () => {
+      const nextjsStart = Date.now();
+      try {
+        const nextjsResult = await runAgent({
+          repoPath,
+          repoName,
+          repoSource,
+          repoUrl,
+          goal: 'nextjs' as GoalType,
+          platform: platform !== 'unknown' ? platform : undefined,
+          toolCallBudget: nextjsBudget,
+          outputDir,
+          verbose,
+          initialState: coreSharedState,
+          preCompute,
+          onBudgetExhausted,
+          onStep: (step) => {
+            allEvents.push(step);
+            if (verbose) formatVerboseStep(step, '[Next.js]');
+            else console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+          },
+        });
+        const nextjsDuration = Date.now() - nextjsStart;
+        allInvestigationLogs.push(...nextjsResult.state.investigationLog);
+        allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Next.js Specialist', toolCalls: nextjsResult.metrics.toolCalls, budget: nextjsBudget, terminationReason: nextjsResult.terminationReason }), timestamp: new Date().toISOString() });
+        console.log(`[Next.js] Done: ${nextjsResult.state.findings.length} total findings, ${nextjsResult.metrics.toolCalls}/${nextjsBudget} calls`);
+        return { pass: 'Next.js Specialist', budget: nextjsBudget, result: nextjsResult, durationMs: nextjsDuration };
+      } catch (err) {
+        const nextjsDuration = Date.now() - nextjsStart;
+        console.warn(`[Next.js] Specialist failed (graceful degradation): ${(err as Error).message}`);
+        return { pass: 'Next.js Specialist', budget: nextjsBudget, error: (err as Error).message, durationMs: nextjsDuration };
+      }
+    })());
   } else {
     console.log(`\n[Next.js] Skipped — ${plan.passes[1].reason}`);
     passResults.push({ pass: 'Next.js Specialist', budget: 0, durationMs: 0 });
     allEvents.push({ step: -1, action: 'pass_boundary', result: 'Next.js Specialist (skipped)', timestamp: new Date().toISOString() });
   }
 
-  // --- Pass 3: Accessibility specialist ---
   if (!skipA11y && a11yBudget > 0) {
     allEvents.push({ step: -1, action: 'pass_boundary', result: 'Accessibility Specialist', timestamp: new Date().toISOString() });
-    const a11yStart = Date.now();
     console.log(`\n[A11y] Starting specialist pass (budget: ${a11yBudget})...`);
-    try {
-      const a11yResult = await runAgent({
-        repoPath,
-        repoName,
-        repoSource,
-        repoUrl,
-        goal: 'accessibility' as GoalType,
-        platform: platform !== 'unknown' ? platform : undefined,
-        toolCallBudget: a11yBudget,
-        outputDir,
-        verbose,
-        initialState: sharedState,
-        onBudgetExhausted,
-        onStep: (step) => {
-          allEvents.push(step);
-          if (verbose) formatVerboseStep(step, '[A11y]');
-          else console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
-        },
-      });
-      const a11yDuration = Date.now() - a11yStart;
-      passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, result: a11yResult, durationMs: a11yDuration });
-      allInvestigationLogs.push(...a11yResult.state.investigationLog);
-      sharedState = {
-        findings: a11yResult.state.findings,
-        filesRead: a11yResult.state.filesRead,
-        fileReadCache: a11yResult.state.fileReadCache,
-        resolvedVersions: a11yResult.state.resolvedVersions,
-        stackProfile: a11yResult.state.stackProfile,
-        fetchedDocs: a11yResult.state.fetchedDocs,
-        modelUsage: a11yResult.state.modelUsage,
-      };
-      allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Accessibility Specialist', toolCalls: a11yResult.metrics.toolCalls, budget: a11yBudget, terminationReason: a11yResult.terminationReason }), timestamp: new Date().toISOString() });
-      console.log(`[A11y] Done: ${a11yResult.state.findings.length} total findings, ${a11yResult.metrics.toolCalls}/${a11yBudget} calls`);
-    } catch (err) {
-      const a11yDuration = Date.now() - a11yStart;
-      passResults.push({ pass: 'Accessibility Specialist', budget: a11yBudget, error: (err as Error).message, durationMs: a11yDuration });
-      console.warn(`[A11y] Specialist failed (graceful degradation): ${(err as Error).message}`);
-    }
+    specialistTasks.push((async () => {
+      const a11yStart = Date.now();
+      try {
+        const a11yResult = await runAgent({
+          repoPath,
+          repoName,
+          repoSource,
+          repoUrl,
+          goal: 'accessibility' as GoalType,
+          platform: platform !== 'unknown' ? platform : undefined,
+          toolCallBudget: a11yBudget,
+          outputDir,
+          verbose,
+          initialState: coreSharedState,
+          preCompute,
+          onBudgetExhausted,
+          onStep: (step) => {
+            allEvents.push(step);
+            if (verbose) formatVerboseStep(step, '[A11y]');
+            else console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+          },
+        });
+        const a11yDuration = Date.now() - a11yStart;
+        allInvestigationLogs.push(...a11yResult.state.investigationLog);
+        allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Accessibility Specialist', toolCalls: a11yResult.metrics.toolCalls, budget: a11yBudget, terminationReason: a11yResult.terminationReason }), timestamp: new Date().toISOString() });
+        console.log(`[A11y] Done: ${a11yResult.state.findings.length} total findings, ${a11yResult.metrics.toolCalls}/${a11yBudget} calls`);
+        return { pass: 'Accessibility Specialist', budget: a11yBudget, result: a11yResult, durationMs: a11yDuration };
+      } catch (err) {
+        const a11yDuration = Date.now() - a11yStart;
+        console.warn(`[A11y] Specialist failed (graceful degradation): ${(err as Error).message}`);
+        return { pass: 'Accessibility Specialist', budget: a11yBudget, error: (err as Error).message, durationMs: a11yDuration };
+      }
+    })());
   } else {
     console.log(`\n[A11y] Skipped — ${plan.passes[2].reason}`);
     passResults.push({ pass: 'Accessibility Specialist', budget: 0, durationMs: 0 });
     allEvents.push({ step: -1, action: 'pass_boundary', result: 'Accessibility Specialist (skipped)', timestamp: new Date().toISOString() });
   }
 
-  // Collect all findings from the latest shared state
-  const lastSuccessful = passResults.filter((p) => p.result).pop();
-  if (!lastSuccessful?.result) {
+  // Await all specialist passes in parallel
+  const specialistResults = await Promise.all(specialistTasks);
+  passResults.push(...specialistResults);
+
+  // Merge findings from all successful specialist passes with Core's findings.
+  // Use a Set of finding IDs to avoid duplicates (Core findings are included in
+  // each specialist's output since they start from Core's state).
+  const seenFindingIds = new Set<string>();
+  const mergedFindings = [];
+  for (const pr of [passResults[0], ...specialistResults]) {
+    if (!pr?.result) continue;
+    for (const f of pr.result.state.findings) {
+      if (!seenFindingIds.has(f.id)) {
+        seenFindingIds.add(f.id);
+        mergedFindings.push(f);
+      }
+    }
+  }
+
+  // Build merged shared state from last successful specialist (or Core)
+  const lastSpecialist = specialistResults.filter(p => p.result).pop();
+  const stateSource = lastSpecialist?.result ?? passResults[0]?.result;
+  if (stateSource) {
+    sharedState = {
+      findings: mergedFindings,
+      filesRead: stateSource.state.filesRead,
+      fileReadCache: stateSource.state.fileReadCache,
+      resolvedVersions: stateSource.state.resolvedVersions,
+      stackProfile: stateSource.state.stackProfile,
+      fetchedDocs: stateSource.state.fetchedDocs,
+      modelUsage: stateSource.state.modelUsage,
+    };
+  }
+
+  // Collect all findings
+  const allSuccessful = passResults.filter((p) => p.result);
+  if (allSuccessful.length === 0) {
     console.error('No passes succeeded.');
     return 2;
   }
-  const allFindings = lastSuccessful.result.state.findings;
+  const lastSuccessful = allSuccessful[allSuccessful.length - 1] as { result: RunResult } & typeof allSuccessful[0];
+  const allFindings = mergedFindings;
 
   // --- Phase 5: Multi-goal scoring ---
   console.log(`\nScoring ${ALL_GOALS.length} goals from ${allFindings.length} findings...`);
   const scorecards = new Map<GoalType, Scorecard>();
   const multiGoalResults: MultiGoalResult[] = [];
 
-  for (const goal of ALL_GOALS) {
+  await Promise.all(ALL_GOALS.map(async (goal) => {
     const scorecard = computeScorecard(repoName, goal, allFindings);
     scorecards.set(goal, scorecard);
     multiGoalResults.push({ goal, scorecard });
     console.log(`  ${goal}: ${scorecard.overallScore.toUpperCase()} (${scorecard.categories.length} categories)`);
-  }
+  }));
 
   // --- Phase 6: Per-goal brief writing (parallel) ---
   console.log('\nWriting per-goal briefs...');

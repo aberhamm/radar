@@ -19,6 +19,10 @@ export async function GET(
     return NextResponse.json({ error: 'Run not found' }, { status: 404 });
   }
 
+  const cacheHeaders: HeadersInit = record.completedAt
+    ? { 'Cache-Control': 'public, max-age=300, immutable' }
+    : { 'Cache-Control': 'no-cache' };
+
   // Current/just-completed run: result is still in memory
   if (record.result) {
     return NextResponse.json({
@@ -35,7 +39,7 @@ export async function GET(
         briefMarkdown: record.result.briefMarkdown,
         state: { findings: slim ? [] : (record.result.state?.findings ?? []) },
       },
-    });
+    }, { headers: cacheHeaders });
   }
 
   // Historical run: load from tiered storage (Tier 2 + 3)
@@ -61,5 +65,5 @@ export async function GET(
       briefMarkdown: envelope.briefMarkdown,
       state: { findings },
     },
-  });
+  }, { headers: cacheHeaders });
 }

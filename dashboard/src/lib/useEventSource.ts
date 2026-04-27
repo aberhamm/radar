@@ -11,7 +11,7 @@ interface UseEventSourceCallbacks {
 }
 
 /** Poll interval when SSE goes stale (no events for this long) */
-const STALE_CHECK_MS = 10_000;
+const STALE_CHECK_MS = 30_000;
 
 /**
  * Opens an SSE connection to /api/events when enabled.

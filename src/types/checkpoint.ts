@@ -34,7 +34,7 @@ export interface SerializedAgentState {
   stackProfile?: AgentState['stackProfile'];
   findings: Finding[];
   filesRead: string[];
-  fileReadCache: Record<string, { mtime: number; contentHash: string; summary?: string }>;
+  fileReadCache: Record<string, { mtime: number; size: number; summary?: string }>;
   toolCallCount: number;
   toolCallBudget: number;
   webSearchCount: number;

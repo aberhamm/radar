@@ -10,7 +10,7 @@
  * All operations are deterministic (no LLM calls).
  */
 
-import { resolveAndRead, isResolveError } from '../utils/resolveAndRead.js';
+import { resolveAndRead, isResolveError, type ResolveResult } from '../utils/resolveAndRead.js';
 import type { Evidence, Finding } from '../../types/findings.js';
 
 export interface EvidenceVerificationResult {
@@ -244,13 +244,14 @@ export async function verifyAndCorrectEvidence(
 export async function verifyFindingEvidence(
   repoRoot: string,
   finding: Finding,
+  fileContentCache?: Map<string, ResolveResult>,
 ): Promise<{ finding: Finding; allUnverifiable: boolean }> {
   const notes: string[] = [];
   const verifiedEvidence: Evidence[] = [];
   let unverifiableCount = 0;
 
   for (const ev of finding.evidence) {
-    const result = await resolveAndRead(repoRoot, ev.filePath);
+    const result = fileContentCache?.get(ev.filePath) ?? await resolveAndRead(repoRoot, ev.filePath);
 
     if (isResolveError(result)) {
       notes.push(`Evidence unverifiable: ${ev.filePath} — ${result.error}`);

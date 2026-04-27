@@ -17,7 +17,7 @@ describe('versionCache', () => {
     }
   });
 
-  it('writes and reads cache', () => {
+  it('writes and reads cache', async () => {
     // Save original
     if (fs.existsSync(CACHE_FILE)) {
       originalCache = fs.readFileSync(CACHE_FILE, 'utf-8');
@@ -26,13 +26,13 @@ describe('versionCache', () => {
     const versions = {
       next: { package: 'next', latest: '15.1.0', latestMajor: 15, fetchedAt: new Date().toISOString() },
     };
-    writeCache(versions);
-    const cached = readCache();
+    await writeCache(versions);
+    const cached = await readCache();
     expect(cached).not.toBeNull();
     expect(cached!.versions['next'].latest).toBe('15.1.0');
   });
 
-  it('returns null for expired cache', () => {
+  it('returns null for expired cache', async () => {
     if (fs.existsSync(CACHE_FILE)) {
       originalCache = fs.readFileSync(CACHE_FILE, 'utf-8');
     }
@@ -44,8 +44,8 @@ describe('versionCache', () => {
     };
     fs.writeFileSync(CACHE_FILE, JSON.stringify(entry), 'utf-8');
 
-    expect(readCache()).toBeNull();
+    expect(await readCache()).toBeNull();
     // But stale cache should still work
-    expect(readStaleCache()).not.toBeNull();
+    expect(await readStaleCache()).not.toBeNull();
   });
 });
