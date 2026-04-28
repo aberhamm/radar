@@ -21,6 +21,7 @@
     "test:watch": "vitest",
     "spike:portkey": "tsx scripts/portkey-verify.ts",
     "spike:pi": "tsx scripts/pi-verify.ts",
+    "spike:cache": "tsx scripts/cache-probe.ts",
     "dashboard:dev": "cd dashboard && next dev --webpack --port 3000"
   },
   "keywords": [
