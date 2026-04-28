@@ -14,6 +14,7 @@ interface HistoryRunItem {
   repoPath?: string;
   repoSource?: 'github' | 'local';
   repoUrl?: string;
+  parentRunId?: string;
 }
 
 interface AppRoot {
@@ -288,6 +289,22 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
     buttonDisabled = loading;
   }
 
+  // Collapse multi-goal children into a single "all" entry per parentRunId
+  const deduplicatedHistory = useMemo(() => {
+    const seen = new Set<string>();
+    const result: HistoryRunItem[] = [];
+    for (const run of history) {
+      if (run.parentRunId) {
+        if (seen.has(run.parentRunId)) continue;
+        seen.add(run.parentRunId);
+        result.push({ ...run, goal: 'all' });
+      } else if (run.goal !== 'all') {
+        result.push(run);
+      }
+    }
+    return result;
+  }, [history]);
+
   // Stat bar data (for full-page hero)
   const stats = useMemo(() => {
     const completedRuns = history.filter(r => r.completedAt);
@@ -518,13 +535,13 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
       {!historyReady && !isCloned && !isCloning && !loading && !rerunPulling && (
         <HistoryLoadingSkeleton />
       )}
-      {historyReady && history.length > 0 && !isCloned && !isCloning && !loading && !rerunPulling && (
+      {historyReady && deduplicatedHistory.length > 0 && !isCloned && !isCloning && !loading && !rerunPulling && (
         <div className="px-6 pb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
           <h2 className="text-[13px] font-semibold text-label mb-3">Recent Runs</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {(showAllHistory ? history : history.slice(0, 3)).map(run => (
+            {(showAllHistory ? deduplicatedHistory : deduplicatedHistory.slice(0, 3)).map(run => (
               <button
-                key={run.id}
+                key={run.parentRunId ?? run.id}
                 type="button"
                 onClick={() => handleSelectHistoryRun(run)}
                 className="flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg bg-elevated hover:bg-[rgb(0_113_227/0.06)] border border-transparent hover:border-[rgb(0_113_227/0.15)] transition-all cursor-pointer group"
@@ -535,8 +552,12 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
                 </svg>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-label font-medium truncate">
-                    {run.repoName}{' '}
-                    <span className="ml-1.5 text-[11px] text-tertiary-label font-normal">{run.goal}</span>
+                    {run.repoSource === 'github' && run.repoUrl
+                      ? run.repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
+                      : run.repoName}{' '}
+                    <span className="ml-1.5 text-[11px] text-tertiary-label font-normal">
+                      {run.goal === 'all' ? 'Full audit' : run.goal}
+                    </span>
                   </div>
                   <div className="text-[11px] text-quaternary-label truncate">
                     {run.completedAt ? new Date(run.completedAt).toLocaleDateString() : new Date(run.startedAt).toLocaleDateString()}
@@ -549,13 +570,13 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
               </button>
             ))}
           </div>
-          {history.length > 3 && (
+          {deduplicatedHistory.length > 3 && (
             <button
               type="button"
               onClick={() => setShowAllHistory(v => !v)}
               className="mt-2 text-[12px] text-tertiary-label hover:text-secondary-label transition-colors cursor-pointer"
             >
-              {showAllHistory ? 'Show less' : `${history.length - 3} more...`}
+              {showAllHistory ? 'Show less' : `${deduplicatedHistory.length - 3} more...`}
             </button>
           )}
         </div>
