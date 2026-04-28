@@ -735,7 +735,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="relative flex flex-col h-screen overflow-hidden bg-canvas">
+    <div data-component="DashboardPage" className="relative flex flex-col h-screen overflow-hidden bg-canvas">
       <header className="bg-surface-translucent backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-4 h-12 flex items-center gap-3 sticky top-0 z-10 shrink-0">
         {/* Sidebar toggle */}
         <button

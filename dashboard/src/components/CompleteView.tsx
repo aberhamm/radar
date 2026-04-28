@@ -4,75 +4,7 @@ import { useState } from 'react';
 import type { Scorecard, RunMetrics, CategoryScore } from '@/lib/agentSession';
 import { FindingCard } from './FindingCard';
 import type { Finding } from '@/lib/runTransform';
-import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
-
-// ─── Exec Summary Banner ───────────────────────────────────────
-
-interface ExecSummaryBannerProps {
-  scorecard: Scorecard;
-  metrics: RunMetrics;
-  goalCount?: number;
-  repoName?: string;
-  totalFindings?: number;
-}
-
-export function ExecSummaryBanner({ scorecard, metrics, goalCount, repoName, totalFindings }: ExecSummaryBannerProps) {
-  const grade = scoreToGrade(scorecard.overallScore);
-  const gradeColor = scoreColor(scorecard.overallScore);
-  const verdict = scoreToVerdict(scorecard.overallScore);
-  const isMulti = goalCount != null;
-
-  return (
-    <div data-component="ExecSummaryBanner" className="px-6 py-4 border-b border-separator bg-surface shrink-0">
-      <div className="flex items-start gap-5 max-w-[860px]">
-        <div
-          className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
-          style={{ background: `color-mix(in srgb, ${gradeColor} 10%, transparent)` }}
-        >
-          <span className="text-[28px] font-bold font-brand" style={{ color: gradeColor }}>
-            {grade}
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <span className="text-[15px] font-semibold text-label">{verdict}</span>
-            {isMulti && (
-              <span className="text-[12px] font-medium text-tint bg-[rgb(0_113_227/0.08)] rounded px-2 py-0.5">
-                {goalCount} goals
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-4 text-[12px] text-secondary-label mb-2 flex-wrap">
-            {isMulti && repoName && <span>{repoName}</span>}
-            {isMulti && totalFindings != null && <span>{totalFindings} findings</span>}
-            {!isMulti && <span>{scorecard.categories.length} categories scored</span>}
-            <span>{metrics.toolCalls} tool calls</span>
-            <span>${metrics.totalEstimatedCostUsd.toFixed(2)}</span>
-            <span>{(metrics.durationMs / 1000).toFixed(0)}s</span>
-          </div>
-          {scorecard.topRisks.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {scorecard.topRisks.slice(0, 3).map((risk, i) => (
-                <span
-                  key={risk.findingId ?? `risk-${i}`}
-                  className="text-[11px] px-2 py-0.5 rounded-md"
-                  style={{
-                    background: risk.severity === 'critical' || risk.severity === 'high'
-                      ? 'rgba(255,59,48,0.08)' : 'rgba(255,149,0,0.08)',
-                    color: risk.severity === 'critical' || risk.severity === 'high'
-                      ? 'var(--color-danger)' : 'var(--color-warning)',
-                  }}
-                >
-                  {risk.title}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+import { scoreColor } from '@/lib/utils';
 
 export function scrollToFinding(findingId: string) {
   const el = document.getElementById(`finding-${findingId}`);

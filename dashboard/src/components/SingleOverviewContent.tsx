@@ -17,7 +17,7 @@ interface SingleOverviewContentProps {
 
 export function SingleOverviewContent({ scorecard, metrics, briefMarkdown, findings, findingsLoading }: SingleOverviewContentProps) {
   return (
-    <div className="max-w-[860px] pt-5 pb-8">
+    <div data-component="SingleOverviewContent" className="max-w-[860px] pt-5 pb-8">
       <ScorecardGrid scorecard={scorecard} metrics={metrics} />
       {findingsLoading && <FindingsLoadingSkeleton />}
       {findings.length > 0 && (

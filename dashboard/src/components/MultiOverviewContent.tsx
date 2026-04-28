@@ -345,7 +345,7 @@ export function MultiOverviewContent({ goals, events, findings, mergedScorecard 
   }, []);
 
   return (
-    <div className="max-w-4xl pt-5 pb-8">
+    <div data-component="MultiOverviewContent" className="max-w-4xl pt-5 pb-8">
       <div data-component="Scoreboard" className="mb-6">
         <Scoreboard goals={goals} onScrollTo={scrollToGoal} />
       </div>

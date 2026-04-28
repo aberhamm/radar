@@ -15,7 +15,8 @@ import {
   exportCostCSV,
   costToMarkdown,
 } from '@/lib/export';
-import { ExecSummaryBanner, CostTab, ExportButton, CopiedToast } from './CompleteView';
+import { CostTab, ExportButton, CopiedToast } from './CompleteView';
+import { RunHeader } from './RunHeader';
 import { AnalysisView } from './AnalysisView';
 import { CreateIssuesModal } from './CreateIssuesModal';
 import { SingleOverviewContent } from './SingleOverviewContent';
@@ -105,17 +106,18 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
     }
   }, [mode, findingsLoading, lazyFindings]);
 
-  // ─── Banner props ───────────────────────────────────────────
+  // ─── Header props ───────────────────────────────────────────
 
-  const bannerProps = mode.kind === 'single'
-    ? { scorecard, metrics }
-    : {
-        scorecard,
-        metrics,
-        goalCount: mode.data.goals.length,
-        repoName: mode.data.repoName,
-        totalFindings: mode.data.totalFindings,
-      };
+  const headerRepoName = mode.kind === 'single' ? scorecard.repoName : mode.data.repoName;
+  const headerStats = mode.kind === 'single'
+    ? [
+        scorecard.categories.length + ' categories',
+        allFindings.length + ' findings',
+      ]
+    : [
+        mode.data.goals.length + ' goals',
+        mode.data.totalFindings + ' findings',
+      ];
 
   // ─── Export handlers ────────────────────────────────────────
 
@@ -193,8 +195,8 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
 
   return (
     <div data-component="RunView" className="flex-1 flex flex-col overflow-hidden">
-      {/* Exec summary banner */}
-      <ExecSummaryBanner {...bannerProps} />
+      {/* Run header */}
+      <RunHeader repoName={headerRepoName} stats={headerStats} metrics={metrics} />
 
       {/* Tab bar */}
       <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">

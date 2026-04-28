@@ -19,7 +19,7 @@ export function ChangelogView() {
   }, []);
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div data-component="ChangelogView" className="flex-1 overflow-y-auto">
       <div className="max-w-2xl mx-auto px-6 py-10">
         {error && (
           <p className="text-sm text-danger">{error}</p>

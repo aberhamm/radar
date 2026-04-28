@@ -65,7 +65,7 @@ export function SingleInvestigationContent({
   }, [fetchEvents]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div data-component="SingleInvestigationContent" className="flex-1 flex flex-col overflow-hidden">
       {eventsLoading ? (
         <div className="p-6"><EventsLoadingSkeleton /></div>
       ) : resolvedRunData ? (

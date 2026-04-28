@@ -26,6 +26,7 @@ function Bar({ width = '100%', height = '12px', className = '' }: BarProps) {
 export function FindingCardSkeleton() {
   return (
     <div
+      data-component="FindingCardSkeleton"
       className="rounded-xl border border-separator bg-surface p-4 space-y-3"
       style={{ animation: 'fadeIn 0.3s ease both' }}
     >
@@ -43,6 +44,7 @@ export function FindingCardSkeleton() {
 export function RuleBlockSkeleton() {
   return (
     <div
+      data-component="RuleBlockSkeleton"
       className="mb-8"
       style={{ animation: 'fadeIn 0.3s ease both' }}
     >
@@ -60,7 +62,7 @@ export function RuleBlockSkeleton() {
 /** Mimics event stream rows (timestamp + label). */
 export function EventRowSkeleton() {
   return (
-    <div className="flex items-center gap-3 py-1.5 px-4">
+    <div data-component="EventRowSkeleton" className="flex items-center gap-3 py-1.5 px-4">
       <Bar width="52px" height="10px" className="shrink-0" />
       <Bar width="10px" height="10px" className="rounded-full shrink-0" />
       <Bar height="11px" className="flex-1" />
@@ -71,7 +73,7 @@ export function EventRowSkeleton() {
 /** Mimics a history run card (icon + repo name/goal + date + chevron). */
 export function HistoryRunCardSkeleton() {
   return (
-    <div className="flex items-center gap-2.5 w-full px-3 py-2 min-h-[44px] rounded-lg bg-elevated border border-transparent">
+    <div data-component="HistoryRunCardSkeleton" className="flex items-center gap-2.5 w-full px-3 py-2 min-h-[44px] rounded-lg bg-elevated border border-transparent">
       <Bar width="16px" height="16px" className="rounded shrink-0" />
       <div className="min-w-0 flex-1 space-y-1.5">
         <Bar width="70%" height="13px" />
@@ -90,7 +92,7 @@ export function StaggeredSpinner({ color = 'var(--color-tint)', size = 20 }: { c
   const barWidth = Math.max(2, size / 6);
   const gap = Math.max(1.5, size / 10);
   return (
-    <div className="flex items-center justify-center" style={{ height: size, gap }}>
+    <div data-component="StaggeredSpinner" className="flex items-center justify-center" style={{ height: size, gap }}>
       {Array.from({ length: barCount }).map((_, i) => (
         <div
           key={i}
@@ -116,24 +118,17 @@ export function StaggeredSpinner({ color = 'var(--color-tint)', size = 20 }: { c
  */
 export function RunLoadingSkeleton() {
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* ── Exec summary banner ── matches ExecSummaryBanner */}
-      <div className="px-6 py-4 border-b border-separator bg-surface shrink-0">
-        <div className="flex items-start gap-5 max-w-[860px]">
-          <div className="w-14 h-14 rounded-xl shrink-0 animate-skeleton" />
-          <div className="flex-1 min-w-0">
-            <Bar width="260px" height="15px" className="mb-1" />
-            <div className="flex items-center gap-4 mb-2">
-              <Bar width="120px" height="12px" />
-              <Bar width="80px" height="12px" />
-              <Bar width="48px" height="12px" />
-              <Bar width="36px" height="12px" />
-            </div>
-            <div className="flex gap-2">
-              <Bar width="200px" height="20px" className="rounded-md" />
-              <Bar width="240px" height="20px" className="rounded-md" />
-              <Bar width="180px" height="20px" className="rounded-md" />
-            </div>
+    <div data-component="RunLoadingSkeleton" className="flex-1 flex flex-col overflow-hidden">
+      {/* ── Run header ── matches RunHeader */}
+      <div className="px-6 py-3 border-b border-separator bg-surface shrink-0">
+        <div className="flex items-center gap-4 max-w-[860px]">
+          <Bar width="180px" height="15px" />
+          <div className="flex items-center gap-3">
+            <Bar width="60px" height="12px" />
+            <Bar width="70px" height="12px" />
+            <Bar width="65px" height="12px" />
+            <Bar width="48px" height="12px" />
+            <Bar width="36px" height="12px" />
           </div>
         </div>
       </div>
@@ -221,7 +216,7 @@ export function RunLoadingSkeleton() {
 
 export function FindingsLoadingSkeleton() {
   return (
-    <div className="space-y-3 mb-4 animate-slide-up">
+    <div data-component="FindingsLoadingSkeleton" className="space-y-3 mb-4 animate-slide-up">
       {[0, 1, 2].map(i => (
         <div key={i} style={{ animationDelay: `${i * 0.08}s` }}>
           <FindingCardSkeleton />
@@ -233,7 +228,7 @@ export function FindingsLoadingSkeleton() {
 
 export function RulesLoadingSkeleton() {
   return (
-    <div className="py-6 animate-slide-up">
+    <div data-component="RulesLoadingSkeleton" className="py-6 animate-slide-up">
       {[0, 1, 2].map(i => (
         <div key={i} style={{ animationDelay: `${i * 0.08}s` }}>
           <RuleBlockSkeleton />
@@ -245,7 +240,7 @@ export function RulesLoadingSkeleton() {
 
 export function EventsLoadingSkeleton() {
   return (
-    <div className="py-2 space-y-0.5 animate-slide-up">
+    <div data-component="EventsLoadingSkeleton" className="py-2 space-y-0.5 animate-slide-up">
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} style={{ animation: `fadeIn 0.3s ease ${i * 0.04}s both` }}>
           <EventRowSkeleton />
@@ -257,7 +252,7 @@ export function EventsLoadingSkeleton() {
 
 export function CachedReposLoadingSkeleton() {
   return (
-    <div className="px-6 pb-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
+    <div data-component="CachedReposLoadingSkeleton" className="px-6 pb-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
       <Bar width="115px" height="12px" className="mb-3" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -272,7 +267,7 @@ export function CachedReposLoadingSkeleton() {
 
 export function HistoryLoadingSkeleton() {
   return (
-    <div className="px-6 pb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
+    <div data-component="HistoryLoadingSkeleton" className="px-6 pb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
       <Bar width="90px" height="12px" className="mb-3" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {Array.from({ length: 3 }).map((_, i) => (

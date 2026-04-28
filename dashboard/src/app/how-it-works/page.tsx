@@ -8,7 +8,7 @@ export default function HowItWorksPage() {
   const { mode: themeMode, cycle: cycleTheme } = useTheme();
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-canvas">
+    <div data-component="HowItWorksPage" className="flex flex-col h-screen overflow-hidden bg-canvas">
       {/* Header — matches dashboard chrome */}
       <header className="bg-surface-translucent backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-4 h-12 flex items-center gap-3 sticky top-0 z-10 shrink-0">
         <Link
