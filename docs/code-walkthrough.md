@@ -18,23 +18,24 @@ The project uses two packages from the pi-mono monorepo:
 
 | Package | Version | What it provides |
 |---------|---------|-----------------|
-| `@mariozechner/pi-agent-core` | v0.64.0 | Agent class, tool dispatch, event streaming, hook system |
-| `@mariozechner/pi-ai` | v0.64.0 | Model abstraction, TypeBox schemas for tool definitions, provider compatibility |
+| `@mariozechner/pi-agent-core` | v0.70.2 | Agent class, tool dispatch, event streaming, hook system |
+| `@mariozechner/pi-ai` | v0.70.2 | Model abstraction, TypeBox schemas for tool definitions, provider compatibility |
 
 ### What Pi Agent gives us (that we didn't have to build)
 
-**The agent loop.** Pi's `Agent` class handles the observe → reason → act cycle. We give it a system prompt (our consulting rules), tools (our 23 deterministic functions), and a goal prompt. Pi calls the LLM, parses tool call requests from the response, executes the tools in parallel, feeds results back, and repeats. We don't manage the conversation, parse JSON, or handle streaming — Pi does all of that.
+**The agent loop.** Pi's `Agent` class handles the observe → reason → act cycle. We give it a system prompt (our consulting rules), tools (our 40+ deterministic functions), and a goal prompt. Pi calls the LLM, parses tool call requests from the response, executes the tools in parallel, feeds results back, and repeats. We don't manage the conversation, parse JSON, or handle streaming — Pi does all of that.
 
 **Parallel tool execution.** When the LLM requests multiple tools in one turn (e.g., "read these 3 files"), Pi fires them all concurrently. This is significant for performance — the agent regularly calls 3–5 tools in a single batch.
 
 **Hook system for mid-loop control.** Pi provides `beforeToolCall` and `afterToolCall` callbacks that run before and after every single tool call. We use these to:
 - Enforce budget limits (`beforeToolCall` blocks tools when budget is exhausted)
 - Track costs and token usage (`afterToolCall` increments counters)
-- Inject steering messages (`agent.steer()` nudges the LLM when budget is running low)
+- Inject steering messages (nudge the LLM when budget is running low)
 - Switch models mid-run (the dual-model cost optimization)
+- Disable extended thinking on model switch (`agent.state.thinkingLevel = 'off'`)
 - Abort the loop (`agent.abort()` exits when `assemble_output` is called)
 
-**Event subscription.** `agent.subscribe()` gives us a stream of typed events: `message_start`, `message_end`, `message_update`, `tool_execution_start`. The dashboard's live streaming, the CLI's verbose mode, and the cost tracking all consume these events.
+**Event subscription.** `agent.subscribe()` gives us a stream of typed events: `message_start`, `message_end`, `message_update`, `tool_execution_start`. The dashboard's live streaming, the CLI's verbose mode, and the cost tracking all consume these events. All event types (including transient `text_delta` and `tool_start`) are persisted to disk for replay; the UI filters transient events at render time, not at storage time.
 
 **Multi-provider model abstraction.** Pi's `Model<'openai-completions'>` type lets us define a model as config — ID, base URL, headers, cost rates — without importing any provider SDK. Pi speaks the OpenAI-compatible API, and we route through Portkey gateway to whatever backend we want (Bedrock, Azure, direct Anthropic, etc.).
 
@@ -46,10 +47,11 @@ Pi gives us the loop. We built the domain layer:
 
 | What | Where | Why Pi doesn't do this |
 |------|-------|----------------------|
-| 23 consulting tools | `src/tools/` | Domain-specific — file reading, config parsing, code analysis, evidence recording |
+| 40+ consulting tools | `src/tools/` | Domain-specific — file reading, config parsing, code analysis, evidence recording |
 | Consulting rules (markdown) | `src/rules/` | Domain knowledge — investigation standards, platform patterns, goal playbooks |
 | Budget enforcement logic | `src/agent/runner.ts` (hooks) | Business logic — budget warnings, steering messages, budget extension |
 | Dual-model cost optimization | `src/agent/runner.ts` (model switch) | Our innovation — agent-initiated switch from Sonnet to Haiku mid-run |
+| Extended thinking management | `src/agent/runner.ts` + `piModel.ts` | Investigation model gets `reasoning: true` + `thinkingLevel: 'low'`; disabled on switch to fast model |
 | Evidence verification | `src/tools/analysis/recordFinding.ts` | Anti-hallucination — deterministic verification against actual files |
 | Context compression | `src/agent/runner.ts` (transformContext) | Performance — 3-tier compression to stay within context window |
 | Scorecard computation | `src/output/scorecard.ts` | Domain-specific — red/yellow/green scoring from finding severities |
@@ -72,7 +74,7 @@ Pi-mono contains 7 packages. We use 2 of them. The others are available if we wa
 
 ### How to explain it in the demo
 
-> "The agent loop — the part that decides what tool to call next and manages the conversation with the LLM — that's Pi Agent, an open-source runtime. What we built on top is the domain layer: 23 tools that know how to read and analyze CMS codebases, consulting rules written in plain markdown, evidence verification, cost optimization, and the CI/CD integration. Pi handles the plumbing. We handle the expertise."
+> "The agent loop — the part that decides what tool to call next and manages the conversation with the LLM — that's Pi Agent, an open-source runtime. What we built on top is the domain layer: 40+ tools that know how to read and analyze codebases, consulting rules written in plain markdown, evidence verification, cost optimization, and the CI/CD integration. Pi handles the plumbing. We handle the expertise."
 
 ### Why Pi and not LangChain / CrewAI / Writer / etc.
 
@@ -80,7 +82,7 @@ Pi is lower-level than the no-code agent platforms. That's the point.
 
 - **LangChain/CrewAI** — abstractions over abstractions. Good for prototyping, but when you need precise control over the agent loop (budget enforcement, mid-run model switching, context compression, evidence verification), you're fighting the framework.
 - **Writer/no-code platforms** — good for simple workflows (summarize this, route that). Not built for a 45-step autonomous investigation that calls parallel tool batches and switches models mid-run.
-- **Pi** — gives us the loop, the tool system, the event stream, and gets out of the way. We own the hooks, the tools, the rules, and the output. Full control, no magic.
+- **Pi** — gives us the loop, the tool system, the event stream, extended thinking, and gets out of the way. We own the hooks, the tools, the rules, and the output. Full control, no magic.
 
 The CTO's question "Have you taken training on Writer?" is a natural one. The answer: we evaluated the space and chose a runtime that gives us full control over the agent behavior, because the kind of domain-specific agent work we're doing requires it.
 
@@ -161,7 +163,7 @@ Plus a boundary instruction for prompt injection defense. That's it — the syst
 
 ### Step 5: Build Tools (~line 426)
 
-`buildPiTools()` in `src/tools/piToolAdapter.ts` wraps all 23 tool implementations as Pi `AgentTool[]` objects with TypeBox schemas for argument validation. Each tool's `execute()`:
+`buildPiTools()` in `src/tools/piToolAdapter.ts` wraps all 40+ tool implementations as Pi `AgentTool[]` objects with TypeBox schemas for argument validation. Each tool's `execute()`:
 
 1. Runs input validation from `validators.ts`
 2. Normalizes file path arguments (strips absolute prefixes, fixes separators)
@@ -183,16 +185,17 @@ AGENT_MODEL → Investigation model ID (Sonnet)
 FAST_MODEL → Writing model ID (Haiku)
 ```
 
-Both are `Model<'openai-completions'>` objects. Pi Agent speaks OpenAI-compatible API. Portkey gateway translates to the actual provider (Bedrock, Azure, etc.). To switch providers, you change the env vars — no code changes.
+Both are `Model<'openai-completions'>` objects. The agent model is built with `reasoning: true` (supports extended thinking); the fast model with `reasoning: false`. Pi Agent speaks OpenAI-compatible API. Portkey gateway translates to the actual provider (Bedrock, Azure, etc.). To switch providers, you change the env vars — no code changes.
 
-### Step 7: Create the Pi Agent (~lines 795–808)
+### Step 7: Create the Pi Agent (~lines 945–960)
 
 ```typescript
 const agent = new Agent({
-  initialState: { systemPrompt, model: piModel, thinkingLevel: 'off', tools },
+  initialState: { systemPrompt, model: piModel, thinkingLevel: 'low', tools },
   toolExecution: 'parallel',
   transformContext,
   onPayload,
+  sessionId,
   getApiKey: async () => apiKey,
   beforeToolCall,
   afterToolCall,
@@ -203,11 +206,14 @@ Key configuration:
 
 | Setting | What it does |
 |---------|-------------|
+| `thinkingLevel: 'low'` | Extended thinking — gives the model a 2048-token hidden scratchpad for planning tool sequences and budget management before producing visible output. Disabled on model switch to fast. |
 | `toolExecution: 'parallel'` | Pi fires tool calls in parallel batches — if the LLM requests 3 tools in one turn, they all run concurrently |
 | `transformContext` | Compresses old messages to control context window size (3-tier: recent = full, mid-age = 600 chars, old = 120 chars) |
 | `onPayload` | Injects `cache_control` breakpoints for Anthropic prompt caching |
 | `beforeToolCall` | Budget enforcement — blocks tools when budget is exhausted (except `assemble_output`, which is always allowed as the exit path) |
 | `afterToolCall` | The big one — see next section |
+
+**Two layers of reasoning.** Extended thinking (`thinkingLevel: 'low'`) is a hidden scratchpad for internal planning — "which tools should I call next, have I covered all categories, am I near budget?" This is complementary to the prompt-directed reasoning in `goal-universal.md` and `goalPrompts.ts`, which forces the agent to write *visible* analytical narrative between tool calls. Thinking plans internally; reasoning explains findings to the client. Both run simultaneously.
 
 ### Step 8: The `afterToolCall` Hook — Where Everything Happens
 
@@ -276,7 +282,7 @@ This is architecturally interesting and worth understanding.
 
 Pi's `_runLoop()` captures `const model = this._state.model` once at loop start. If you call `agent.setModel(newModel)`, it replaces the `_state` reference — but the loop still holds the old object. It won't see the change.
 
-Solution: `switchModelInPlace()` (~line 465) does:
+Solution: `switchModelInPlace()` (~line 470) does:
 
 ```typescript
 Object.assign(piModel, {
@@ -284,10 +290,12 @@ Object.assign(piModel, {
   name: piFastModel.name,
   cost: piFastModel.cost,
   maxTokens: piFastModel.maxTokens,
+  reasoning: piFastModel.reasoning ?? false,
 });
+agent.state.thinkingLevel = 'off';
 ```
 
-This mutates the original object's properties. Since the loop holds a reference to that same object, it sees the change immediately — no abort/restart needed. The next LLM call goes to Haiku instead of Sonnet.
+This mutates the original object's properties. Since the loop holds a reference to that same object, it sees the change immediately — no abort/restart needed. The next LLM call goes to Haiku instead of Sonnet. Extended thinking is also disabled — the writing phase doesn't need it, and Haiku doesn't support it.
 
 The switch is agent-initiated. The agent calls `switch_to_fast_model` when it decides investigation is done. Fallbacks:
 - At 50% budget remaining: a steering message reminds the agent to switch
@@ -348,7 +356,7 @@ After the model switch (snip boundary), limits tighten to 80/40 chars — the wr
 
 ## 6. The Tools Layer — `src/tools/`
 
-23 tools, all deterministic. They never call an LLM. They read code and return structured data.
+40+ tools, all deterministic. They never call an LLM. They read code and return structured data.
 
 Each tool is a standalone TypeScript function in its own file:
 - Takes `(repoPath: string, input: TypedInput)` as arguments
@@ -359,7 +367,8 @@ Each tool is a standalone TypeScript function in its own file:
 - TypeBox schema for argument validation
 - Path normalization (LLMs sometimes pass absolute paths, backslashes, etc.)
 - State tracking (adds to `filesRead` on file reads)
-- Concurrency control: 21 tools are read-only and run fully parallel. 3 stateful tools (`record_finding`, `assemble_output`, `switch_to_fast_model`) serialize via `StatefulToolMutex` — a lock-free promise chain
+- Concurrency control: most tools are read-only and run fully parallel. Stateful tools (`record_finding`, `assemble_output`, `switch_to_fast_model`) serialize via `StatefulToolMutex` — a lock-free promise chain
+- Deferred descriptions: `web_search`, `fetch_url`, `compare_versions` show stubs until the agent calls `tool_search`, saving context tokens
 
 ---
 
