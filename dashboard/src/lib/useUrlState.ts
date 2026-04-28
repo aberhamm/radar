@@ -6,7 +6,6 @@ import { usePathname, useSearchParams } from 'next/navigation';
 // ─── Types ──────────────────────────────────────────────────────
 
 export type Tab = 'overview' | 'investigation' | 'cost';
-export type MultiTab = Tab;
 
 export type InfoPage = 'how-it-works' | 'changelog';
 
@@ -14,11 +13,10 @@ export type UrlView =
   | { view: 'idle' }
   | { view: 'run'; runId: string; tab?: Tab }
   | { view: 'compare'; compareIds: [string, string] }
-  | { view: 'multi'; parentId: string; tab?: MultiTab }
+  | { view: 'multi'; parentId: string; tab?: Tab }
   | { view: 'info'; page: InfoPage };
 
 const VALID_TABS = new Set<Tab>(['overview', 'investigation', 'cost']);
-const VALID_MULTI_TABS = VALID_TABS;
 
 // ─── Pure Functions ─────────────────────────────────────────────
 
@@ -47,11 +45,11 @@ export function parseUrl(pathname: string, searchParams?: URLSearchParams): UrlV
   }
 
   if (segments[0] === 'multi' && segments[1]) {
-    const multiTab = searchParams?.get('tab') as MultiTab | null;
+    const tab = searchParams?.get('tab') as Tab | null;
     return {
       view: 'multi',
       parentId: segments[1],
-      tab: multiTab && VALID_MULTI_TABS.has(multiTab) ? multiTab : undefined,
+      tab: tab && VALID_TABS.has(tab) ? tab : undefined,
     };
   }
 

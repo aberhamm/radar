@@ -1,50 +1,26 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { Scorecard, RunMetrics, CategoryScore, StepEvent } from '@/lib/agentSession';
-import {
-  copyToClipboard,
-  buildReportMarkdown,
-  exportReportMarkdown,
-  exportReportPDF,
-  exportEventsCSV,
-  exportCostCSV,
-  costToMarkdown,
-} from '@/lib/export';
-import { AnalysisView } from './AnalysisView';
+import { useState } from 'react';
+import type { Scorecard, RunMetrics, CategoryScore } from '@/lib/agentSession';
 import { FindingCard } from './FindingCard';
-import { FindingsLoadingSkeleton, EventsLoadingSkeleton } from './Skeleton';
-import { normalizeFindings, transformRunData, type Finding, type TransformedRunData } from '@/lib/runTransform';
-import { CreateIssuesModal } from './CreateIssuesModal';
+import type { Finding } from '@/lib/runTransform';
 import { scoreColor, scoreToGrade, scoreToVerdict } from '@/lib/utils';
-import type { Tab } from '@/lib/useUrlState';
-
-interface CompleteViewProps {
-  briefMarkdown: string;
-  scorecard: Scorecard;
-  metrics: RunMetrics;
-  events: StepEvent[];
-  goal: string;
-  findings?: unknown[];
-  runId?: string;
-  /** GitHub URL for the analyzed repo (used by Create Issues). */
-  repoUrl?: string;
-  /** Controlled active tab (from URL state). */
-  activeTab?: Tab;
-  /** Callback when tab changes (syncs to URL). */
-  onTabChange?: (tab: Tab) => void;
-  /** Pre-transformed run data for investigation replay (optional — lazy-loads events if not provided). */
-  investigationRunData?: import('@/lib/runTransform').TransformedRunData;
-}
 
 // ─── Exec Summary Banner ───────────────────────────────────────
 
-function ExecSummaryBanner({ scorecard, metrics }: { scorecard: Scorecard; metrics: RunMetrics }) {
+interface ExecSummaryBannerProps {
+  scorecard: Scorecard;
+  metrics: RunMetrics;
+  goalCount?: number;
+  repoName?: string;
+  totalFindings?: number;
+}
+
+export function ExecSummaryBanner({ scorecard, metrics, goalCount, repoName, totalFindings }: ExecSummaryBannerProps) {
   const grade = scoreToGrade(scorecard.overallScore);
   const gradeColor = scoreColor(scorecard.overallScore);
   const verdict = scoreToVerdict(scorecard.overallScore);
+  const isMulti = goalCount != null;
 
   return (
     <div data-component="ExecSummaryBanner" className="px-6 py-4 border-b border-separator bg-surface shrink-0">
@@ -58,9 +34,18 @@ function ExecSummaryBanner({ scorecard, metrics }: { scorecard: Scorecard; metri
           </span>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-semibold text-label mb-1">{verdict}</div>
+          <div className="flex items-center gap-3 mb-1">
+            <span className="text-[15px] font-semibold text-label">{verdict}</span>
+            {isMulti && (
+              <span className="text-[12px] font-medium text-tint bg-[rgb(0_113_227/0.08)] rounded px-2 py-0.5">
+                {goalCount} goals
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-[12px] text-secondary-label mb-2 flex-wrap">
-            <span>{scorecard.categories.length} categories scored</span>
+            {isMulti && repoName && <span>{repoName}</span>}
+            {isMulti && totalFindings != null && <span>{totalFindings} findings</span>}
+            {!isMulti && <span>{scorecard.categories.length} categories scored</span>}
             <span>{metrics.toolCalls} tool calls</span>
             <span>${metrics.totalEstimatedCostUsd.toFixed(2)}</span>
             <span>{(metrics.durationMs / 1000).toFixed(0)}s</span>
@@ -384,262 +369,3 @@ export function CopiedToast({ visible }: { visible: boolean }) {
   );
 }
 
-export function CompleteView({ briefMarkdown, scorecard, metrics, events, goal, findings, runId, repoUrl, activeTab: controlledTab, onTabChange, investigationRunData }: CompleteViewProps) {
-  const [internalTab, setInternalTab] = useState<Tab>('overview');
-  const activeTab = controlledTab ?? internalTab;
-  const [copied, setCopied] = useState(false);
-  const [pdfExporting, setPdfExporting] = useState(false);
-  const [lazyRunData, setLazyRunData] = useState<TransformedRunData | null>(null);
-  const [eventsLoading, setEventsLoading] = useState(false);
-  const eventsFailed = useRef(false);
-  const [lazyFindings, setLazyFindings] = useState<Finding[] | null>(null);
-  const [findingsLoading, setFindingsLoading] = useState(false);
-  const [issueModalOpen, setIssueModalOpen] = useState(false);
-  const [replayAnimated, setReplayAnimated] = useState(false);
-
-  // Normalize findings from props, or use lazy-loaded findings
-  const typedFindings: Finding[] = lazyFindings
-    ?? (findings && findings.length > 0 ? normalizeFindings(findings) : []);
-
-  // Lazy-load findings when slim mode returned empty array
-  useEffect(() => {
-    if (typedFindings.length === 0 && !findingsLoading && !lazyFindings && runId) {
-      setFindingsLoading(true);
-      fetch(`/api/history/${encodeURIComponent(runId)}`)
-        .then(r => r.json())
-        .then(data => {
-          const raw = data.result?.state?.findings;
-          setLazyFindings(raw && raw.length > 0 ? normalizeFindings(raw) : []);
-        })
-        .catch(err => {
-          console.warn('[findings] Failed to load:', err);
-          setLazyFindings([]);
-        })
-        .finally(() => setFindingsLoading(false));
-    }
-  }, [runId, typedFindings.length, findingsLoading, lazyFindings]);
-
-  // Resolve investigation run data: prop > lazy-loaded > null
-  const resolvedRunData = investigationRunData ?? lazyRunData;
-
-  // Lazy-load events when investigation tab is active on mount (direct URL navigation)
-  useEffect(() => {
-    if (activeTab === 'investigation' && !resolvedRunData && !eventsLoading && !eventsFailed.current && runId && !runId.startsWith('__')) {
-      setEventsLoading(true);
-      fetch(`/api/history/${encodeURIComponent(runId)}/events`)
-        .then(r => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-        .then(data => {
-          if (data.events) {
-            const rd = transformRunData(data.events, {
-              scorecard,
-              metrics,
-              terminationReason: 'completed',
-              briefMarkdown: '',
-              outputPaths: [],
-              state: { findings: findings ?? [] },
-            });
-            setLazyRunData(rd);
-          } else {
-            eventsFailed.current = true;
-          }
-        })
-        .catch(err => {
-          console.warn('[events] Failed to load:', err);
-          eventsFailed.current = true;
-        })
-        .finally(() => setEventsLoading(false));
-    }
-  }, [activeTab, resolvedRunData, eventsLoading, runId, scorecard, metrics, findings]);
-
-  const handleTabChange = useCallback((tab: Tab) => {
-    if (onTabChange) onTabChange(tab);
-    else setInternalTab(tab);
-    // Lazy-load events when switching to investigation tab
-    if (tab === 'investigation' && !resolvedRunData && !eventsLoading && !eventsFailed.current && runId && !runId.startsWith('__')) {
-      setEventsLoading(true);
-      fetch(`/api/history/${encodeURIComponent(runId)}/events`)
-        .then(r => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-        .then(data => {
-          if (data.events) {
-            const rd = transformRunData(data.events, {
-              scorecard,
-              metrics,
-              terminationReason: 'completed',
-              briefMarkdown: '',
-              outputPaths: [],
-              state: { findings: findings ?? [] },
-            });
-            setLazyRunData(rd);
-          } else {
-            eventsFailed.current = true;
-          }
-        })
-        .catch(err => {
-          console.warn('[events] Failed to load:', err);
-          eventsFailed.current = true;
-        })
-        .finally(() => setEventsLoading(false));
-    }
-  }, [resolvedRunData, eventsLoading, runId, onTabChange, scorecard, metrics, findings]);
-
-  const flash = useCallback(() => {
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, []);
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'investigation', label: 'Investigation' },
-    { id: 'cost', label: 'Cost' },
-  ];
-
-  return (
-    <div data-component="CompleteView" className="flex-1 flex flex-col overflow-hidden">
-      {/* Exec summary banner */}
-      <ExecSummaryBanner scorecard={scorecard} metrics={metrics} />
-
-      {/* Segmented control tab bar */}
-      <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
-        <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5" role="tablist" aria-label="Report sections">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`px-5 py-1.5 min-w-[72px] min-h-touch rounded-md text-[13px] font-medium transition-all cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-surface text-label shadow-sm'
-                  : 'text-secondary-label hover:text-label'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Export actions — right side of tab bar */}
-        <div className="ml-auto flex items-center gap-2">
-          <CopiedToast visible={copied} />
-
-          {activeTab === 'overview' && (
-            <>
-              <ExportButton
-                label="Copy Markdown"
-                onClick={async () => {
-                  const ok = await copyToClipboard(buildReportMarkdown(briefMarkdown, scorecard));
-                  if (ok) flash();
-                }}
-              />
-              <ExportButton
-                label="Export .md"
-                onClick={() => exportReportMarkdown(briefMarkdown, scorecard)}
-              />
-              <ExportButton
-                label={pdfExporting ? 'Exporting...' : 'Export PDF'}
-                onClick={async () => {
-                  setPdfExporting(true);
-                  try {
-                    let resolvedFindings = findings ?? [];
-                    if (resolvedFindings.length === 0 && runId) {
-                      try {
-                        const r = await fetch(`/api/history/${encodeURIComponent(runId)}`);
-                        const data = await r.json();
-                        if (data.result?.state?.findings) {
-                          resolvedFindings = data.result.state.findings;
-                        }
-                      } catch { /* proceed with empty findings */ }
-                    }
-                    await exportReportPDF(scorecard, resolvedFindings, metrics);
-                  } catch (err) {
-                    console.error('PDF export failed:', err);
-                  } finally {
-                    setPdfExporting(false);
-                  }
-                }}
-              />
-              <ExportButton
-                label="Create Issues"
-                onClick={() => setIssueModalOpen(true)}
-              />
-            </>
-          )}
-
-          {activeTab === 'investigation' && resolvedRunData && (
-            <ExportButton
-              label="Export CSV"
-              onClick={() => exportEventsCSV(events, scorecard.repoName)}
-            />
-          )}
-
-          {activeTab === 'cost' && (
-            <>
-              <ExportButton
-                label="Copy Markdown"
-                onClick={async () => {
-                  const ok = await copyToClipboard(costToMarkdown(metrics));
-                  if (ok) flash();
-                }}
-              />
-              <ExportButton
-                label="Export CSV"
-                onClick={() => exportCostCSV(metrics, scorecard.repoName)}
-              />
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'investigation' ? '' : 'px-6'}`}>
-        <div key={activeTab} role="tabpanel" aria-label={activeTab} className="animate-slide-up flex-1 flex flex-col">
-          {activeTab === 'overview' && (
-            <div className="max-w-[860px] pt-5 pb-8">
-              <ScorecardGrid scorecard={scorecard} metrics={metrics} />
-              {findingsLoading && <FindingsLoadingSkeleton />}
-              {typedFindings.length > 0 && (
-                <FindingsSection findings={typedFindings} scorecard={scorecard} />
-              )}
-              <div className="md-content text-sm leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefMarkdown}</ReactMarkdown>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'investigation' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {eventsLoading ? (
-                <div className="p-6"><EventsLoadingSkeleton /></div>
-              ) : resolvedRunData ? (
-                <AnalysisView
-                  runData={resolvedRunData}
-                  viewMode={replayAnimated ? 'replay' : 'instant'}
-                  onStartReplay={() => setReplayAnimated(true)}
-                />
-              ) : (
-                <div className="flex-1 flex items-center justify-center p-8">
-                  <p className="text-sm text-tertiary-label">No investigation events available.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'cost' && <CostTab metrics={metrics} />}
-        </div>
-      </div>
-
-      <CreateIssuesModal
-        isOpen={issueModalOpen}
-        onClose={() => setIssueModalOpen(false)}
-        findings={typedFindings}
-        repoUrl={repoUrl}
-      />
-    </div>
-  );
-}

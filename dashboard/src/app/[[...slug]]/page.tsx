@@ -4,22 +4,22 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { StepEvent, Scorecard, RunMetrics, HistoryItem } from '@/lib/agentSession';
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
-import { useUrlState, buildUrl, type Tab, type MultiTab, type InfoPage } from '@/lib/useUrlState';
+import { useUrlState, buildUrl, type Tab, type InfoPage } from '@/lib/useUrlState';
 import { ContextBar } from '@/components/ContextBar';
 import { Sidebar } from '@/components/Sidebar';
 import { AppSidebar, USE_SIDEBAR_V2 } from '@/components/AppSidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { IdleView } from '@/components/IdleView';
-import { CompleteView } from '@/components/CompleteView';
+import { RunView } from '@/components/RunView';
 import { CompareView, type CompareData } from '@/components/CompareView';
 import { AnalysisView } from '@/components/AnalysisView';
-import { MultiGoalView, type MultiGoalData } from '@/components/MultiGoalView';
 import { RunLoadingSkeleton } from '@/components/Skeleton';
 import { HowItWorksPanel } from '@/components/HowItWorksPanel';
 import { ChangelogView } from '@/components/ChangelogView';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
 import type { TransformedRunData } from '@/lib/runTransform';
+import { toMultiRunData, type RunViewMode, type MultiGoalData } from '@/lib/runViewAdapters';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ function friendlyError(raw: string): string {
 
 // ─── Types ──────────────────────────────────────────────────────
 
-type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing' | 'multigoal' | 'info';
+type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing' | 'info';
 
 interface CurrentRun {
   repoPath: string;
@@ -98,11 +98,10 @@ export default function DashboardPage() {
   const [compareData, setCompareData] = useState<CompareData | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
-  const [multiGoalData, setMultiGoalData] = useState<MultiGoalData | null>(null);
+  const [multiRunData, setMultiRunData] = useState<RunViewMode | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [sampleInvestigation, setSampleInvestigation] = useState<TransformedRunData | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
-  const [multiTab, setMultiTab] = useState<MultiTab>('overview');
   const [activeInfoPage, setActiveInfoPage] = useState<InfoPage | undefined>(undefined);
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
   const { urlView, pushUrl, replaceUrl } = useUrlState();
@@ -221,10 +220,10 @@ export default function DashboardPage() {
             console.warn('[url] Failed to load multi-goal group:', urlView.parentId, data.error);
             return;
           }
-          setMultiGoalData(data as MultiGoalData);
+          setMultiRunData({ kind: 'multi', data: toMultiRunData(data as MultiGoalData) });
           setSelectedRunId(urlView.parentId);
-          setStatus('multigoal');
-          if (urlView.tab) setMultiTab(urlView.tab);
+          setStatus('complete');
+          if (urlView.tab) setActiveTab(urlView.tab);
           if (window.innerWidth < 1024) setSidebarOpen(false);
         } catch (err) {
           console.error('[url] Failed to load multi-goal group:', urlView.parentId, err);
@@ -248,7 +247,7 @@ export default function DashboardPage() {
       setResult(null);
       setCurrentRun(null);
       setSelectedRunId(null);
-      setMultiGoalData(null);
+      setMultiRunData(null);
       setCompareData(null);
     } else if (urlView.view === 'run' && urlView.runId && urlView.runId !== selectedRunId && status !== 'running') {
       handleSelectHistory(urlView.runId, urlView.tab);
@@ -261,7 +260,7 @@ export default function DashboardPage() {
     setResult(null);
     setCurrentRun(null);
     setSelectedRunId(null);
-    setMultiGoalData(null);
+    setMultiRunData(null);
     setCompareData(null);
     pushUrl({ view: 'info', page });
     if (window.innerWidth < 1024) setSidebarOpen(false);
@@ -269,17 +268,12 @@ export default function DashboardPage() {
 
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
-    if (selectedRunId) {
+    if (multiRunData?.kind === 'multi') {
+      replaceUrl({ view: 'multi', parentId: multiRunData.data.parentId, tab });
+    } else if (selectedRunId) {
       replaceUrl({ view: 'run', runId: selectedRunId, tab });
     }
-  }, [selectedRunId, replaceUrl]);
-
-  const handleMultiTabChange = useCallback((tab: MultiTab) => {
-    setMultiTab(tab);
-    if (multiGoalData?.parentId) {
-      replaceUrl({ view: 'multi', parentId: multiGoalData.parentId, tab });
-    }
-  }, [multiGoalData?.parentId, replaceUrl]);
+  }, [selectedRunId, multiRunData, replaceUrl]);
 
   const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string, budget?: number) => {
     const resolvedName = repoName ?? (repoPath.split(/[/\\]/).pop() || repoPath);
@@ -298,7 +292,7 @@ export default function DashboardPage() {
     setBudgetPausedData(null);
     setNewRunModal(false);
     setSelectedRunId(runId ?? null);
-    setMultiGoalData(null);
+    setMultiRunData(null);
     setActiveTab('overview');
 
     // Push URL with runId so refresh reconnects
@@ -524,6 +518,7 @@ export default function DashboardPage() {
         budget: 45,
       });
       setBudgetPausedData(null);
+      setMultiRunData(null);
       setSelectedRunId(id);
       setStatus('complete');
       setActiveTab(initialTab ?? 'overview');
@@ -543,10 +538,11 @@ export default function DashboardPage() {
           console.warn('[history] Failed to load group:', id, data.error);
           return;
         }
-        setMultiGoalData(data as MultiGoalData);
+        setMultiRunData({ kind: 'multi', data: toMultiRunData(data as MultiGoalData) });
         setSelectedRunId(id);
-        setStatus('multigoal');
-        pushUrl({ view: 'multi', parentId: id });
+        setStatus('complete');
+        setActiveTab(initialTab ?? 'overview');
+        pushUrl({ view: 'multi', parentId: id, tab: initialTab });
         if (window.innerWidth < 1024) setSidebarOpen(false);
       } catch (err) {
         console.error('[history] Failed to load group:', id, err);
@@ -571,6 +567,7 @@ export default function DashboardPage() {
       });
       setBudgetPausedData(null);
       setSampleInvestigation(null);
+      setMultiRunData(null);
       setSelectedRunId(id);
       setStatus('complete');
       setActiveTab(initialTab ?? 'overview');
@@ -610,6 +607,7 @@ export default function DashboardPage() {
       });
       setBudgetPausedData(null);
       setSampleInvestigation(null);
+      setMultiRunData(null);
       setSelectedRunId(id);
       setStatus('complete');
       setActiveTab(initialTab ?? 'overview');
@@ -653,6 +651,28 @@ export default function DashboardPage() {
   }, [groupParentIds]);
 
   const isRunningOrPaused = status === 'running' || status === 'budget_paused';
+
+  // Derive the unified RunView mode from current state
+  const runViewMode: RunViewMode | null = useMemo(() => {
+    if (multiRunData) return multiRunData;
+    if (result && currentRun) {
+      return {
+        kind: 'single',
+        data: {
+          briefMarkdown: result.briefMarkdown,
+          scorecard: result.scorecard,
+          metrics: result.metrics,
+          events: currentRun.events,
+          goal: currentRun.goal,
+          findings: result.state?.findings ?? [],
+          runId: selectedRunId ?? undefined,
+          repoUrl: selectedRunId ? history.find(h => h.id === selectedRunId)?.repoUrl : undefined,
+          investigationRunData: sampleInvestigation ?? undefined,
+        },
+      };
+    }
+    return null;
+  }, [multiRunData, result, currentRun, selectedRunId, history, sampleInvestigation]);
 
   // SSE connection for live runs (replaces EventStream inside RunningView)
   useEventSource(isRunningOrPaused, {
@@ -810,14 +830,14 @@ export default function DashboardPage() {
           onExitCompare={handleExitCompare}
         />
       )}
-      {status !== 'idle' && status !== 'comparing' && status !== 'multigoal' && currentRun?.repoName && (
+      {status !== 'idle' && status !== 'comparing' && (currentRun?.repoName || multiRunData?.kind === 'multi') && (
         <ContextBar
           status={status as 'running' | 'budget_paused' | 'complete' | 'error'}
-          repoName={currentRun.repoName}
-          goal={currentRun.goal}
-          scorecard={result?.scorecard}
-          toolCalls={currentRun.toolCalls}
-          budget={currentRun.budget}
+          repoName={multiRunData?.kind === 'multi' ? multiRunData.data.repoName : (currentRun?.repoName ?? '')}
+          goal={multiRunData?.kind === 'multi' ? 'all' : currentRun?.goal}
+          scorecard={multiRunData?.kind === 'multi' ? multiRunData.data.mergedScorecard : result?.scorecard}
+          toolCalls={currentRun?.toolCalls ?? 0}
+          budget={currentRun?.budget ?? 0}
           onStop={handleStop}
           onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
           activeTab={activeTab}
@@ -846,7 +866,7 @@ export default function DashboardPage() {
             onLoadMore={handleLoadMore}
             activeTab={activeTab}
             onSectionClick={handleTabChange}
-            showSections={(status === 'complete' || status === 'error') && !!result}
+            showSections={(status === 'complete' || status === 'error') && !!runViewMode}
             compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
             activeInfoPage={status === 'info' ? activeInfoPage : undefined}
             onInfoNavigate={handleInfoNavigate}
@@ -872,7 +892,7 @@ export default function DashboardPage() {
             onLoadMore={handleLoadMore}
             activeTab={activeTab}
             onSectionClick={handleTabChange}
-            showSections={(status === 'complete' || status === 'error') && !!result}
+            showSections={(status === 'complete' || status === 'error') && !!runViewMode}
             compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
             activeInfoPage={status === 'info' ? activeInfoPage : undefined}
             onInfoNavigate={handleInfoNavigate}
@@ -923,30 +943,12 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {status === 'multigoal' && multiGoalData && !historyLoading && (
-            <div key="multigoal" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
-              <MultiGoalView
-                data={multiGoalData}
-                activeTab={multiTab}
-                onTabChange={handleMultiTabChange}
-              />
-            </div>
-          )}
-
-          {(status === 'complete' || status === 'error') && result && currentRun && !historyLoading && (
+          {(status === 'complete' || status === 'error') && runViewMode && !historyLoading && (
             <div key="complete" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
-              <CompleteView
-                briefMarkdown={result.briefMarkdown}
-                scorecard={result.scorecard}
-                metrics={result.metrics}
-                events={currentRun.events}
-                goal={currentRun.goal}
-                findings={result.state?.findings}
-                runId={selectedRunId ?? undefined}
-                repoUrl={selectedRunId ? history.find(h => h.id === selectedRunId)?.repoUrl : undefined}
+              <RunView
+                mode={runViewMode}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
-                investigationRunData={sampleInvestigation ?? undefined}
               />
             </div>
           )}
