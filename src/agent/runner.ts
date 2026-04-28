@@ -289,7 +289,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
 
     // Recording enforcement gate: when 60%+ budget is spent with zero findings,
-    // block investigation tools to force the agent into recording mode.
+    // offer budget extension first; only force recording mode if declined/unavailable.
     const WRITING_TOOLS = new Set(['record_finding', 'switch_to_fast_model', 'assemble_output']);
     if (
       state.findings.length === 0 &&
@@ -297,6 +297,27 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       state.toolCallCount < currentBudget &&
       !WRITING_TOOLS.has(toolName)
     ) {
+      if (!budgetExhaustedFired && config.onBudgetExhausted) {
+        budgetExhaustedFired = true;
+        const shouldExtend = await config.onBudgetExhausted({
+          findings: state.findings.length,
+          toolCalls: state.toolCallCount,
+          budget: currentBudget,
+        });
+        if (shouldExtend) {
+          currentBudget += BUDGET_EXTENSION;
+          state.toolCallBudget = currentBudget;
+          budgetExhaustedFired = false;
+          config.onStep?.({
+            step: stepCount,
+            action: 'budget_extended',
+            type: 'budget_warning',
+            newBudget: currentBudget,
+            result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
+          });
+          return undefined;
+        }
+      }
       if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
         snipBoundaryActive = true;
