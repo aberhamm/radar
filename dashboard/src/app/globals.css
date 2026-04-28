@@ -185,6 +185,16 @@
 
 /* ── Animations ─────────────────────────────────────────────────── */
 
+@keyframes tokenFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Streaming text: each block-level element fades in when first inserted */
+[data-component="TypingIndicator"] .md-content > :is(p, ul, ol, pre, blockquote, h1, h2, h3, h4, table) {
+  animation: tokenFadeIn 0.3s ease-out both;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }

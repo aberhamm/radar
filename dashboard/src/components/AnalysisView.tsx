@@ -98,6 +98,8 @@ export function AnalysisView({
     if (typeof window !== 'undefined') return window.innerWidth >= 1024;
     return true;
   });
+  const streamContainerRef = useRef<HTMLDivElement>(null);
+  const [railStyle, setRailStyle] = useState<{ top: number; height: number } | null>(null);
 
   // Auto-collapse right panel on tablet
   useEffect(() => {
@@ -156,6 +158,22 @@ export function AnalysisView({
       }, 150);
     }
   }, [turns, typingText, activeTurnIndex, autoScroll]);
+
+  // Measure timeline dot positions to size the connector rail precisely
+  useLayoutEffect(() => {
+    const container = streamContainerRef.current;
+    if (!container) { setRailStyle(null); return; }
+    const dots = container.querySelectorAll<HTMLElement>('[data-timeline-dot]');
+    if (dots.length < 2) { setRailStyle(null); return; }
+    const containerRect = container.getBoundingClientRect();
+    const first = dots[0].getBoundingClientRect();
+    const last = dots[dots.length - 1].getBoundingClientRect();
+    const top = Math.round(first.top + first.height / 2 - containerRect.top);
+    const height = Math.round(last.top + last.height / 2 - containerRect.top - top);
+    setRailStyle(prev =>
+      prev && prev.top === top && prev.height === height ? prev : { top, height },
+    );
+  });
 
   // Detect manual scroll-up to pause autoscroll
   const handleStreamScroll = useCallback(() => {
@@ -428,15 +446,14 @@ export function AnalysisView({
             )}
 
             {/* Committed turns */}
-            <div data-component="ReasoningStream" className="relative">
-              {/* Vertical connector rail — count typing indicator as an item so the rail
-                      is already visible before a turn commits (prevents rightward shift) */}
-              {turns.length +
-                (typingText || (isLive && phase !== 'done' && phase !== 'idle') ? 1 : 0) >
-                1 && (
+            <div data-component="ReasoningStream" className="relative" ref={streamContainerRef}>
+              {/* Vertical connector rail — measured from first to last timeline dot */}
+              {railStyle && (
                 <div
-                  className="absolute left-[9px] top-[21px] bottom-[21px] w-px"
+                  className="absolute left-[9px] w-px"
                   style={{
+                    top: railStyle.top,
+                    height: railStyle.height,
                     background: `linear-gradient(to bottom, var(--color-separator), color-mix(in srgb, ${accentColor} 30%, var(--color-separator)), var(--color-separator))`,
                   }}
                 />
@@ -452,6 +469,7 @@ export function AnalysisView({
                       style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                     >
                       <div
+                        data-timeline-dot
                         className="w-[20px] h-[20px] rounded-full bg-[rgba(255,159,10,0.1)] flex items-center justify-center shrink-0 relative z-[1]"
                         style={{ boxShadow: '0 0 0 1px rgba(255,159,10,0.3)' }}
                       >
@@ -484,6 +502,7 @@ export function AnalysisView({
                       style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
                     >
                       <div
+                        data-timeline-dot
                         className="w-[20px] h-[20px] rounded-full bg-[rgba(0,113,227,0.1)] flex items-center justify-center shrink-0 relative z-[1]"
                         style={{ boxShadow: '0 0 0 1px rgba(0,113,227,0.3)' }}
                       >
@@ -581,6 +600,7 @@ export function AnalysisView({
                     {/* Status icon waypoint */}
                     <div
                       data-component="TurnIcon"
+                      data-timeline-dot
                       className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1] transition-all duration-300"
                       style={{
                         background: isActive
@@ -630,6 +650,7 @@ export function AnalysisView({
                 <div data-component="TypingIndicator" className="flex gap-2.5 py-2">
                   {/* Active pulsing dot — matches TurnIcon layout */}
                   <div
+                    data-timeline-dot
                     className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
                     style={{
                       background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
@@ -661,6 +682,7 @@ export function AnalysisView({
                 >
                   {/* Icon waypoint */}
                   <div
+                    data-timeline-dot
                     className="w-[20px] h-[20px] rounded-full flex items-center justify-center shrink-0 mt-[3px] relative z-[1]"
                     style={{
                       background: `color-mix(in srgb, ${accentColor} 12%, var(--color-surface))`,
