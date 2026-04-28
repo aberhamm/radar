@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "cd .. && pnpm build",
-    "dev": "next dev",
-    "build": "next build",
+    "predev": "node -e \"if(!require('fs').existsSync('../dist/agent'))process.exit(1)\" || cd .. && pnpm build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
@@ -31,6 +31,7 @@
     "@types/pdfkit": "^0.17.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "tailwindcss": "^4",

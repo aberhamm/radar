@@ -178,15 +178,20 @@ const HOLLOW_TESTS: RegExp[] = [
   /^I'll (?:now )?(?:check|examine|look|explore|investigate|continue|also|conduct)\b/i,
   /^(?:the file|it) (?:appears|seems)\b.*(?:empty|unchanged|not returning)/i,
   /^(?:let me try|trying) a different approach/i,
-  // "This is a critical finding." without explaining WHAT — no "because/since/:" clause
   /^this is (?:a )?(?:critical|important|significant|notable|interesting|key)\b[^.]*(?:finding|issue|observation|discovery)\s*\.?$/i,
+  /^what this reveals:/i,
+  /^(?:it seems|it appears) (?:the|that|this)\b/i,
+  /^(?:perfect|great|good|excellent|okay|ok)\s*[—–-]\s*I (?:now )?have\b/i,
+  /^(?:let me|now let me) (?:fix|assemble|compile|format|build|create|generate|write|produce)\b/i,
+  /^\d+\.\s*\w+[-:].*[✓✗]/,
+  /^plus bonus findings?:/i,
 ];
 
 /**
  * Clean agent reasoning: strip file-path dumps and hollow narration.
  * Returns empty string if nothing substantive remains.
  */
-function cleanReasoning(raw: string): string {
+export function cleanReasoning(raw: string): string {
   const lines = raw.split('\n');
   const kept: string[] = [];
 

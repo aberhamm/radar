@@ -14,7 +14,8 @@ import { handleAnalyzeAll } from './commands/analyzeAll.js';
 import { handleCompare } from './commands/compare.js';
 import { handleDiff } from './commands/diff.js';
 import { handleGauntlet } from './commands/gauntlet.js';
-import { TOOL_CALL_BUDGET, TOOL_CALL_BUDGET_ALL } from './config/defaults.js';
+import { TOOL_CALL_BUDGET, TOOL_CALL_BUDGET_MULTI } from './config/defaults.js';
+import { ALL_GOALS } from './types/state.js';
 
 // Load .env
 import 'dotenv/config';
@@ -55,12 +56,15 @@ program
   .option('--checkpoint-interval <n>', 'Save checkpoint every N tool calls (0 to disable)', '5')
   .action(async (opts) => {
     try {
-      // Apply goal-appropriate default budget if user didn't specify
+      const goals = parseGoals(opts.goal);
       if (!opts.budget) {
-        opts.budget = opts.goal === 'all' ? String(TOOL_CALL_BUDGET_ALL) : String(TOOL_CALL_BUDGET);
+        opts.budget = goals.length === 1
+          ? String(TOOL_CALL_BUDGET)
+          : String(TOOL_CALL_BUDGET_MULTI);
       }
-      const handler = opts.goal === 'all' ? handleAnalyzeAll : handleAnalyze;
-      const exitCode = await handler(opts);
+      const exitCode = goals.length === 1
+        ? await handleAnalyze({ ...opts, goal: goals[0] })
+        : await handleAnalyzeAll({ ...opts, goals });
       if (exitCode !== 0) process.exit(exitCode);
     } catch (err) {
       console.error(`\nError: ${(err as Error).message}`);
@@ -195,7 +199,7 @@ program
     }
 
     // Spawn next dev as a child process
-    const child = spawn('npx', ['next', 'dev', '--port', String(port)], {
+    const child = spawn('npx', ['next', 'dev', '--webpack', '--port', String(port)], {
       cwd: dashboardDir,
       stdio: 'inherit',
       shell: true,
@@ -227,5 +231,15 @@ program
       process.exit(0);
     });
   });
+
+function parseGoals(input?: string): GoalType[] {
+  if (!input || input === 'all') return [...ALL_GOALS];
+  const goals = input.split(',').map(g => g.trim()) as GoalType[];
+  const valid = new Set<string>(ALL_GOALS);
+  for (const g of goals) {
+    if (!valid.has(g)) throw new Error(`Invalid goal: ${g}. Valid: ${ALL_GOALS.join(', ')}, all`);
+  }
+  return [...new Set(goals)];
+}
 
 program.parse();

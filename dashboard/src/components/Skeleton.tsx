@@ -112,9 +112,7 @@ export function StaggeredSpinner({ color = 'var(--color-tint)', size = 20 }: { c
 /* ── Full-view loading skeletons ──────────────────────────────────── */
 
 /**
- * Mimics the CompleteView layout: exec summary banner + tab bar + report body.
- * No fadeIn delays — every element renders instantly so the skeleton reads as a
- * dense placeholder matching the real view. Shimmer provides the loading cue.
+ * Mimics the RunView layout: header + tab bar + report body.
  */
 export function RunLoadingSkeleton() {
   return (

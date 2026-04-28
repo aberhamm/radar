@@ -11,12 +11,7 @@ import type { StepEvent, RunResult, RunMetrics } from './agentSession';
 import { persistRun, type RunRecord } from './agentSession';
 import { planBudget, rebalanceBudget, type BudgetPlan } from '@agent/agent/budgetPlanner';
 import type { PreComputeResult } from '@agent/agent/runner';
-
-// Goal types for multi-goal scoring
-const ALL_GOALS = [
-  'onboarding', 'audit', 'migration', 'component-map',
-  'ci-check', 'security-review', 'nextjs', 'accessibility',
-] as const;
+import { ALL_GOALS } from '@agent/types/state';
 
 export interface MultiGoalRunOptions {
   repoPath: string;
@@ -25,7 +20,8 @@ export interface MultiGoalRunOptions {
   repoUrl?: string;
   appRoot?: string;
   budget?: number;
-  /** Pre-computed repo signals for budget planning. If omitted, uses default 60/20/20 split. */
+  goals?: string[];
+  outputDir?: string;
   preCompute?: PreComputeResult;
   onStep: (event: StepEvent) => void;
   onBudgetExhausted?: (state: { findings: number; toolCalls: number; budget: number }) => Promise<boolean>;
@@ -94,6 +90,7 @@ export async function dashboardAnalyzeAll(
       repoSource: opts.repoSource,
       ...(opts.repoUrl ? { repoUrl: opts.repoUrl } : {}),
       ...(opts.appRoot ? { appRoot: opts.appRoot } : {}),
+      ...(opts.outputDir ? { outputDir: opts.outputDir } : {}),
       goal: plan.passes[0].goal,
       toolCallBudget: plan.passes[0].budget,
       verbose: true,
@@ -174,6 +171,7 @@ export async function dashboardAnalyzeAll(
         repoSource: opts.repoSource,
         ...(opts.repoUrl ? { repoUrl: opts.repoUrl } : {}),
         ...(opts.appRoot ? { appRoot: opts.appRoot } : {}),
+        ...(opts.outputDir ? { outputDir: opts.outputDir } : {}),
         goal: 'nextjs',
         toolCallBudget: nextjsBudget,
         verbose: true,
@@ -243,6 +241,7 @@ export async function dashboardAnalyzeAll(
         repoSource: opts.repoSource,
         ...(opts.repoUrl ? { repoUrl: opts.repoUrl } : {}),
         ...(opts.appRoot ? { appRoot: opts.appRoot } : {}),
+        ...(opts.outputDir ? { outputDir: opts.outputDir } : {}),
         goal: 'accessibility',
         toolCallBudget: a11yBudget,
         verbose: true,
@@ -302,10 +301,10 @@ export async function dashboardAnalyzeAll(
   const totalDurationMs = Date.now() - startTime;
   const totalToolCalls = allEvents.filter(e => e.type === 'tool_call').length;
 
-  // Score all 8 goals and persist each as a separate run
+  const selectedGoals = opts.goals ?? ALL_GOALS;
   const goals: MultiGoalRunResult['goals'] = [];
 
-  for (const goal of ALL_GOALS) {
+  for (const goal of selectedGoals) {
     const runId = crypto.randomUUID();
     const scorecard = computeScorecard(opts.repoName, goal, allFindings) as {
       overallScore: string;

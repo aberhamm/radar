@@ -2,6 +2,25 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { StaggeredSpinner, HistoryLoadingSkeleton, CachedReposLoadingSkeleton } from '@/components/Skeleton';
+import { ALL_GOALS } from '@agent/types/state';
+
+const GOAL_LABELS: Record<string, string> = {
+  onboarding: 'Onboarding',
+  audit: 'Audit',
+  'audit-generic': 'Generic Audit',
+  migration: 'Migration',
+  'component-map': 'Components',
+  'ci-check': 'CI Check',
+  'security-review': 'Security',
+  nextjs: 'Next.js',
+  accessibility: 'Accessibility',
+};
+
+const PRESETS = [
+  { label: 'All Goals', goals: ALL_GOALS as readonly string[] },
+  { label: 'Security', goals: ['audit', 'security-review', 'ci-check'] as readonly string[] },
+  { label: 'Frontend', goals: ['nextjs', 'accessibility', 'component-map'] as readonly string[] },
+];
 
 interface HistoryRunItem {
   id: string;
@@ -28,7 +47,7 @@ interface AppRoot {
 
 interface IdleViewProps {
   initialRepoPath?: string;
-  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string, budget?: number) => void;
+  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string, budget?: number, goals?: string[]) => void;
   history?: HistoryRunItem[];
   historyReady?: boolean;
   compact?: boolean;
@@ -49,7 +68,7 @@ function isGitHubUrl(value: string): boolean {
 
 export function IdleView({ initialRepoPath = '', onStart, history = [], historyReady = true, compact = false }: IdleViewProps) {
   const [repoPath, setRepoPath] = useState(initialRepoPath);
-  const [goal, setGoal] = useState('all');
+  const [selectedGoals, setSelectedGoals] = useState<Set<string>>(new Set(ALL_GOALS));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -145,8 +164,11 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
   const handleSelectHistoryRun = useCallback(async (run: HistoryRunItem) => {
     setError('');
 
-    // Set the goal from the historical run
-    setGoal(run.goal);
+    if (run.goal === 'all') {
+      setSelectedGoals(new Set(ALL_GOALS));
+    } else {
+      setSelectedGoals(new Set([run.goal]));
+    }
 
     if (run.repoSource === 'github' && run.repoUrl) {
       // GitHub repo: set URL, auto-pull latest
@@ -248,13 +270,23 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
 
     setError('');
     setLoading(true);
+
+    const goalsList = [...selectedGoals];
+    if (goalsList.length === 0) {
+      setError('Select at least one goal');
+      setLoading(false);
+      return;
+    }
+
+    const effectiveGoal = goalsList.length === 1 ? goalsList[0] : 'all';
     try {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repoPath: targetPath,
-          goal,
+          goal: effectiveGoal,
+          ...(goalsList.length > 1 ? { goals: goalsList } : {}),
           ...(isCloned ? { repoSource: 'github', repoUrl: repoPath.trim() } : {}),
           ...(selectedRoot ? { appRoot: selectedRoot } : {}),
         }),
@@ -265,7 +297,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         setLoading(false);
         return;
       }
-      onStart(targetPath, goal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined, data.runId, data.budget);
+      onStart(targetPath, effectiveGoal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined, data.runId, data.budget, goalsList.length > 1 ? goalsList : undefined);
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
@@ -275,18 +307,19 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
   // Determine button label and state
   let buttonLabel: string;
   let buttonDisabled: boolean;
+  const noGoals = selectedGoals.size === 0;
   if (isCloning || rerunPulling) {
     buttonLabel = 'Pulling...';
     buttonDisabled = true;
   } else if (isCloned) {
     buttonLabel = loading ? 'Starting...' : 'Start Analysis';
-    buttonDisabled = loading;
+    buttonDisabled = loading || noGoals;
   } else if (isUrl) {
     buttonLabel = 'Pull Repo';
     buttonDisabled = false;
   } else {
     buttonLabel = loading ? 'Starting...' : 'Start Analysis';
-    buttonDisabled = loading;
+    buttonDisabled = loading || noGoals;
   }
 
   // Collapse multi-goal children into a single "all" entry per parentRunId
@@ -310,7 +343,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
     const completedRuns = history.filter(r => r.completedAt);
     return [
       { value: '23', label: 'analysis tools' },
-      { value: '8', label: 'goal scorecards' },
+      { value: String(ALL_GOALS.length), label: 'goal scorecards' },
       { value: String(completedRuns.length), label: 'runs completed' },
     ];
   }, [history]);
@@ -396,30 +429,73 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
       )}
 
       <div>
-        <label htmlFor="goal-select" className="block text-xs font-medium text-secondary-label mb-1.5">
-          Goal
+        <label className="block text-xs font-medium text-secondary-label mb-1.5">
+          Goals
         </label>
-        <select
-          id="goal-select"
-          value={goal}
-          onChange={e => setGoal(e.target.value)}
-          disabled={loading || isCloning || rerunPulling}
-          className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none cursor-pointer"
-        >
-          <option value="all">All Goals — universal analysis (8 scorecards)</option>
-          <option value="onboarding">Onboarding — full codebase overview</option>
-          <option value="security-review">Security Review — focus on vulnerabilities</option>
-          <option value="audit">Audit — deep quality analysis</option>
-          <option value="audit-generic">Generic Audit — any stack, no CMS required</option>
-          <option value="migration">Migration — upgrade path assessment</option>
-          <option value="nextjs">Next.js Audit — framework health &amp; patterns</option>
-          <option value="accessibility">Accessibility — WCAG 2.1 AA compliance</option>
-        </select>
-        {goal === 'all' && (
-          <p className="text-[11px] text-tertiary-label mt-1.5">
-            Runs all 8 goal scorecards in sequence. Takes longer but gives the complete picture.
-          </p>
-        )}
+        <div className="flex items-center gap-1.5 mb-2">
+          {PRESETS.map(preset => {
+            const isActive = preset.goals.length === selectedGoals.size && preset.goals.every(g => selectedGoals.has(g));
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => setSelectedGoals(new Set(preset.goals))}
+                disabled={loading || isCloning || rerunPulling}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-tint text-white'
+                    : 'bg-elevated text-secondary-label hover:text-label hover:bg-[rgb(0_113_227/0.06)]'
+                }`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setSelectedGoals(new Set())}
+            disabled={loading || isCloning || rerunPulling}
+            className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-elevated text-tertiary-label hover:text-secondary-label transition-all cursor-pointer"
+          >
+            Clear
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          {(ALL_GOALS as readonly string[]).map(g => {
+            const checked = selectedGoals.has(g);
+            return (
+              <label
+                key={g}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12px] transition-all select-none ${
+                  loading || isCloning || rerunPulling
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer hover:bg-elevated'
+                } ${checked ? 'text-label' : 'text-tertiary-label'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => {
+                    const next = new Set(selectedGoals);
+                    if (checked) next.delete(g);
+                    else next.add(g);
+                    setSelectedGoals(next);
+                  }}
+                  disabled={loading || isCloning || rerunPulling}
+                  className="accent-[var(--color-tint)] w-3.5 h-3.5 rounded cursor-pointer"
+                />
+                {GOAL_LABELS[g] ?? g}
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-tertiary-label mt-1.5">
+          {selectedGoals.size === 0
+            ? 'Select at least one goal'
+            : selectedGoals.size === ALL_GOALS.length
+              ? `All ${ALL_GOALS.length} goals selected`
+              : `${selectedGoals.size} of ${ALL_GOALS.length} goals selected`}
+        </p>
       </div>
 
       {error && (

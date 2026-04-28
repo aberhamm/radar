@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, persistRun, checkpointRun, sendStreamEvent, loadPersistedRuns } from '@/lib/agentSession';
 import type { StepEvent, RunResult } from '@/lib/agentSession';
 import { dashboardAnalyzeAll } from '@/lib/dashboardAnalyzeAll';
+import { ALL_GOALS } from '@agent/types/state';
 import path from 'node:path';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const AGENT_OUTPUT_DIR = path.resolve(process.cwd(), '..', 'output');
 
 async function loadRunner() {
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
@@ -31,7 +34,7 @@ export async function POST(req: NextRequest) {
   // Claim session immediately (before any await) to close the TOCTOU race window
   session.status = 'running';
 
-  let body: { repoPath?: string; goal?: string; repoSource?: string; repoUrl?: string; appRoot?: string; budget?: number };
+  let body: { repoPath?: string; goal?: string; goals?: string[]; repoSource?: string; repoUrl?: string; appRoot?: string; budget?: number };
   try {
     body = await req.json();
   } catch {
@@ -39,7 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { repoPath, goal = 'onboarding', repoSource, repoUrl, appRoot } = body;
+  const { repoPath, goal = 'onboarding', goals: goalsArray, repoSource, repoUrl, appRoot } = body;
   const requestedBudget = body.budget;
 
   if (!repoPath) {
@@ -95,11 +98,12 @@ export async function POST(req: NextRequest) {
       const runAgent = await loadRunner();
       emitStatus('Agent loaded');
 
-      // Multi-goal: use orchestrator for goal='all'
-      if (goal === 'all') {
+      const isMultiGoal = goal === 'all' || (goalsArray && goalsArray.length > 1);
+      if (isMultiGoal) {
+        const selectedGoals = goalsArray ?? [...ALL_GOALS];
         emitStatus('Loading scorecard engine...');
         const computeScorecard = await loadScorecard();
-        emitStatus('Starting universal analysis (3 passes, 8 goals)...');
+        emitStatus(`Starting universal analysis (3 passes, ${selectedGoals.length} goals)...`);
 
         const multiResult = await dashboardAnalyzeAll(
           runAgent as unknown as (opts: Record<string, unknown>) => Promise<RunResult>,
@@ -111,6 +115,8 @@ export async function POST(req: NextRequest) {
             repoUrl: repoUrl,
             ...(appRoot ? { appRoot } : {}),
             budget: requestedBudget ?? 30,
+            goals: selectedGoals,
+            outputDir: AGENT_OUTPUT_DIR,
             onStep: (event: StepEvent) => {
               const run = session.currentRun;
               if (!run) return;
@@ -179,6 +185,7 @@ export async function POST(req: NextRequest) {
         ...(appRoot ? { appRoot } : {}),
         goal: goal as 'onboarding' | 'audit' | 'audit-generic' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility',
         ...(requestedBudget ? { toolCallBudget: requestedBudget } : {}),
+        outputDir: AGENT_OUTPUT_DIR,
         verbose: true,
         onStep: (event) => {
           const run = session.currentRun;
@@ -255,6 +262,8 @@ export async function POST(req: NextRequest) {
     abortController.abort();
   });
 
-  const effectiveBudget = requestedBudget ?? (goal === 'all' ? 30 : 45);
-  return NextResponse.json({ ok: true, repoName, goal, runId, budget: effectiveBudget });
+  const isMultiGoalResponse = goal === 'all' || (goalsArray && goalsArray.length > 1);
+  const effectiveBudget = requestedBudget ?? (isMultiGoalResponse ? 30 : 45);
+  const effectiveGoalCount = isMultiGoalResponse ? (goalsArray?.length ?? ALL_GOALS.length) : 1;
+  return NextResponse.json({ ok: true, repoName, goal, runId, budget: effectiveBudget, goalCount: effectiveGoalCount });
 }

@@ -11,7 +11,7 @@
 // ─── Budget defaults ────────────────────────────────────────────────
 
 export const TOOL_CALL_BUDGET = 45;
-export const TOOL_CALL_BUDGET_ALL = 15;
+export const TOOL_CALL_BUDGET_MULTI = 15;
 export const BUDGET_EXTENSION = 50;
 export const WEB_SEARCH_BUDGET = 5;
 export const URL_FETCH_BUDGET = 3;

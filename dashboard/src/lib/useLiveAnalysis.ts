@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { StepEvent } from './agentSession';
 import type { AnimationPhase } from './useAnimationSequence';
 import type { Activity, Finding, StreamTurn } from './runTransform';
-import { ACTION_CATEGORY_HINTS } from './runTransform';
+import { ACTION_CATEGORY_HINTS, cleanReasoning } from './runTransform';
 
 export interface LiveAnalysisState {
   phase: AnimationPhase;
@@ -108,7 +108,9 @@ export function useLiveAnalysis(
       if (ev.type === 'finding' || ev.action === 'record_finding') {
         try {
           const args = ev.args ? JSON.parse(ev.args) : {};
-          const f = args.finding ?? args;
+          let f = args.finding ?? args;
+          if (typeof f === 'string') f = JSON.parse(f);
+          if (!f || typeof f !== 'object' || !f.title) continue;
           findings.push({
             id: f.id ?? `f-${findings.length}`,
             severity: f.severity ?? 'info',
@@ -159,7 +161,7 @@ export function useLiveAnalysis(
 
       // Streaming text delta — update live typing text as LLM generates
       if (ev.type === 'text_delta' && ev.reasoning) {
-        pendingDeltaText = ev.reasoning;
+        if (!switchSeen) pendingDeltaText = ev.reasoning;
         continue;
       }
 
@@ -167,6 +169,7 @@ export function useLiveAnalysis(
       // Prefer fullReasoning (verbose mode) over reasoning (truncated to 100 chars)
       const reasoning = ev.fullReasoning ?? ev.reasoning;
       if (ev.type === 'text_response' && reasoning) {
+        if (switchSeen) continue;
         if (currentReasoning) {
           turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
         }
@@ -258,6 +261,12 @@ export function useLiveAnalysis(
     if (pendingDeltaText) {
       typingText = pendingDeltaText;
     }
+
+    // Clean reasoning in all turns and typing text
+    for (const turn of turns) {
+      turn.reasoning = cleanReasoning(turn.reasoning);
+    }
+    typingText = cleanReasoning(typingText);
 
     // Derive phase
     let phase: AnimationPhase;

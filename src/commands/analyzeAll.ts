@@ -22,19 +22,8 @@ import {
   type MultiGoalMetrics,
 } from '../output/multiGoalSummary.js';
 import { persistRunToTieredStorage } from '../output/runPersistence.js';
-import type { GoalType, AgentState } from '../types/state.js';
+import { ALL_GOALS, type GoalType, type AgentState } from '../types/state.js';
 import type { Scorecard } from '../types/output.js';
-
-const ALL_GOALS: GoalType[] = [
-  'onboarding',
-  'audit',
-  'migration',
-  'component-map',
-  'ci-check',
-  'security-review',
-  'nextjs',
-  'accessibility',
-];
 
 interface PassResult {
   pass: string;
@@ -49,6 +38,7 @@ export async function handleAnalyzeAll(opts: {
   platform?: string;
   output: string;
   budget: string;
+  goals?: GoalType[];
   dryRun?: boolean;
   verbose?: boolean;
   json?: boolean;
@@ -64,6 +54,7 @@ export async function handleAnalyzeAll(opts: {
     throw new Error(`Budget ${totalBudget} is too low for --goal all. Minimum: 15.`);
   }
 
+  const selectedGoals = opts.goals ?? ALL_GOALS;
   const platform = opts.platform ?? 'unknown';
   const outputDir = path.join(opts.output, 'all');
   const verbose = opts.verbose ?? false;
@@ -95,9 +86,9 @@ export async function handleAnalyzeAll(opts: {
 
   // Dry run — show config and exit
   if (opts.dryRun) {
-    console.log('\n--- Dry Run (--goal all) ---\n');
+    console.log(`\n--- Dry Run (${selectedGoals.length} goals) ---\n`);
     console.log(`Repo:     ${repoPath}`);
-    console.log(`Goals:    ${ALL_GOALS.join(', ')}`);
+    console.log(`Goals:    ${selectedGoals.join(', ')}`);
     console.log(`Platform: ${platform}`);
     console.log(`Budget:   ${totalBudget} tool calls (split across core + specialist passes)`);
     console.log(`Output:   ${outputDir}`);
@@ -360,11 +351,11 @@ export async function handleAnalyzeAll(opts: {
   const allFindings = mergedFindings;
 
   // --- Phase 5: Multi-goal scoring ---
-  console.log(`\nScoring ${ALL_GOALS.length} goals from ${allFindings.length} findings...`);
+  console.log(`\nScoring ${selectedGoals.length} goals from ${allFindings.length} findings...`);
   const scorecards = new Map<GoalType, Scorecard>();
   const multiGoalResults: MultiGoalResult[] = [];
 
-  await Promise.all(ALL_GOALS.map(async (goal) => {
+  await Promise.all(selectedGoals.map(async (goal) => {
     const scorecard = computeScorecard(repoName, goal, allFindings);
     scorecards.set(goal, scorecard);
     multiGoalResults.push({ goal, scorecard });
@@ -373,7 +364,7 @@ export async function handleAnalyzeAll(opts: {
 
   // --- Phase 6: Per-goal brief writing (parallel) ---
   console.log('\nWriting per-goal briefs...');
-  const briefResults = await writeAllBriefs(ALL_GOALS, allFindings, scorecards);
+  const briefResults = await writeAllBriefs(selectedGoals, allFindings, scorecards);
   for (const br of briefResults) {
     if (br.error) {
       console.warn(`  ${br.goal}: brief failed — ${br.error}`);
@@ -387,7 +378,7 @@ export async function handleAnalyzeAll(opts: {
   const allOutputPaths: string[] = [];
 
   // Per-goal output
-  for (const goal of ALL_GOALS) {
+  for (const goal of selectedGoals) {
     const goalDir = path.join(outputDir, goal);
     fs.mkdirSync(goalDir, { recursive: true });
 
@@ -442,7 +433,7 @@ export async function handleAnalyzeAll(opts: {
   const startedAt = lastSuccessful.result.metrics.startedAt;
   const completedAt = new Date().toISOString();
 
-  for (const goal of ALL_GOALS) {
+  for (const goal of selectedGoals) {
     const scorecard = scorecards.get(goal)!;
     const briefResult = briefResults.find((b) => b.goal === goal);
     const sections = briefResult?.sections ?? {};
@@ -473,7 +464,7 @@ export async function handleAnalyzeAll(opts: {
       repoUrl,
     }, allEvents);
   }
-  console.log(`  Persisted ${ALL_GOALS.length} runs to tiered storage (parentRunId: ${parentRunId.slice(0, 8)}...)`);
+  console.log(`  Persisted ${selectedGoals.length} runs to tiered storage (parentRunId: ${parentRunId.slice(0, 8)}...)`);
 
   // Unified findings
   const findingsPath = path.join(outputDir, 'findings.json');
@@ -512,7 +503,7 @@ export async function handleAnalyzeAll(opts: {
       toolCalls: totalToolCalls,
       durationMs: totalDuration,
       estimatedCostUsd: totalCost,
-      goals: ALL_GOALS.map((goal) => {
+      goals: selectedGoals.map((goal) => {
         const sc = scorecards.get(goal)!;
         return {
           goal,
@@ -531,12 +522,12 @@ export async function handleAnalyzeAll(opts: {
       })),
     };
     console.log(JSON.stringify(summary, null, 2));
-    const hasRed = ALL_GOALS.some((g) => scorecards.get(g)?.overallScore === 'red');
+    const hasRed = selectedGoals.some((g) => scorecards.get(g)?.overallScore === 'red');
     return hasRed ? 1 : 0;
   }
 
   // Summary output
-  console.log(`\n--- Universal analysis complete ---\n`);
+  console.log(`\n--- Analysis complete (${selectedGoals.length} goals) ---\n`);
   console.log(`  Tool calls: ${totalToolCalls}/${totalBudget}`);
   console.log(`  Findings:   ${allFindings.length}`);
   console.log(`  Duration:   ${(totalDuration / 1000).toFixed(1)}s`);
@@ -551,7 +542,7 @@ export async function handleAnalyzeAll(opts: {
   }
   console.log('');
   console.log('  Scores:');
-  for (const goal of ALL_GOALS) {
+  for (const goal of selectedGoals) {
     const sc = scorecards.get(goal)!;
     const emoji = sc.overallScore === 'red' ? '🔴' : sc.overallScore === 'yellow' ? '🟡' : '🟢';
     console.log(`    ${emoji} ${goal}: ${sc.overallScore.toUpperCase()}`);
@@ -565,8 +556,7 @@ export async function handleAnalyzeAll(opts: {
   }
   console.log('');
 
-  // Exit code: worst of all scorecards
-  const hasRed = ALL_GOALS.some((g) => scorecards.get(g)?.overallScore === 'red');
+  const hasRed = selectedGoals.some((g) => scorecards.get(g)?.overallScore === 'red');
   return hasRed ? 1 : 0;
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import type { RunResult } from '../../src/agent/runner.js';
 import type { Scorecard, CategoryScore, ScoreLevel } from '../../src/types/output.js';
+import { ALL_GOALS } from '../../src/types/state.js';
 
 // Mock all external dependencies before importing module under test
 vi.mock('../../src/agent/runner.js', () => ({
@@ -275,11 +276,10 @@ describe('handleAnalyzeAll', () => {
 
   // --- Multi-goal scoring ---
 
-  it('scores all 8 goals from shared findings pool', async () => {
+  it('scores all goals from shared findings pool', async () => {
     await handleAnalyzeAll(baseOpts);
 
-    // computeScorecard should be called once per goal (8 goals)
-    expect(computeScorecard).toHaveBeenCalledTimes(8);
+    expect(computeScorecard).toHaveBeenCalledTimes(ALL_GOALS.length);
   });
 
   // --- JSON output mode ---
@@ -296,7 +296,7 @@ describe('handleAnalyzeAll', () => {
     const parsed = JSON.parse(jsonOutput!);
     expect(parsed.status).toBe('completed');
     expect(parsed.mode).toBe('universal');
-    expect(parsed.goals).toHaveLength(8);
+    expect(parsed.goals).toHaveLength(ALL_GOALS.length);
   });
 
   it('JSON mode returns 1 when any goal is red', async () => {
