@@ -1,3 +1,27 @@
+/**
+ * Agent runner — the top-level orchestrator for a single investigation run.
+ *
+ * This is the main entry point (runAgent) that wires together all the pieces:
+ *   - State initialization and checkpoint resume   (stateMerge, sessionCheckpoint)
+ *   - Pre-computation of repo signals              (preCompute)
+ *   - Prompt assembly                              (systemPrompt, goalPrompts)
+ *   - Tool registration                            (piToolAdapter)
+ *   - Dual-model cost optimization                 (piModel, switchModelInPlace)
+ *   - Budget enforcement via Pi hooks              (beforeToolCall / afterToolCall)
+ *   - Context compression                          (contextCompression)
+ *   - Post-loop verification and dedup             (verifyEvidence, deduplicateFindings)
+ *   - Output rendering and persistence             (scorecard, brief, outputWriter)
+ *
+ * The beforeToolCall and afterToolCall hooks stay inline here because they
+ * are the orchestration logic — they read and mutate 15+ closure variables
+ * (budget counters, model switch flags, termination state). Extracting them
+ * would require a large mutable context object that recreates the same
+ * coupling with worse readability.
+ *
+ * Re-exports from extracted modules maintain backward compatibility:
+ * all consumers continue importing from './runner.js'.
+ */
+
 import { Agent } from '@mariozechner/pi-agent-core';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -6,26 +30,28 @@ import type {
   BeforeToolCallContext,
   BeforeToolCallResult,
   AgentEvent,
-  AgentMessage,
 } from '@mariozechner/pi-agent-core';
 import type { Model } from '@mariozechner/pi-ai';
-import type { AgentState, GoalType } from '../types/state.js';
-import type { Scorecard, RunMetrics } from '../types/output.js';
+import type { AgentState } from '../types/state.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { buildGoalPrompt } from './goalPrompts.js';
 import { redactSecrets } from './redaction.js';
 import { wrapInBoundary, BOUNDARY_SYSTEM_INSTRUCTION, validateFindingContent, sanitizeToolOutput } from './contextBoundary.js';
 import { withRetry } from './retry.js';
-import { renderInvestigationHtml } from '../output/investigationHtml.js';
 import { buildPiTools, type AssembledSections } from '../tools/piToolAdapter.js';
 import { verifyFindingEvidence } from '../tools/analysis/verifyEvidence.js';
 import { resolveAndRead, type ResolveResult } from '../tools/utils/resolveAndRead.js';
 import { deduplicateFindings } from '../tools/analysis/deduplicateFindings.js';
-import { detectAppRoots } from '../tools/analysis/detectAppRoots.js';
-import { parsePackageJson } from '../tools/config/parsePackageJson.js';
-import { listDirectory } from '../tools/repo/listDirectory.js';
-import { getSpecialistPrompts } from '../tools/analysis/getSpecialistPrompts.js';
 import { buildPiModel } from '../config/piModel.js';
+import {
+  TOOL_CALL_BUDGET,
+  WEB_SEARCH_BUDGET,
+  URL_FETCH_BUDGET,
+  DOC_TOKEN_BUDGET,
+  CHECKPOINT_INTERVAL,
+  RECORDING_GATE_PCT,
+  BUDGET_EXTENSION,
+} from '../config/defaults.js';
 import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
 import { buildFullExport, serializeExport } from '../output/json.js';
@@ -36,277 +62,38 @@ import {
 } from '../output/sessionCheckpoint.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { setMaxListeners } from 'node:events';
 
-// Load model pricing
-interface ModelPricing {
-  inputPerToken: number;
-  outputPerToken: number;
-  cachedInputPerToken: number;
-}
-interface PricingConfig {
-  models: Record<string, ModelPricing & { displayName: string }>;
-  defaultPricing: ModelPricing;
-}
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pricingPath = path.resolve(__dirname, '../config/model-pricing.json');
-let pricingConfig: PricingConfig;
-try {
-  pricingConfig = JSON.parse(fs.readFileSync(pricingPath, 'utf-8'));
-} catch {
-  pricingConfig = {
-    models: {},
-    defaultPricing: { inputPerToken: 0.000003, outputPerToken: 0.000015, cachedInputPerToken: 0.0000003 },
-  };
-}
+import type { RunnerConfig, RunResult, StepEvent } from './runnerTypes.js';
+import { runPreCompute, formatPreComputeContext, type PreComputeResult } from './preCompute.js';
+import { mergeState } from './stateMerge.js';
+import { createTransformContext, createOnPayload } from './contextCompression.js';
+import { trackUsage, buildMetrics } from './usageTracking.js';
+import { writeOutputFiles } from './outputWriter.js';
+import { autoAssembleFromFindings } from './autoAssemble.js';
 
-export interface RunnerConfig {
-  repoPath: string;
-  repoName: string;
-  repoSource: 'github' | 'local';
-  repoUrl?: string;
-  goal: GoalType;
-  platform?: string; // auto-detected if not provided
-  /** Scope investigation to a specific app root within a monorepo (relative path from repoPath) */
-  appRoot?: string;
-  toolCallBudget?: number;
-  webSearchBudget?: number;
-  urlFetchBudget?: number;
-  docTokenBudget?: number;
-  outputDir?: string;
-  /** Callback for each step — enables live CLI output */
-  onStep?: (step: StepEvent) => void;
-  /** Enable verbose output with full reasoning and arguments */
-  verbose?: boolean;
-  /**
-   * Called when tool call budget is exhausted. Return true to extend
-   * by 50 more calls, false to stop and assemble with current findings.
-   * If not provided, auto-assembles (CI-safe default).
-   */
-  onBudgetExhausted?: (state: { findings: number; toolCalls: number; budget: number }) => Promise<boolean>;
-  /** Override Pi model (e.g. faux provider for testing). If omitted, builds from env vars. */
-  model?: Model<any>;
-  /** Override Pi fast model (e.g. faux provider for testing). If omitted, builds from env vars. */
-  fastModel?: Model<any>;
-  /** Path to checkpoint JSONL file to resume from. */
-  resumeFrom?: string;
-  /** Save checkpoints every N tool calls (default: 5). Set 0 to disable. */
-  checkpointInterval?: number;
-  /** Pre-populated state from a prior pass (for tiered investigation).
-   *  Findings, filesRead, fileReadCache carry over. Budgets reset. */
-  initialState?: Partial<AgentState>;
-  /** Pre-computed repo signals (app roots, package.json, file tree).
-   *  When provided, runAgent skips its own runPreCompute() call. */
-  preCompute?: PreComputeResult;
-}
-
-export interface StepEvent {
-  step: number;
-  action: string;
-  reasoning?: string;
-  result?: string;
-  /** Full reasoning text (only in verbose mode) */
-  fullReasoning?: string;
-  /** Full result text (only in verbose mode) */
-  fullResult?: string;
-  /** Tool call arguments (only in verbose mode) */
-  args?: string;
-  /** Type of event: tool_call, finding, budget_warning, text_response, assemble_output, model_switch */
-  type?: 'tool_call' | 'tool_start' | 'finding' | 'budget_warning' | 'text_response' | 'text_delta' | 'assemble_output' | 'model_switch' | 'verification';
-  /** Identifies which tool calls ran in the same parallel batch (same assistant turn) */
-  batchId?: string;
-  /** New budget after extension (only on budget_extended events) */
-  newBudget?: number;
-  /** ISO timestamp when this event was emitted */
-  timestamp?: string;
-  /** Structured metadata from the tool result (e.g. findingId, severity, matchCount) */
-  details?: Record<string, unknown>;
-}
-
-export interface RunResult {
-  scorecard: Scorecard;
-  briefMarkdown: string;
-  exportJson: string;
-  outputPaths: string[];
-  metrics: RunMetrics;
-  state: AgentState;
-  /** How the run ended: completed (assemble_output called), budget_exhausted, stuck, or error */
-  terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error';
-  /** Error message if terminationReason is 'error' */
-  errorDetail?: string;
-}
-
-// --- State merging ---
-
-/**
- * Merge prior state into a fresh state object.
- * Carries over: findings, filesRead, fileReadCache, resolvedVersions, stackProfile, fetchedDocs, modelUsage.
- * Does NOT carry over: toolCallCount, toolCallBudget, webSearchCount, urlFetchCount, goal, investigationLog.
- * Includes input validation — rejects corrupt state shapes gracefully.
- */
-export function mergeState(target: AgentState, source: Partial<AgentState>): void {
-  if (source.findings && Array.isArray(source.findings)) {
-    target.findings = [...source.findings];
-  }
-  if (source.filesRead && source.filesRead instanceof Set) {
-    for (const f of source.filesRead) target.filesRead.add(f);
-  }
-  if (source.fileReadCache && source.fileReadCache instanceof Map) {
-    for (const [k, v] of source.fileReadCache) {
-      target.fileReadCache.set(k, v);
-    }
-  }
-  if (source.resolvedVersions && typeof source.resolvedVersions === 'object') {
-    target.resolvedVersions = { ...source.resolvedVersions };
-  }
-  if (source.stackProfile) {
-    target.stackProfile = source.stackProfile;
-  }
-  if (source.fetchedDocs && Array.isArray(source.fetchedDocs)) {
-    target.fetchedDocs = [...source.fetchedDocs];
-  }
-  if (source.modelUsage && source.modelUsage instanceof Map) {
-    for (const [k, v] of source.modelUsage) {
-      const existing = target.modelUsage.get(k);
-      if (existing) {
-        existing.calls += v.calls;
-        existing.inputTokens += v.inputTokens;
-        existing.outputTokens += v.outputTokens;
-        existing.cachedTokens += v.cachedTokens;
-      } else {
-        target.modelUsage.set(k, { ...v });
-      }
-    }
-  }
-}
-
-// --- Pre-computation layer ---
-
-export interface PreComputeResult {
-  appRoots?: Awaited<ReturnType<typeof detectAppRoots>>;
-  packageJson?: Awaited<ReturnType<typeof parsePackageJson>>;
-  fileTree?: Awaited<ReturnType<typeof listDirectory>>;
-  specialists?: Awaited<ReturnType<typeof getSpecialistPrompts>>;
-}
-
-/**
- * Run deterministic tools before the agent loop to seed the initial context.
- * Saves 3-5 LLM round-trips by pre-computing what the agent would discover
- * in its first few turns. Failures are graceful — the agent proceeds without
- * whatever tool failed.
- */
-export async function runPreCompute(repoPath: string, appRoot?: string): Promise<PreComputeResult> {
-  const result: PreComputeResult = {};
-
-  // When an appRoot is specified, scope scanning to that subdirectory
-  const scanPath = appRoot ? path.join(repoPath, appRoot) : repoPath;
-  const pkgJsonPath = appRoot ? path.join(appRoot, 'package.json') : 'package.json';
-  const listPath = appRoot ?? '.';
-
-  // Phase 1: Run independent tools in parallel
-  const [appRootsResult, packageJsonResult, fileTreeResult] = await Promise.allSettled([
-    detectAppRoots(repoPath, appRoot ? { repoPath: appRoot } : {}),
-    parsePackageJson(repoPath, { path: pkgJsonPath }),
-    listDirectory(repoPath, { path: listPath, depth: 2 }),
-  ]);
-
-  if (appRootsResult.status === 'fulfilled') {
-    const roots = appRootsResult.value;
-    // Cap at 15 roots to prevent context overflow in large monorepos
-    if (roots.roots.length > 15) {
-      const total = roots.roots.length;
-      // Keep root-level + shallowest entries
-      roots.roots = roots.roots.slice(0, 15);
-      roots.roots.push({
-        path: `... and ${total - 15} more (${total} total)`,
-        type: 'unknown',
-        hasPackageJson: false,
-      });
-    }
-    result.appRoots = roots;
-  }
-  if (packageJsonResult.status === 'fulfilled') result.packageJson = packageJsonResult.value;
-  if (fileTreeResult.status === 'fulfilled') result.fileTree = fileTreeResult.value;
-
-  // Phase 2: Chain specialist prompts from app roots (requires Phase 1)
-  if (result.appRoots && result.appRoots.roots.length > 0) {
-    try {
-      // Only pass real roots (not the "... and N more" placeholder)
-      const realRoots = result.appRoots.roots.filter(r => !r.path.startsWith('...'));
-      result.specialists = await getSpecialistPrompts({
-        roots: realRoots,
-        isMonorepo: !!result.appRoots.monorepoTool,
-        monorepoTool: result.appRoots.monorepoTool,
-      });
-    } catch { /* graceful — agent will call get_specialist_prompts itself */ }
-  }
-
-  return result;
-}
-
-/**
- * Format pre-computed results as a concise context block for the goal prompt.
- */
-export function formatPreComputeContext(pre: PreComputeResult): string {
-  const sections: string[] = ['PRE-COMPUTED CONTEXT (skip detect_app_roots, get_specialist_prompts, parse_package_json, and list_directory for root — this data is already available):'];
-
-  if (pre.appRoots) {
-    const roots = pre.appRoots.roots.map(r => {
-      const parts = [r.type, r.frameworkVersion ? `v${r.frameworkVersion}` : null, r.plugins?.length ? `plugins: ${r.plugins.join(', ')}` : null].filter(Boolean);
-      return `  ${r.path}: ${parts.join(', ')}`;
-    }).join('\n');
-    sections.push(`App Roots (${pre.appRoots.roots.length}):\n${roots}`);
-    if (pre.appRoots.monorepoTool) sections.push(`Monorepo: ${pre.appRoots.monorepoTool}`);
-  }
-
-  if (pre.specialists && pre.specialists.specialists.length > 0) {
-    const specs = pre.specialists.specialists.map(s =>
-      `  ${s.name} (${s.relevance}): ${s.checklist.slice(0, 150)}${s.checklist.length > 150 ? '...' : ''}`
-    ).join('\n');
-    sections.push(`Specialist Checklists:\n${specs}`);
-  }
-
-  if (pre.packageJson) {
-    const pkg = pre.packageJson;
-    const depCount = Object.keys(pkg.dependencies).length;
-    const devCount = Object.keys(pkg.devDependencies).length;
-    const scripts = Object.keys(pkg.scripts).join(', ');
-    sections.push(`Package: ${pkg.name} — ${depCount} deps, ${devCount} devDeps, scripts: [${scripts}]`);
-  }
-
-  if (pre.fileTree && pre.fileTree.entries) {
-    const dirs = pre.fileTree.entries.filter(e => e.type === 'directory').map(e => e.path);
-    const files = pre.fileTree.entries.filter(e => e.type === 'file').map(e => e.path);
-    sections.push(`File tree (depth 2): ${dirs.length} dirs, ${files.length} files\n  Dirs: ${dirs.slice(0, 20).join(', ')}${dirs.length > 20 ? '...' : ''}\n  Root files: ${files.slice(0, 15).join(', ')}${files.length > 15 ? '...' : ''}`);
-  }
-
-  return sections.join('\n\n');
-}
-
-/**
- * Pi Agent Runner — delegates the investigation loop to Pi's Agent class.
- *
- * 1. Build Pi Model (from env vars or streamFn for tests)
- * 2. Wrap tools via piToolAdapter
- * 3. Use beforeToolCall/afterToolCall hooks for budget enforcement
- * 4. After agent.prompt() returns, assemble output from captured sections
- */
+// Re-export public API so existing consumers don't break
+export type { RunnerConfig, StepEvent, RunResult } from './runnerTypes.js';
+export type { PreComputeResult } from './preCompute.js';
+export { runPreCompute, formatPreComputeContext } from './preCompute.js';
+export { mergeState } from './stateMerge.js';
+export { writeOutputFiles } from './outputWriter.js';
 export async function runAgent(config: RunnerConfig): Promise<RunResult> {
-  // Pi's Agent adds abort listeners per tool call; raise the limit to avoid warnings
+  // ─── Phase 1: Setup ──────────────────────────────────────────────────
+  // Initialize state, restore checkpoints, run pre-computation, build prompts.
+
   setMaxListeners(100);
   const startedAt = new Date();
 
-  // Wrap onStep to inject timestamps automatically
   const _rawOnStep = config.onStep;
   if (_rawOnStep) {
     config.onStep = (event) => _rawOnStep({ ...event, timestamp: new Date().toISOString() });
   }
 
-  const toolCallBudget = config.toolCallBudget ?? 45;
-  const webSearchBudget = config.webSearchBudget ?? 5;
-  const urlFetchBudget = config.urlFetchBudget ?? 3;
-  const docTokenBudget = config.docTokenBudget ?? 20_000;
+  const toolCallBudget = config.toolCallBudget ?? TOOL_CALL_BUDGET;
+  const webSearchBudget = config.webSearchBudget ?? WEB_SEARCH_BUDGET;
+  const urlFetchBudget = config.urlFetchBudget ?? URL_FETCH_BUDGET;
+  const docTokenBudget = config.docTokenBudget ?? DOC_TOKEN_BUDGET;
   const outputDir = config.outputDir ?? './output';
 
   // Initialize state
@@ -338,7 +125,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // Session checkpoint tracking
   let sessionId = buildSessionId(config.repoName, config.goal);
   let checkpointSeq = 0;
-  const checkpointInterval = config.checkpointInterval ?? 5;
+  const checkpointInterval = config.checkpointInterval ?? CHECKPOINT_INTERVAL;
   const repoSlug = config.repoName.replace(/[^a-zA-Z0-9_-]/g, '-');
 
   // Apply initial state from prior pass (tiered investigation)
@@ -357,15 +144,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     const checkpoint = loadLatestCheckpoint(config.resumeFrom);
     if (checkpoint) {
       const hydrated = hydrateState(checkpoint.state);
-      // Merge carry-over fields (findings, filesRead, fileReadCache, etc.)
       mergeState(state, hydrated);
-      // Restore checkpoint-specific fields that mergeState intentionally skips
       state.toolCallCount = hydrated.toolCallCount;
       state.webSearchCount = hydrated.webSearchCount;
       state.urlFetchCount = hydrated.urlFetchCount;
       state.docTokensUsed = hydrated.docTokensUsed;
       state.investigationLog = hydrated.investigationLog;
-      // Restore budgets to allow extending beyond the original
       state.toolCallBudget = Math.max(hydrated.toolCallBudget, toolCallBudget);
       state.webSearchBudget = hydrated.webSearchBudget;
       state.urlFetchBudget = hydrated.urlFetchBudget;
@@ -388,12 +172,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
   }
 
-  // Detect platform if not provided
   const platform = config.platform ?? 'unknown';
 
   // Pre-compute deterministic tool results to seed the agent's initial context.
-  // Saves 3-5 LLM round-trips by providing app roots, package.json, file tree,
-  // and specialist checklists before the agent starts reasoning.
   let preComputeContext = '';
   if (!config.resumeFrom) {
     try {
@@ -414,12 +195,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const systemPrompt = await buildSystemPrompt(config.goal, platform) + '\n\n---\n\n' + BOUNDARY_SYSTEM_INSTRUCTION;
   let goalPrompt = buildGoalPrompt(config.goal, config.repoPath, toolCallBudget, webSearchBudget);
 
-  // Inject pre-computed context into the goal prompt
   if (preComputeContext) {
     goalPrompt += `\n\n---\n\n${preComputeContext}`;
   }
 
-  // If resuming with prior findings, prepend context summary
   if (config.resumeFrom && state.findings.length > 0) {
     const summary = buildResumeSummary(state);
     goalPrompt = `RESUME CONTEXT — This is a resumed investigation. Here is what was found before the interruption:\n\n${summary}\n\nContinue the investigation from where it left off. Do not re-investigate files already read. Focus on uncovered categories and assembling the final output.\n\n---\n\n${goalPrompt}`;
@@ -434,7 +213,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let piFastModel: Model<any>;
   if (config.model) {
     piModel = config.model;
-    piFastModel = config.fastModel ?? config.model; // fall back to same model in tests
+    piFastModel = config.fastModel ?? config.model;
   } else {
     const built = buildPiModel();
     piModel = built.model;
@@ -442,19 +221,24 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     apiKey = built.apiKey;
   }
 
+  // ─── Phase 2: Budget & model switch state ─────────────────────────────
+  // These mutable variables are shared across beforeToolCall, afterToolCall,
+  // and the event subscriber. They stay as closure variables because the hooks
+  // need direct access — this IS the orchestration state.
+
   let stepCount = 0;
   let currentBudget = toolCallBudget;
   let terminationReason: RunResult['terminationReason'] = 'budget_exhausted';
   let errorDetail: string | undefined;
   const halfBudget = Math.floor(toolCallBudget / 2);
-  let budgetWarningRecordingSent = false; // 40% — nudge to start recording
-  let budgetWarningHalfSent = false;
-  let budgetWarning5Sent = false;
-  let progressSummarySent = false; // 70% budget used — inject investigation checkpoint
-  let modelSwitched = false; // true once agent calls switch_to_fast_model
-  let snipBoundaryActive = false; // true after model switch — aggressive context compression
+  let budgetWarningRecordingSent = false;  // 40% budget used, 0 findings
+  let budgetWarningHalfSent = false;       // 50% budget used
+  let budgetWarning5Sent = false;          // 5 calls remaining
+  let progressSummarySent = false;         // 70% budget used — progress checkpoint
+  let modelSwitched = false;               // true once agent calls switch_to_fast_model
+  let snipBoundaryActive = false;          // true after model switch — tighter compression
   const canSwitchModel = piFastModel.id !== piModel.id;
-  // Phase 2 context management: track which toolCallIds touched which files and tool names
+  // Maps for context compression: track which files each tool call touched
   const toolCallIdToFiles = new Map<string, Set<string>>();
   const toolCallIdToName = new Map<string, string>();
 
@@ -469,7 +253,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
    */
   function switchModelInPlace(): void {
     if (!canSwitchModel) return;
-    // Mutate piModel (the object the loop holds a reference to)
     Object.assign(piModel, {
       id: piFastModel.id,
       name: piFastModel.name,
@@ -479,35 +262,34 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     });
     agent.state.thinkingLevel = 'off';
   }
-  // Capture assistant reasoning text from message events for the investigation log.
-  // Pi sends text content blocks alongside tool calls in the same assistant message.
-  let lastAssistantReasoning = '';
-  /** Shared batchId for all tool calls in the same parallel assistant turn */
-  let currentBatchId: string = randomUUID();
 
+  let lastAssistantReasoning = '';
+  let currentBatchId: string = randomUUID();
   let budgetExhaustedFired = false;
 
-  // beforeToolCall: budget enforcement
+  // Context compression (extracted module — shared mutable state via object references)
+  const compressionState = { findings: state.findings, snipBoundaryActive: false };
+  const { transformContext, clearSummaryCache } = createTransformContext(
+    compressionState,
+    { toolCallIdToFiles, toolCallIdToName },
+  );
+
+  // ─── Phase 3: Pi Agent hooks ──────────────────────────────────────────
+  // beforeToolCall: gate tool calls based on budget, enforce recording deadlines.
+  // afterToolCall: track counters, log steps, handle model switch, emit steering.
+
   const beforeToolCall = async (
     ctx: BeforeToolCallContext,
     _signal?: AbortSignal,
   ): Promise<BeforeToolCallResult | undefined> => {
     const toolName = ctx.toolCall.name;
 
-    // If assemble_output already fired, block further tool calls.
-    // When assemble_output is the only tool in a batch, Pi's terminate: true
-    // skips the next LLM call automatically. When it shares a batch with
-    // record_finding (which lacks terminate), this guard catches the extra turn.
     if (terminationReason === 'completed' && toolName !== 'record_finding') {
       return { block: true, reason: 'Output assembly complete.' };
     }
 
     // Recording enforcement gate: when 60%+ budget is spent with zero findings,
     // block investigation tools to force the agent into recording mode.
-    // Only record_finding, switch_to_fast_model, and assemble_output are allowed.
-    // At 100% budget, fall through to the budget exhaustion check instead so
-    // the user gets the extend prompt (the gate alone can't extend budget).
-    const RECORDING_GATE_PCT = 0.60;
     const WRITING_TOOLS = new Set(['record_finding', 'switch_to_fast_model', 'assemble_output']);
     if (
       state.findings.length === 0 &&
@@ -518,7 +300,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
         snipBoundaryActive = true;
-        summaryCache.clear();
+        compressionState.snipBoundaryActive = true;
+        clearSummaryCache();
         switchModelInPlace();
       }
       return {
@@ -527,29 +310,21 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       };
     }
 
-    // Web search budget
     if (toolName === 'web_search' && state.webSearchCount >= webSearchBudget) {
       return { block: true, reason: 'Web search budget exhausted.' };
     }
-    // URL fetch budget
     if (toolName === 'fetch_url' && state.urlFetchCount >= urlFetchBudget) {
       return { block: true, reason: 'URL fetch budget exhausted.' };
     }
 
-    // Tool call budget
     if (state.toolCallCount >= currentBudget) {
-      // Always allow assemble_output through — it's the exit path
       if (toolName === 'assemble_output') {
         return undefined;
       }
-      // Allow writing tools through so the agent can finish recording
-      // even without a budget extension.
       if (WRITING_TOOLS.has(toolName)) {
         return undefined;
       }
 
-      // Fire budget exhaustion callback at the moment a tool is actually
-      // blocked — this is the user-facing moment where the agent can't proceed.
       if (!budgetExhaustedFired && config.onBudgetExhausted) {
         budgetExhaustedFired = true;
         const shouldExtend = await config.onBudgetExhausted({
@@ -558,7 +333,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           budget: currentBudget,
         });
         if (shouldExtend) {
-          currentBudget += 50;
+          currentBudget += BUDGET_EXTENSION;
           state.toolCallBudget = currentBudget;
           budgetExhaustedFired = false;
           config.onStep?.({
@@ -568,7 +343,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
             newBudget: currentBudget,
             result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
           });
-          return undefined; // Allow the blocked tool through
+          return undefined;
         }
       }
 
@@ -584,7 +359,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     return undefined;
   };
 
-  // afterToolCall: counter tracking, budget warnings, assemble_output abort
+  // afterToolCall: runs after every tool execution — counters, logging, model switch, steering
   const afterToolCall = async (
     ctx: AfterToolCallContext,
     _signal?: AbortSignal,
@@ -593,11 +368,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state.toolCallCount++;
     stepCount++;
 
-    // Track web tool budgets here (not in execute()) so the check-then-act in
-    // beforeToolCall is race-free: beforeToolCall reads the counter, afterToolCall
-    // increments it, and Pi doesn't fire a new batch until afterToolCall completes.
-    // Note: filesRead.add() stays in execute() because recordFinding checks it
-    // inside its own execute() and can race with afterToolCall.
     if (toolName === 'web_search') state.webSearchCount++;
     if (toolName === 'fetch_url') state.urlFetchCount++;
 
@@ -617,14 +387,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       if (files.size > 0) toolCallIdToFiles.set(tcId, files);
     }
 
-    // Log investigation step — use captured reasoning from last assistant message.
-    // Don't clear it here: parallel tool calls in the same message share the same reasoning.
-    // It gets overwritten naturally when the next message_end event fires.
     const reasoning = lastAssistantReasoning;
     const resultText = ctx.result?.content?.[0]?.type === 'text'
       ? (ctx.result.content[0] as { type: 'text'; text: string }).text
       : '';
-    // Apply secret redaction before the result goes anywhere (log, LLM context, step events)
     const redactedResult = redactSecrets(resultText);
     const cleanResult = redactedResult.replaceAll(config.repoPath, '');
     state.investigationLog.push({
@@ -634,7 +400,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       result: cleanResult.slice(0, 200),
     });
 
-    // Emit step event
+    // Keep compressionState.findings in sync (shared reference may diverge after dedup/filter)
+    compressionState.findings = state.findings;
+
     const isFinding = toolName === 'record_finding';
     const isAssemble = toolName === 'assemble_output';
     const toolDetails = ctx.result?.details && typeof ctx.result.details === 'object' && Object.keys(ctx.result.details as object).length > 0
@@ -655,7 +423,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       } : {}),
     });
 
-    // Periodic checkpoint (best-effort, never blocks the loop)
     if (checkpointInterval > 0 && state.toolCallCount % checkpointInterval === 0) {
       try {
         saveCheckpoint(outputDir, repoSlug,
@@ -666,9 +433,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // Intent-based model switch: agent signals it's done investigating
     if (toolName === 'switch_to_fast_model' && !modelSwitched) {
       modelSwitched = true;
-      snipBoundaryActive = true; // Activate aggressive context compression for writing phase
-      // Clear summary cache so old entries get re-compressed at tighter limits
-      summaryCache.clear();
+      snipBoundaryActive = true;
+      compressionState.snipBoundaryActive = true;
+      clearSummaryCache();
       if (canSwitchModel) {
         const fastId = piFastModel.id;
         switchModelInPlace();
@@ -681,7 +448,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
     }
 
-    // Check for potential prompt injection in record_finding content
     if (isFinding) {
       const args = ctx.args as { title?: string; description?: string };
       if (args.title && !validateFindingContent(args.title)) {
@@ -694,27 +460,18 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
     }
 
-    // If assemble_output was called, set termination flag.
-    // The tool result already has terminate: true, so Pi will skip the next
-    // LLM call when assemble_output is the only tool in the batch.
-    // When it shares a batch with record_finding, beforeToolCall blocks
-    // further investigation on the extra turn.
     if (isAssemble && assembledRef.sections !== null) {
       terminationReason = 'completed';
       return { terminate: true };
     }
 
-    // Sanitize → boundary-wrap → return to LLM context.
-    // sanitizeToolOutput flags instruction-like patterns in repo files.
-    // wrapInBoundary adds delimiters so the LLM treats output as data.
     if (redactedResult) {
       const sanitized = sanitizeToolOutput(redactedResult);
       const wrapped = wrapInBoundary(toolName, sanitized);
       return { content: [{ type: 'text', text: wrapped }] };
     }
 
-    // Progress summary checkpoint at 70% budget — gives the LLM a deterministic
-    // recap of what it's already done, so evicted context doesn't cause re-investigation.
+    // Progress summary checkpoint at 70% budget
     const remaining = currentBudget - state.toolCallCount;
     if (
       !progressSummarySent &&
@@ -743,11 +500,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     // Budget warning steering messages
     if (remaining <= 5 && remaining > 0 && !budgetWarning5Sent && assembledRef.sections === null) {
       budgetWarning5Sent = true;
-      // Force switch to fast model if agent hasn't done it yet
       if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
         snipBoundaryActive = true;
-        summaryCache.clear();
+        compressionState.snipBoundaryActive = true;
+        clearSummaryCache();
         const fastId = piFastModel.id;
         switchModelInPlace();
         config.onStep?.({
@@ -789,163 +546,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     return undefined;
   };
 
-  /**
-   * Observation eviction with evidence pinning and stale-read collapsing.
-   *
-   * Instead of gradually char-slicing all old results (which produces garbled
-   * mid-JSON stubs), this uses three strategies:
-   *
-   *   1. Evidence pinning — results whose files appear in recorded findings
-   *      are NEVER compressed. The writing phase needs this raw evidence.
-   *   2. Stale-read collapsing — when the same file was read multiple times,
-   *      only the most recent read stays; earlier reads become one-line stubs.
-   *   3. Observation eviction — everything else outside the recent window
-   *      becomes a clean one-liner with tool name + size hint.
-   *
-   * Writing tool results (record_finding, assemble_output) are never compressed.
-   * Assistant/user messages pass through unchanged.
-   * Stubs are cached by toolCallId to avoid recomputing on each turn.
-   */
-  const KEEP_RECENT_NORMAL = 12;
-  const KEEP_RECENT_SNIP = 8;
-  const summaryCache = new Map<string, string>();
-  const WRITING_TOOL_NAMES = new Set(['record_finding', 'assemble_output', 'switch_to_fast_model']);
+  const onPayload = createOnPayload();
 
-  // Cache evidence-derived sets — only rebuild when findings count changes
-  let cachedEvidenceFiles: Set<string> | null = null;
-  let cachedPinnedToolCallIds: Set<string> | null = null;
-  let cachedFindingsCount = -1;
+  // ─── Phase 4: Agent creation & event subscription ────────────────────
+  // Wire up all hooks, context compression, and prompt caching into the Pi Agent.
 
-  function normPath(p: string): string {
-    return p.replace(/\\/g, '/').replace(/^\.\//, '');
-  }
-
-  const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
-    const keepRecent = snipBoundaryActive ? KEEP_RECENT_SNIP : KEEP_RECENT_NORMAL;
-    if (messages.length <= keepRecent) return messages;
-
-    // Rebuild evidence and pinned sets only when findings change
-    if (cachedFindingsCount !== state.findings.length) {
-      cachedEvidenceFiles = new Set<string>();
-      for (const f of state.findings) {
-        for (const ev of f.evidence) {
-          cachedEvidenceFiles.add(normPath(ev.filePath));
-        }
-      }
-
-      cachedPinnedToolCallIds = new Set<string>();
-      for (const [tcId, files] of toolCallIdToFiles) {
-        for (const file of files) {
-          if (cachedEvidenceFiles.has(normPath(file))) {
-            cachedPinnedToolCallIds.add(tcId);
-            break;
-          }
-        }
-      }
-
-      cachedFindingsCount = state.findings.length;
-    }
-
-    const evidenceFiles = cachedEvidenceFiles!;
-    const pinnedToolCallIds = cachedPinnedToolCallIds!;
-
-    // Build stale-read map: for each file, which is the latest toolCallId that read it?
-    const latestReadByFile = new Map<string, string>();
-    for (const msg of messages) {
-      if (!msg || typeof msg !== 'object' || !('role' in msg)) continue;
-      const tr = msg as unknown as { role: string; toolCallId?: string };
-      if (tr.role !== 'toolResult' || !tr.toolCallId) continue;
-      const files = toolCallIdToFiles.get(tr.toolCallId);
-      if (files) {
-        for (const f of files) latestReadByFile.set(normPath(f), tr.toolCallId);
-      }
-    }
-
-    // Determine which toolCallIds are stale (superseded by a later read of the same file)
-    const staleToolCallIds = new Set<string>();
-    for (const [tcId, files] of toolCallIdToFiles) {
-      if (pinnedToolCallIds.has(tcId)) continue;
-      for (const f of files) {
-        const latest = latestReadByFile.get(normPath(f));
-        if (latest && latest !== tcId) {
-          staleToolCallIds.add(tcId);
-          break;
-        }
-      }
-    }
-
-    const tier1Start = messages.length - keepRecent;
-
-    return messages.map((msg, i) => {
-      // Recent window: keep intact
-      if (i >= tier1Start) return msg;
-      if (!msg || typeof msg !== 'object' || !('role' in msg)) return msg;
-      if ((msg as { role: string }).role !== 'toolResult') return msg;
-
-      const tr = msg as unknown as { role: string; toolCallId?: string; content: { type: string; text?: string }[]; [k: string]: unknown };
-      const tcId = tr.toolCallId;
-      const tcName = tcId ? toolCallIdToName.get(tcId) : undefined;
-
-      // Writing tool results: never compress
-      if (tcName && WRITING_TOOL_NAMES.has(tcName)) return msg;
-
-      // Evidence-pinned: never compress
-      if (tcId && pinnedToolCallIds.has(tcId)) return msg;
-
-      // Stale read: collapse to one-liner
-      if (tcId && staleToolCallIds.has(tcId)) {
-        const cacheKey = `${tcId}:stale`;
-        if (summaryCache.has(cacheKey)) {
-          return { ...tr, content: [{ type: 'text', text: summaryCache.get(cacheKey)! }] } as AgentMessage;
-        }
-        const stub = '[superseded — file re-read in a later tool call]';
-        summaryCache.set(cacheKey, stub);
-        return { ...tr, content: [{ type: 'text', text: stub }] } as AgentMessage;
-      }
-
-      // Observation eviction: stub to one-liner with tool name + size hint
-      return {
-        ...tr,
-        content: tr.content.map((c) => {
-          if (c.type !== 'text' || !c.text || c.text.length <= 150) return c;
-          const cacheKey = tcId ? `${tcId}:evict` : undefined;
-          if (cacheKey && summaryCache.has(cacheKey)) {
-            return { ...c, text: summaryCache.get(cacheKey)! };
-          }
-          const name = tcName ?? 'tool';
-          const firstLine = c.text.slice(0, 100).split('\n')[0];
-          const stub = `[${name}: ${firstLine}... (${c.text.length} chars)]`;
-          if (cacheKey) summaryCache.set(cacheKey, stub);
-          return { ...c, text: stub };
-        }),
-      } as AgentMessage;
-    });
-  };
-
-  /**
-   * Prompt caching: inject cache_control breakpoints into the system prompt
-   * so the static prefix (system + tool defs) is cached across turns.
-   * Portkey forwards these annotations to Bedrock's Anthropic API.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onPayload = (payload: any) => {
-    if (!payload || typeof payload !== 'object') return undefined;
-    // Add cache_control to system prompt (OpenAI-compatible format)
-    if (Array.isArray(payload.messages) && payload.messages.length > 0) {
-      // For Anthropic via Portkey: add cache breakpoint to system message
-      if (typeof payload.system === 'string') {
-        payload.system = [{ type: 'text', text: payload.system, cache_control: { type: 'ephemeral' } }];
-      } else if (Array.isArray(payload.system) && payload.system.length > 0) {
-        const last = payload.system[payload.system.length - 1];
-        if (last && typeof last === 'object') {
-          last.cache_control = { type: 'ephemeral' };
-        }
-      }
-    }
-    return payload;
-  };
-
-  // Create Pi Agent
   const agent = new Agent({
     initialState: {
       systemPrompt,
@@ -962,24 +567,22 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     afterToolCall,
   });
 
-  // --- Per-turn timing instrumentation ---
+  // Per-turn timing instrumentation
   let turnStartMs = 0;
   let totalLlmMs = 0;
   let totalToolMs = 0;
   let turnCount = 0;
 
-  // Subscribe to events for usage tracking, reasoning capture, and batchId rotation
-  let streamingText = ''; // accumulates text deltas within a single message
+  // Subscribe to Pi Agent events for usage tracking, text streaming, and batchId rotation
+  let streamingText = '';
   agent.subscribe((event: AgentEvent, _signal: AbortSignal) => {
     if (event.type === 'message_start' && event.message && 'role' in event.message && event.message.role === 'assistant') {
-      // New assistant turn — rotate the batchId so parallel tool calls in this turn share it
       currentBatchId = randomUUID();
       streamingText = '';
       turnStartMs = Date.now();
       turnCount++;
     }
 
-    // Stream text deltas to dashboard in real-time (no waiting for message_end)
     if (event.type === 'message_update') {
       const ame = (event as { assistantMessageEvent?: { type: string; delta?: string } }).assistantMessageEvent;
       if (ame?.type === 'text_delta' && ame.delta) {
@@ -993,7 +596,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
     }
 
-    // Emit tool_start immediately when Pi begins executing a tool (before it completes)
     if (event.type === 'tool_execution_start') {
       const te = event as { toolName?: string; args?: Record<string, unknown> };
       config.onStep?.({
@@ -1006,7 +608,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
 
     if (event.type === 'message_end' && event.message && 'role' in event.message && event.message.role === 'assistant') {
-      // Track per-turn LLM latency
       if (turnStartMs > 0) {
         totalLlmMs += Date.now() - turnStartMs;
         turnStartMs = 0;
@@ -1019,8 +620,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         cachedTokens: msg.usage.cacheRead,
       });
 
-      // Capture text content blocks as reasoning for the investigation log.
-      // Pi sends text alongside tool calls in the same assistant message.
       if (Array.isArray(msg.content)) {
         const textParts = (msg.content as { type: string; text?: string }[])
           .filter((c) => c.type === 'text' && c.text)
@@ -1028,7 +627,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         if (textParts.length > 0) {
           lastAssistantReasoning = textParts.join('\n').trim();
 
-          // Emit as a text_response step so reasoning is always available
           if (lastAssistantReasoning) {
             config.onStep?.({
               step: stepCount,
@@ -1043,8 +641,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
   });
 
+  // ─── Phase 5: Agent execution ─────────────────────────────────────────
+  // Run the agent loop with retry on transient API errors.
+  // If the agent finishes without calling assemble_output, nudge it up to
+  // 2 times, then fall back to auto-assembly from recorded findings.
+
   try {
-    // Run the agent with retry on transient API errors (429, 529, connection)
     await withRetry(() => agent.prompt(goalPrompt), {
       onRetry: (attempt, error, delayMs, classification) => {
         const status = classification.statusCode ? ` [${classification.statusCode}]` : '';
@@ -1058,17 +660,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       },
     });
 
-    // If agent finished without calling assemble_output, try nudging
-    // (terminationReason may have been set to 'completed' by afterToolCall hook)
     if (assembledRef.sections === null && (terminationReason as string) !== 'completed') {
-      // Ensure fast model for retry nudges — just needs to write, not reason
-      // Post-loop: agent.state.model updates _state for the new _runLoop
       if (!modelSwitched && canSwitchModel) {
         modelSwitched = true;
         switchModelInPlace();
         agent.state.model = piModel;
       }
-      // Retry with nudge (max 2)
       for (let retry = 0; retry < 2; retry++) {
         agent.followUp({
           role: 'user',
@@ -1093,7 +690,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         }
       }
       if (assembledRef.sections === null) {
-        // LLM nudges failed — auto-assemble from recorded findings without LLM
         assembledRef.sections = autoAssembleFromFindings(state);
         terminationReason = state.findings.length > 0 ? 'completed' : 'stuck';
         config.onStep?.({
@@ -1105,14 +701,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
     }
   } catch (err) {
-    // With terminate: true, clean exits no longer throw. But an abort from
-    // budget exhaustion or external cancellation can still throw here.
     if (terminationReason === 'completed') {
       // Expected — assemble_output triggered termination
     } else {
       terminationReason = 'error';
       errorDetail = (err as Error).message;
-      // Save error checkpoint before handling
       if (checkpointInterval > 0) {
         try {
           saveCheckpoint(outputDir, repoSlug,
@@ -1125,23 +718,21 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         type: 'budget_warning',
         result: `Agent error: ${errorDetail}. Producing partial output.`,
       });
-      // Auto-assemble from whatever findings we have
       if (assembledRef.sections === null && state.findings.length > 0) {
         assembledRef.sections = autoAssembleFromFindings(state);
       }
     }
   }
 
-  // Drain the mutex: when record_finding and assemble_output are in the same batch,
-  // the mutex may still be processing record_finding calls after assemble_output
-  // triggers termination. Without draining, those findings would be lost.
+  // ─── Phase 6: Post-processing ─────────────────────────────────────────
+  // Drain concurrent tool calls, verify evidence, deduplicate findings,
+  // compute scorecard, render brief, and write all output files.
+
+  // Drain the mutex: parallel tool calls (record_finding + assemble_output in same batch)
+  // may still be running after termination. Without draining, those findings would be lost.
   await mutex.drain();
 
-  // Post-loop: assemble output (partial if error/stuck)
   const sections = assembledRef.sections ?? {};
-
-  // --- Post-loop: verification, dedup, scorecard, output ---
-  // Emit progress events so the UI doesn't appear frozen.
 
   config.onStep?.({
     step: ++stepCount,
@@ -1150,7 +741,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     result: `Verifying evidence for ${state.findings.length} findings...`,
   });
 
-  // Pre-load all unique evidence files once to avoid redundant reads across findings.
   const uniqueEvidencePaths = new Set<string>();
   for (const f of state.findings) {
     for (const ev of f.evidence) uniqueEvidencePaths.add(ev.filePath);
@@ -1160,8 +750,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     fileContentCache.set(fp, await resolveAndRead(config.repoPath, fp));
   }));
 
-  // Post-investigation verification pass: re-verify all evidence against actual files.
-  // Removes findings where ALL evidence is unverifiable (likely hallucinated).
   const verificationResults = await Promise.all(
     state.findings.map((finding) => verifyFindingEvidence(config.repoPath, finding, fileContentCache)),
   );
@@ -1189,9 +777,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     });
   }
 
-  // Deduplicate findings with overlapping evidence and similar content.
-  // Merges near-duplicate findings (same category + severity + overlapping file paths)
-  // into one finding with combined evidence — prevents inflated risk counts.
   const dedupResult = deduplicateFindings(state.findings);
   state.findings = dedupResult.findings;
   if (dedupResult.mergedCount > 0) {
@@ -1212,7 +797,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
 
   const scorecard = computeScorecard(config.repoName, config.goal, state.findings);
 
-  // Populate scorecard metadata with actual run values
   scorecard.metadata.repoUrl = config.repoUrl;
   scorecard.metadata.detectedPlatform = platform;
   scorecard.metadata.toolCallsUsed = state.toolCallCount;
@@ -1236,7 +820,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   const fullExport = buildFullExport(state, scorecard, sections, metrics, terminationReason, currentBudget);
   const exportJson = serializeExport(fullExport);
 
-  // Write output files (always — even on error, for partial results)
   const outputPaths = writeOutputFiles(
     outputDir,
     config.repoName,
@@ -1246,13 +829,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state,
   );
 
-  // Persist session cost for cross-run tracking
   try {
     const costEntry = buildSessionCostEntry(config.repoName, config.goal, metrics);
     saveSessionCost(outputDir, costEntry);
   } catch { /* best-effort — don't fail the run for cost tracking */ }
 
-  // Write debug log on error/stuck for diagnostics
   if (terminationReason === 'error' || terminationReason === 'stuck') {
     const debugPath = path.join(outputDir, `${config.repoName.replace(/[^a-zA-Z0-9-]/g, '-')}-debug.log`);
     const debugContent = [
@@ -1267,7 +848,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     outputPaths.push(debugPath);
   }
 
-  // Clean up spilled tool results from this run's tmpdir
   cleanup();
 
   return {
@@ -1280,194 +860,4 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     terminationReason,
     errorDetail,
   };
-}
-
-/**
- * Build brief sections from recorded findings when the LLM never called assemble_output.
- * Groups findings by category and produces minimal but usable section content.
- */
-function autoAssembleFromFindings(state: AgentState): Record<string, string> {
-  const sections: Record<string, string> = {};
-
-  // Group findings by category
-  const byCategory = new Map<string, typeof state.findings>();
-  for (const f of state.findings) {
-    const cat = f.category;
-    if (!byCategory.has(cat)) byCategory.set(cat, []);
-    byCategory.get(cat)!.push(f);
-  }
-
-  // Build a section for each category with findings
-  for (const [category, findings] of byCategory) {
-    const lines: string[] = [];
-    for (const f of findings) {
-      lines.push(`### ${f.title}`);
-      lines.push('');
-      lines.push(`**Severity:** ${f.severity}`);
-      lines.push('');
-      lines.push(f.description);
-      if (f.evidence.length > 0) {
-        lines.push('');
-        lines.push('**Evidence:**');
-        for (const e of f.evidence) {
-          const loc = e.lineNumber ? `${e.filePath}:${e.lineNumber}` : e.filePath;
-          lines.push(`- \`${loc}\` — ${e.description}`);
-        }
-      }
-      lines.push('');
-    }
-    sections[category] = lines.join('\n');
-  }
-
-  // Add an executive summary
-  const severityCounts: Record<string, number> = {};
-  for (const f of state.findings) {
-    severityCounts[f.severity] = (severityCounts[f.severity] ?? 0) + 1;
-  }
-  const severityLine = Object.entries(severityCounts)
-    .map(([sev, count]) => `${count} ${sev}`)
-    .join(', ');
-  sections['executive-summary'] =
-    `This brief was auto-assembled from ${state.findings.length} findings (${severityLine}). ` +
-    `Categories covered: ${[...byCategory.keys()].join(', ')}.`;
-
-  return sections;
-}
-
-function trackUsage(
-  state: AgentState,
-  model: string,
-  usage: { inputTokens: number; outputTokens: number; cachedTokens: number },
-): void {
-  const existing = state.modelUsage.get(model) ?? {
-    calls: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    cachedTokens: 0,
-  };
-  state.modelUsage.set(model, {
-    calls: existing.calls + 1,
-    inputTokens: existing.inputTokens + usage.inputTokens,
-    outputTokens: existing.outputTokens + usage.outputTokens,
-    cachedTokens: existing.cachedTokens + usage.cachedTokens,
-  });
-}
-
-function buildMetrics(
-  state: AgentState,
-  startedAt: Date,
-  completedAt: Date,
-  llmLatencyMs?: number,
-  llmTurns?: number,
-): RunMetrics {
-  const models: RunMetrics['models'] = {};
-  for (const [modelId, usage] of state.modelUsage.entries()) {
-    const pricing = pricingConfig.models[modelId] ?? pricingConfig.defaultPricing;
-    const inputCost = usage.inputTokens * pricing.inputPerToken;
-    const outputCost = usage.outputTokens * pricing.outputPerToken;
-    const cachedDiscount = usage.cachedTokens * (pricing.inputPerToken - pricing.cachedInputPerToken);
-    const estimated = inputCost + outputCost - cachedDiscount;
-
-    models[modelId] = {
-      bedrockModelId: modelId,
-      calls: usage.calls,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cachedTokens: usage.cachedTokens,
-      estimatedCostUsd: Math.round(estimated * 10000) / 10000,
-    };
-  }
-
-  const totalCost = Object.values(models).reduce(
-    (sum, m) => sum + m.estimatedCostUsd,
-    0,
-  );
-
-  return {
-    startedAt: startedAt.toISOString(),
-    completedAt: completedAt.toISOString(),
-    durationMs: completedAt.getTime() - startedAt.getTime(),
-    toolCalls: state.toolCallCount,
-    models,
-    totalEstimatedCostUsd: Math.round(totalCost * 10000) / 10000,
-    ...(llmLatencyMs != null ? { llmLatencyMs } : {}),
-    ...(llmTurns != null ? { llmTurns } : {}),
-  };
-}
-
-export function writeOutputFiles(
-  outputDir: string,
-  repoName: string,
-  scorecard: Scorecard,
-  briefMarkdown: string,
-  exportJson: string,
-  state: AgentState,
-): string[] {
-  fs.mkdirSync(outputDir, { recursive: true });
-
-  const paths: string[] = [];
-  const slug = repoName.replace(/[^a-zA-Z0-9-]/g, '-');
-
-  // Scorecard JSON
-  const scorecardPath = path.join(outputDir, `${slug}-scorecard.json`);
-  fs.writeFileSync(scorecardPath, JSON.stringify(scorecard, null, 2), 'utf-8');
-  paths.push(scorecardPath);
-
-  // Brief markdown
-  const briefPath = path.join(outputDir, `${slug}-brief.md`);
-  fs.writeFileSync(briefPath, briefMarkdown, 'utf-8');
-  paths.push(briefPath);
-
-  // Findings JSON
-  const findingsPath = path.join(outputDir, `${slug}-findings.json`);
-  fs.writeFileSync(findingsPath, JSON.stringify(state.findings, null, 2), 'utf-8');
-  paths.push(findingsPath);
-
-  // Full export JSON
-  const exportPath = path.join(outputDir, `${slug}-export.json`);
-  fs.writeFileSync(exportPath, exportJson, 'utf-8');
-  paths.push(exportPath);
-
-  // Investigation log markdown
-  const logPath = path.join(outputDir, `${slug}-investigation.md`);
-  const logContent = renderInvestigationLog(state);
-  fs.writeFileSync(logPath, logContent, 'utf-8');
-  paths.push(logPath);
-
-  // Investigation log HTML (static, browsable)
-  const htmlLogPath = path.join(outputDir, `${slug}-investigation.html`);
-  const htmlContent = renderInvestigationHtml({
-    repoName: state.repo.name,
-    entries: state.investigationLog,
-    scorecard,
-    toolCallCount: state.toolCallCount,
-    findingCount: state.findings.length,
-  });
-  fs.writeFileSync(htmlLogPath, htmlContent, 'utf-8');
-  paths.push(htmlLogPath);
-
-  return paths;
-}
-
-function renderInvestigationLog(state: AgentState): string {
-  const lines: string[] = [];
-  lines.push(`# Investigation Log: ${state.repo.name}`);
-  lines.push('');
-  lines.push(`**Goal:** ${state.goal}`);
-  lines.push(`**Tool calls:** ${state.toolCallCount} / ${state.toolCallBudget}`);
-  lines.push(`**Findings:** ${state.findings.length}`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
-
-  for (const entry of state.investigationLog) {
-    lines.push(`## Step ${entry.step}: ${entry.action}`);
-    lines.push('');
-    lines.push(`**Reasoning:** ${entry.reasoning}`);
-    lines.push('');
-    lines.push(`**Result:** ${entry.result}`);
-    lines.push('');
-  }
-
-  return lines.join('\n');
 }

@@ -6,6 +6,7 @@ import { queryNpmVersions, TRACKED_PACKAGES } from '../tools/dependency/queryNpm
 import { formatVerboseStep } from '../output/verboseFormatter.js';
 import type { GoalType } from '../types/state.js';
 import type { Finding } from '../types/findings.js';
+import { TOOL_CALL_BUDGET } from '../config/defaults.js';
 
 // ─── Gauntlet result schema ──────────────────────────────────
 
@@ -374,7 +375,7 @@ export async function handleGauntlet(opts: {
     }
   }
 
-  const budget = parseInt(opts.budget ?? '45', 10);
+  const budget = parseInt(opts.budget ?? String(TOOL_CALL_BUDGET), 10);
   const verbose = opts.verbose ?? false;
 
   return runGauntlet(opts.repos, goals, budget, verbose);

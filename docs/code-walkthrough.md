@@ -53,7 +53,10 @@ Pi gives us the loop. We built the domain layer:
 | Dual-model cost optimization | `src/agent/runner.ts` (model switch) | Our innovation — agent-initiated switch from Sonnet to Haiku mid-run |
 | Extended thinking management | `src/agent/runner.ts` + `piModel.ts` | Investigation model gets `reasoning: true` + `thinkingLevel: 'low'`; disabled on switch to fast model |
 | Evidence verification | `src/tools/analysis/recordFinding.ts` | Anti-hallucination — deterministic verification against actual files |
-| Context compression | `src/agent/runner.ts` (transformContext) | Performance — 3-tier compression to stay within context window |
+| Context compression | `src/agent/contextCompression.ts` | Performance — evidence pinning, stale-read collapsing, observation eviction |
+| Usage tracking & cost estimation | `src/agent/usageTracking.ts` | Per-model token counts, pricing loader, cost estimation |
+| Output file writing | `src/agent/outputWriter.ts` | Writes 6 output artifacts per run to disk |
+| Fallback assembly | `src/agent/autoAssemble.ts` | Builds minimal brief when LLM doesn't call assemble_output |
 | Scorecard computation | `src/output/scorecard.ts` | Domain-specific — red/yellow/green scoring from finding severities |
 | CI/CD integration | `src/ci/` | Deployment — GitHub Actions, Azure DevOps, SARIF, quality gates |
 | Dashboard | `dashboard/` | UX — live streaming UI with SSE, run history, comparison |
@@ -113,13 +116,29 @@ Same `runAgent()`, different I/O layer.
 
 ---
 
-## 2. The Agent Runner — `src/agent/runner.ts`
+## 2. The Agent Runner — Modular Architecture
 
-This is the biggest file and the core of the system. Here's what happens inside `runAgent()`, step by step.
+The runner subsystem is the core of the system — it orchestrates a single investigation run from state initialization through post-processing. It's split across 8 focused modules:
 
-### Step 1: Initialize State (~lines 310–333)
+| Module | Lines | Responsibility |
+|--------|-------|---------------|
+| `runner.ts` | ~860 | Orchestration: wires all pieces together, houses Pi hooks |
+| `runnerTypes.ts` | ~108 | Public type contracts (RunnerConfig, RunResult, StepEvent, pricing) |
+| `preCompute.ts` | ~117 | Pre-computation: deterministic tools before the agent loop |
+| `stateMerge.ts` | ~56 | State carry-over for tiered investigation and checkpoint resume |
+| `contextCompression.ts` | ~212 | Evidence pinning, stale-read collapsing, observation eviction |
+| `usageTracking.ts` | ~94 | Model pricing loader, per-model usage accumulator, cost estimation |
+| `outputWriter.ts` | ~94 | Writes 6 output artifacts to disk |
+| `autoAssemble.ts` | ~59 | Fallback brief assembly when LLM doesn't call assemble_output |
+| `budgetPlanner.ts` | ~347 | Budget allocation and rebalancing for multi-goal runs |
 
-Creates the `AgentState` object — a mutable bag that tracks everything during the run:
+All consumers still import from `runner.ts` — it re-exports the public API from the extracted modules.
+
+Here's what happens inside `runAgent()`, step by step.
+
+### Phase 1: Setup (~lines 82–208)
+
+**State initialization.** Creates the `AgentState` object — a mutable bag that tracks everything during the run:
 
 - `findings` — accumulated findings array
 - `filesRead` — Set of files the agent has read (used for evidence verification)
@@ -128,66 +147,59 @@ Creates the `AgentState` object — a mutable bag that tracks everything during 
 - `investigationLog` — step-by-step log of what the agent did
 - `modelUsage` — per-model token counts for cost tracking
 
-Every tool reads from or writes to this state object.
+**State merging.** If this is a tiered investigation pass (e.g., Next.js specialist after core), `mergeState()` in `stateMerge.ts` carries over findings, filesRead, fileReadCache, resolvedVersions, stackProfile, fetchedDocs, and modelUsage from the prior pass. It does NOT carry over toolCallCount, toolCallBudget, or investigationLog — those reset per-pass.
 
-### Step 2: Pre-Compute (~lines 205–209)
+**Checkpoint resume.** If `config.resumeFrom` is set, the runner loads the latest checkpoint and hydrates state from it. This enables interrupted runs to pick up where they left off.
 
-Before the LLM ever runs, three deterministic tools execute in parallel:
+**Pre-computation.** `runPreCompute()` in `preCompute.ts` executes deterministic tools before the LLM ever runs:
 
-- `detectAppRoots()` — identifies Next.js app roots, monorepo structure
-- `parsePackageJson()` — reads package.json for dependencies and scripts
-- `listDirectory()` — top-level file tree (depth 2)
+- Phase 1 (parallel): `detectAppRoots()`, `parsePackageJson()`, `listDirectory()`
+- Phase 2 (chained): `getSpecialistPrompts()` loads technology-specific checklists based on detected app roots
 
-Then `getSpecialistPrompts()` chains off the app roots result to load technology-specific checklists. This saves 3–5 LLM round-trips because the agent would always do these first anyway. The results get injected into the goal prompt as "PRE-COMPUTED CONTEXT" so the agent can skip straight to deeper investigation.
+This saves 3–5 LLM round-trips because the agent would always do these first anyway. `formatPreComputeContext()` renders the results as text injected into the goal prompt as "PRE-COMPUTED CONTEXT" so the agent skips straight to deeper investigation.
 
-### Step 3: Build the System Prompt (~line 411)
-
-`buildSystemPrompt()` in `src/agent/systemPrompt.ts` is simple — reads markdown files from `src/rules/` and concatenates them:
+**System prompt.** `buildSystemPrompt()` in `systemPrompt.ts` reads markdown files from `src/rules/` and concatenates them:
 
 1. `core.md` — always loaded (investigation standards, finding standards, evidence integrity rules)
 2. `platform-sitecore.md` or `platform-optimizely.md` — loaded if the platform is known
 3. `goal-audit.md` (or whichever goal) — always loaded
 
-Plus a boundary instruction for prompt injection defense. That's it — the system prompt is just concatenated markdown.
+Plus a boundary instruction for prompt injection defense.
 
-### Step 4: Build the Goal Prompt (~lines 412–423)
+**Goal prompt.** `buildGoalPrompt()` in `goalPrompts.ts` returns the initial user message — what to do, budget instructions, model switch instructions, confidence calibration, category coverage requirements, and documentation URLs.
 
-`buildGoalPrompt()` in `src/agent/goalPrompts.ts` returns the initial user message. Each goal type has a template:
+**Tools.** `buildPiTools()` in `piToolAdapter.ts` wraps all 40+ tool implementations as Pi `AgentTool[]` objects with TypeBox schemas.
 
-- **What to do**: "Produce a scored architecture audit for this project."
-- **Budget instructions**: "Spend 60% investigating, 25% recording, 15% assembling."
-- **Model switch instructions**: "Call `switch_to_fast_model` when you're done investigating."
-- **Confidence calibration**: "9–10 = confirmed in code, 5–6 = indirect evidence, 3–4 = speculative."
-- **Category coverage**: "You MUST record at least one finding in each of these categories: ..."
-- **Documentation URLs**: list of official docs the agent can fetch if needed
+**Models.** `buildPiModel()` in `piModel.ts` reads env vars (`AGENT_MODEL`, `FAST_MODEL`, `PORTKEY_*`) and builds two Pi Model objects. Both are `Model<'openai-completions'>`. The agent model has `reasoning: true` (extended thinking); the fast model has `reasoning: false`.
 
-### Step 5: Build Tools (~line 426)
+### Phase 2: Budget & Model Switch State (~lines 224–275)
 
-`buildPiTools()` in `src/tools/piToolAdapter.ts` wraps all 40+ tool implementations as Pi `AgentTool[]` objects with TypeBox schemas for argument validation. Each tool's `execute()`:
+15+ mutable closure variables shared across the hooks — budget counters, warning flags, model switch state, termination reason. These stay as closure variables because `beforeToolCall` and `afterToolCall` need direct access to all of them.
 
-1. Runs input validation from `validators.ts`
-2. Normalizes file path arguments (strips absolute prefixes, fixes separators)
-3. Calls the raw implementation function
-4. Tracks state side effects (files read, etc.)
-5. Returns Pi's `{ content, details }` result format
+**Context compression setup.** The runner creates a `compressionState` object (shared mutable reference) and passes it to `createTransformContext()` from `contextCompression.ts`. Changes to `compressionState.findings` and `compressionState.snipBoundaryActive` are visible to the compression callback because it holds a reference to the same object.
 
-Also returns a ref object (`assembledRef`) — a closure that captures the sections written by `assemble_output`, accessible after the loop ends.
+**`switchModelInPlace()`** — mutates the original model object's properties so Pi's running loop sees the change immediately (see "The Model Switch Trick" below).
 
-### Step 6: Build Models (~lines 428–440)
+### Phase 3: Pi Agent Hooks (~lines 277–547)
 
-`buildPiModel()` in `src/config/piModel.ts` reads env vars and builds two Pi Model objects:
+**`beforeToolCall`** — gates tool execution:
+- Blocks all tools after output assembly is complete (except `record_finding`)
+- Enforces the recording gate: if 60%+ budget is spent with zero findings, blocks investigation tools to force the agent into recording mode
+- Enforces web search and URL fetch sub-budgets
+- On budget exhaustion: triggers `onBudgetExhausted` callback (dashboard shows Extend/Finish buttons), saves checkpoint, then blocks
 
-```
-PORTKEY_API_KEY → API key for the gateway
-PORTKEY_BASE_URL → Gateway URL
-PORTKEY_PROVIDER → Routing header (e.g., @aws-bedrock-use2)
-AGENT_MODEL → Investigation model ID (Sonnet)
-FAST_MODEL → Writing model ID (Haiku)
-```
+**`afterToolCall`** — the main orchestration hook, runs after every tool call:
+1. Increments counters and tracks which files each toolCallId touched (for context compression)
+2. Logs the step to `state.investigationLog`
+3. Emits a step event for CLI verbose output or dashboard SSE
+4. Saves periodic checkpoints
+5. Handles `switch_to_fast_model` — mutates model in place, activates snip boundary
+6. Checks finding content for prompt injection patterns
+7. Detects `assemble_output` — sets `terminationReason = 'completed'` and terminates
+8. Wraps tool output in boundary delimiters and applies secret redaction
+9. Sends budget warnings at 40% (0 findings), 50%, 70% (progress checkpoint), and 5 calls remaining
 
-Both are `Model<'openai-completions'>` objects. The agent model is built with `reasoning: true` (supports extended thinking); the fast model with `reasoning: false`. Pi Agent speaks OpenAI-compatible API. Portkey gateway translates to the actual provider (Bedrock, Azure, etc.). To switch providers, you change the env vars — no code changes.
-
-### Step 7: Create the Pi Agent (~lines 945–960)
+### Phase 4: Agent Creation (~lines 549–642)
 
 ```typescript
 const agent = new Agent({
@@ -202,34 +214,20 @@ const agent = new Agent({
 });
 ```
 
-Key configuration:
-
 | Setting | What it does |
 |---------|-------------|
-| `thinkingLevel: 'low'` | Extended thinking — gives the model a 2048-token hidden scratchpad for planning tool sequences and budget management before producing visible output. Disabled on model switch to fast. |
-| `toolExecution: 'parallel'` | Pi fires tool calls in parallel batches — if the LLM requests 3 tools in one turn, they all run concurrently |
-| `transformContext` | Compresses old messages to control context window size (3-tier: recent = full, mid-age = 600 chars, old = 120 chars) |
-| `onPayload` | Injects `cache_control` breakpoints for Anthropic prompt caching |
-| `beforeToolCall` | Budget enforcement — blocks tools when budget is exhausted (except `assemble_output`, which is always allowed as the exit path) |
-| `afterToolCall` | The big one — see next section |
+| `thinkingLevel: 'low'` | Extended thinking — gives the model a 2048-token hidden scratchpad for planning. Disabled on model switch to fast. |
+| `toolExecution: 'parallel'` | Pi fires tool calls in parallel batches |
+| `transformContext` | Context compression via evidence pinning, stale-read collapsing, and observation eviction (from `contextCompression.ts`) |
+| `onPayload` | Injects `cache_control` breakpoints for Anthropic prompt caching (from `contextCompression.ts`) |
+| `beforeToolCall` | Budget enforcement |
+| `afterToolCall` | Counter tracking, model switch, steering, termination |
 
-**Two layers of reasoning.** Extended thinking (`thinkingLevel: 'low'`) is a hidden scratchpad for internal planning — "which tools should I call next, have I covered all categories, am I near budget?" This is complementary to the prompt-directed reasoning in `goal-universal.md` and `goalPrompts.ts`, which forces the agent to write *visible* analytical narrative between tool calls. Thinking plans internally; reasoning explains findings to the client. Both run simultaneously.
+**Two layers of reasoning.** Extended thinking is a hidden scratchpad for internal planning — "which tools should I call next, have I covered all categories?" This is complementary to the prompt-directed reasoning in `goalPrompts.ts`, which forces the agent to write *visible* analytical narrative between tool calls. Thinking plans internally; reasoning explains findings to the client. Both run simultaneously.
 
-### Step 8: The `afterToolCall` Hook — Where Everything Happens
+**Event subscription.** The runner subscribes to Pi Agent events for: per-model usage tracking via `trackUsage()` from `usageTracking.ts`, text streaming to the dashboard, and batchId rotation for grouping parallel tool calls.
 
-After every single tool call, this hook runs (~lines 566–709). It:
-
-1. **Increments counters** — tool call count, web search count, etc.
-2. **Logs the step** — pushes to `state.investigationLog` with truncated reasoning and result
-3. **Emits a step event** — fires `config.onStep()` for CLI verbose output or dashboard SSE
-4. **Saves periodic checkpoints** — every N tool calls, writes a JSONL checkpoint to disk
-5. **Handles `switch_to_fast_model`** — when the agent calls this tool, the hook mutates `piModel` in place to switch from Sonnet to Haiku (see "The Model Switch Trick" below)
-6. **Checks for prompt injection** — validates finding content doesn't contain instruction-like patterns
-7. **Detects `assemble_output`** — if the agent called this tool and sections were captured, sets `terminationReason = 'completed'` and calls `agent.abort()` to exit the loop
-8. **Wraps tool output** — applies secret redaction and boundary delimiters before returning to LLM context
-9. **Sends budget warnings** — at 50% budget remaining, steers the agent to switch models. At 5 calls remaining, force-switches and tells the agent to call `assemble_output` NOW
-
-### Step 9: Run the Loop (~line 893)
+### Phase 5: Agent Execution (~lines 644–725)
 
 ```typescript
 await withRetry(() => agent.prompt(goalPrompt), { ... });
@@ -237,41 +235,24 @@ await withRetry(() => agent.prompt(goalPrompt), { ... });
 
 `agent.prompt()` is Pi's main loop — sends the goal prompt, gets the LLM's response, executes any tool calls, feeds results back, and repeats until the LLM stops requesting tools. `withRetry()` handles transient API errors (429 rate limits, 529 overloads, connection drops) with exponential backoff.
 
-This is where the agent spends its time. The LLM sees the system prompt (rules), the goal prompt, and the accumulated conversation history (tool calls and results), and decides what to do next. There's no hardcoded sequence — the LLM picks tools based on what it's learned so far.
+**Post-loop nudging.** If the agent finished without calling `assemble_output`, the runner nudges it up to 2 times. If nudging fails, `autoAssembleFromFindings()` in `autoAssemble.ts` builds minimal sections from recorded findings without any LLM call — groups findings by category and formats them as markdown with severity and evidence references.
 
-### Step 10: Post-Loop Nudging (~lines 906–939)
+### Phase 6: Post-Processing (~lines 727–863)
 
-If the agent finished without calling `assemble_output` (common when budget runs out), the runner nudges it up to 2 times:
-
-> "You must call assemble_output now with written content for all required sections."
-
-If nudging fails, `autoAssembleFromFindings()` builds minimal sections from recorded findings without any LLM call — groups findings by category and formats them as markdown.
-
-### Step 11: Post-Loop Verification (~lines 987–1025)
-
-Two deterministic passes, no LLM involved:
+All deterministic — no LLM calls.
 
 **Evidence verification** — re-reads every finding's cited files from disk, compares snippets against the actual code. Findings where ALL evidence is unverifiable get removed entirely.
 
-**Deduplication** — merges findings with overlapping evidence and similar titles/categories. Prevents inflated risk counts from the same issue being recorded multiple times.
+**Deduplication** — merges findings with overlapping evidence and similar titles/categories.
 
-### Step 12: Scorecard Computation (~line 1027)
+**Scorecard computation** — `computeScorecard()` in `scorecard.ts`. Red = any critical or 3+ high; Yellow = any high or 3+ medium; Green = everything else.
 
-`computeScorecard()` in `src/output/scorecard.ts` — pure function. Groups findings by category, counts severities per category:
+**Metrics** — `buildMetrics()` in `usageTracking.ts` computes per-model token counts, estimated cost (with cache token discounts), timing, and turn counts.
 
-- **Red:** any critical finding, or 3+ high
-- **Yellow:** any high finding, or 3+ medium
-- **Green:** only medium, low, or info
-
-Overall score: red if any category is red, yellow if any is yellow, green otherwise. Top risks: up to 5 highest-severity findings, sorted by severity then confidence.
-
-### Step 13: Render and Write Outputs (~lines 1032–1053)
-
-All rendering is deterministic — no LLM calls:
-
+**Output rendering and persistence:**
 - `renderBrief()` → markdown deliverable with scorecard, sections, top risks
 - `buildFullExport()` → full JSON export (all findings, investigation log, metrics, sections)
-- `writeOutputFiles()` → writes 6 files to disk (scorecard JSON, brief markdown, findings JSON, full export JSON, investigation log markdown, investigation log HTML)
+- `writeOutputFiles()` in `outputWriter.ts` → writes 6 files to disk (scorecard JSON, brief markdown, findings JSON, full export JSON, investigation log markdown, investigation log HTML)
 - `saveSessionCost()` → appends cost entry to `costs.jsonl` for cross-run tracking
 
 ---
@@ -282,7 +263,7 @@ This is architecturally interesting and worth understanding.
 
 Pi's `_runLoop()` captures `const model = this._state.model` once at loop start. If you call `agent.setModel(newModel)`, it replaces the `_state` reference — but the loop still holds the old object. It won't see the change.
 
-Solution: `switchModelInPlace()` (~line 470) does:
+Solution: `switchModelInPlace()` (~line 254 in runner.ts) does:
 
 ```typescript
 Object.assign(piModel, {
@@ -301,7 +282,7 @@ The switch is agent-initiated. The agent calls `switch_to_fast_model` when it de
 - At 50% budget remaining: a steering message reminds the agent to switch
 - At 5 calls remaining: the runner force-switches
 
-After the switch, a "snip boundary" activates — context compression drops from 600/120 char limits to 80/40 chars for old messages, because the writing phase doesn't need raw file contents anymore. This gives the writing model a cleaner, smaller context.
+After the switch, a "snip boundary" activates — context compression shrinks the recent window from 12 to 8 messages, allowing more aggressive eviction of old tool results. The writing phase doesn't need raw file contents anymore — evidence-pinned results are preserved, but everything else gets compressed more aggressively.
 
 ---
 
@@ -336,21 +317,25 @@ After the loop, a second pass (`verifyFindingEvidence`) re-checks everything aga
 
 ---
 
-## 5. Context Compression — `transformContext` Callback
+## 5. Context Compression — `src/agent/contextCompression.ts`
 
 The LLM conversation grows with every tool call — raw file contents, grep results, etc. Without compression, you'd blow the context window fast.
 
-The `transformContext` callback (~lines 735–769) implements 3-tier compression:
+`createTransformContext()` is a factory function that returns the `transformContext` callback Pi calls before each LLM turn. The runner passes two shared mutable objects by reference: a `CompressionState` (findings array + snipBoundaryActive flag) and `ToolCallMaps` (which files each toolCallId touched + tool names). Changes the runner makes to these objects are visible to the compressor because it holds the same references.
 
-| Tier | Messages | Treatment |
-|------|----------|-----------|
-| **Tier 1 (recent)** | Last 10 messages | Full fidelity — untouched |
-| **Tier 2 (mid-age)** | Next 15 messages | Tool results truncated to 600 chars |
-| **Tier 3 (old)** | Everything older | Tool results truncated to 120 chars |
+Three strategies, applied in priority order:
 
-Only tool result messages are compressed — assistant and user messages pass through unchanged. Summaries are cached by tool call ID so they don't get recomputed every turn.
+| Strategy | What it does | When it keeps content |
+|----------|-------------|----------------------|
+| **Evidence pinning** | Tool results whose files appear in recorded findings are never compressed | Always — the writing phase needs raw evidence to produce accurate briefs |
+| **Stale-read collapsing** | When the same file is read multiple times, only the most recent read keeps its full content | Earlier reads become one-line stubs: `[superseded — file re-read in a later tool call]` |
+| **Observation eviction** | Everything else outside the recent window becomes a one-liner | `[tool_name: first line... (N chars)]` |
 
-After the model switch (snip boundary), limits tighten to 80/40 chars — the writing phase doesn't need the raw investigation data.
+Writing tool results (`record_finding`, `assemble_output`, `switch_to_fast_model`) are never compressed. Assistant and user messages pass through unchanged. Stubs are cached by toolCallId to avoid recomputing on each turn.
+
+The recent window is 12 messages normally, shrinking to 8 after the model switch (snip boundary activates). The tighter window frees context for the cheaper writing model, which doesn't need the raw investigation data.
+
+**Prompt caching.** `createOnPayload()` injects Anthropic `cache_control` breakpoints into the system prompt so the static prefix (system instructions + tool definitions) is cached across turns, reducing input token costs on multi-turn conversations.
 
 ---
 

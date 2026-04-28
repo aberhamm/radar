@@ -14,6 +14,7 @@ import { handleAnalyzeAll } from './commands/analyzeAll.js';
 import { handleCompare } from './commands/compare.js';
 import { handleDiff } from './commands/diff.js';
 import { handleGauntlet } from './commands/gauntlet.js';
+import { TOOL_CALL_BUDGET, TOOL_CALL_BUDGET_ALL } from './config/defaults.js';
 
 // Load .env
 import 'dotenv/config';
@@ -56,7 +57,7 @@ program
     try {
       // Apply goal-appropriate default budget if user didn't specify
       if (!opts.budget) {
-        opts.budget = opts.goal === 'all' ? '15' : '45';
+        opts.budget = opts.goal === 'all' ? String(TOOL_CALL_BUDGET_ALL) : String(TOOL_CALL_BUDGET);
       }
       const handler = opts.goal === 'all' ? handleAnalyzeAll : handleAnalyze;
       const exitCode = await handler(opts);
@@ -128,7 +129,7 @@ program
   .option('--goal <type>', 'Analysis goal: onboarding, audit, audit-generic, migration, component-map, ci-check, security-review, nextjs, accessibility', 'onboarding')
   .option('--platform <name>', 'Platform override: sitecore, optimizely (auto-detected if omitted)')
   .option('--output <dir>', 'Output directory', './output')
-  .option('--budget <n>', 'Tool call budget per repo', '45')
+  .option('--budget <n>', 'Tool call budget per repo', String(TOOL_CALL_BUDGET))
   .option('--dry-run', 'Show configuration without running')
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .action(async (opts) => {
@@ -157,7 +158,7 @@ program
   .option('--run', 'Run the gauntlet (default: just print existing results)')
   .option('--repos <paths...>', 'Repository paths or GitHub URLs to test')
   .option('--goals <types>', 'Comma-separated goal types (default: onboarding,audit,security-review)')
-  .option('--budget <n>', 'Tool call budget per run', '45')
+  .option('--budget <n>', 'Tool call budget per run', String(TOOL_CALL_BUDGET))
   .option('--verbose', 'Show real-time agent reasoning and tool calls')
   .option('--clear', 'Clear existing gauntlet results')
   .action(async (opts) => {

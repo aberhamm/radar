@@ -8,9 +8,10 @@
  * No LLM, no I/O. Pure functions with typed inputs and outputs.
  */
 
-import type { PreComputeResult } from './runner.js';
-import type { RunResult } from './runner.js';
+import type { PreComputeResult } from './preCompute.js';
+import type { RunResult } from './runnerTypes.js';
 import type { FindingCategory } from '../types/findings.js';
+import { MIN_SPECIALIST_BUDGET } from '../config/defaults.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -49,8 +50,6 @@ export interface RebalanceResult {
 const UI_FRAMEWORK_TYPES = new Set([
   'nextjs', 'react', 'remix', 'svelte', 'nuxt', 'astro', 'angular', 'vue',
 ]);
-
-const MIN_SPECIALIST_BUDGET = 10;
 
 const NEXTJS_CATEGORIES: ReadonlySet<FindingCategory> = new Set([
   'nextjs', 'routing', 'data-fetching',
