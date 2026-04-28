@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Scorecard, RunMetrics, StepEvent, CategoryScore, ScoreLevel } from '@/lib/agentSession';
+import type { Scorecard, RunMetrics, StepEvent, CategoryScore, ScoreLevel, RankedRisk } from '@/lib/agentSession';
 import { transformRunData, type TransformedRunData, normalizeFindings, type Finding } from '@/lib/runTransform';
 import {
   copyToClipboard,
@@ -54,11 +54,6 @@ interface MultiGoalViewProps {
 
 const SCORE_ORDER: Record<string, number> = { red: 3, yellow: 2, green: 1 };
 const SEV_ORDER: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
-
-// Backend RankedRisk uses `findingId`; dashboard Scorecard expects `id`. Normalize at boundary.
-function normalizeRiskId(risk: { id?: string; findingId?: string; severity: string; title: string }): { id: string; severity: string; title: string } {
-  return { id: risk.id ?? risk.findingId ?? '', severity: risk.severity, title: risk.title };
-}
 
 function goalDisplayName(goal: string): string {
   const names: Record<string, string> = {
@@ -157,9 +152,9 @@ function buildMergedScorecard(goals: MultiGoalGoal[], repoName: string, startedA
   }
 
   const seen = new Set<string>();
-  const allRisks = goals.flatMap(g => (g.scorecard.topRisks ?? []).map(normalizeRiskId)).filter(r => {
-    if (!r.id || seen.has(r.id)) return false;
-    seen.add(r.id);
+  const allRisks = goals.flatMap(g => (g.scorecard.topRisks ?? [])).filter(r => {
+    if (!r.findingId || seen.has(r.findingId)) return false;
+    seen.add(r.findingId);
     return true;
   }).sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0));
 
@@ -207,12 +202,11 @@ function Scoreboard({ goals, onScrollTo }: { goals: MultiGoalGoal[]; onScrollTo:
 
 function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
   const seen = new Set<string>();
-  const allRisks: Array<{ id: string; severity: string; title: string }> = [];
+  const allRisks: RankedRisk[] = [];
   for (const g of goals) {
-    for (const raw of g.scorecard.topRisks ?? []) {
-      const risk = normalizeRiskId(raw);
-      if (risk.id && !seen.has(risk.id)) {
-        seen.add(risk.id);
+    for (const risk of g.scorecard.topRisks ?? []) {
+      if (risk.findingId && !seen.has(risk.findingId)) {
+        seen.add(risk.findingId);
         allRisks.push(risk);
       }
     }
@@ -232,7 +226,7 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
       <h3 className="text-[13px] font-semibold text-label mb-3">Top Risks</h3>
       <div className="flex flex-col gap-2">
         {sorted.map((risk, i) => (
-          <div key={risk.id} className="flex items-start gap-2.5 text-[12px]">
+          <div key={risk.findingId} className="flex items-start gap-2.5 text-[12px]">
             <span className="text-tertiary-label shrink-0 w-4 text-right">{i + 1}.</span>
             <span className={`shrink-0 font-medium uppercase text-[10px] mt-0.5 ${sevColor(risk.severity)}`}>
               {risk.severity}
@@ -574,7 +568,7 @@ export function MultiGoalView({ data, activeTab: controlledTab, onTabChange }: M
               <div className="flex flex-wrap gap-2">
                 {mergedScorecard.topRisks.slice(0, 3).map((risk, i) => (
                   <span
-                    key={risk.id || `risk-${i}`}
+                    key={risk.findingId || `risk-${i}`}
                     className="text-[11px] px-2 py-0.5 rounded-md"
                     style={{
                       background: risk.severity === 'critical' || risk.severity === 'high'

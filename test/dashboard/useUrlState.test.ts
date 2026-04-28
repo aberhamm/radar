@@ -28,12 +28,12 @@ describe('useUrlState', () => {
       });
     });
 
-    it('parses /run/{id}?tab=events', () => {
-      const params = new URLSearchParams('tab=events');
+    it('parses /run/{id}?tab=investigation', () => {
+      const params = new URLSearchParams('tab=investigation');
       expect(parseUrl('/run/abc', params)).toEqual({
         view: 'run',
         runId: 'abc',
-        tab: 'events',
+        tab: 'investigation',
       });
     });
 
@@ -86,8 +86,8 @@ describe('useUrlState', () => {
       expect(buildUrl({ view: 'run', runId: 'abc', tab: 'cost' })).toBe('/run/abc?tab=cost');
     });
 
-    it('omits ?tab= for report tab (default)', () => {
-      expect(buildUrl({ view: 'run', runId: 'abc', tab: 'report' })).toBe('/run/abc');
+    it('omits ?tab= for overview tab (default)', () => {
+      expect(buildUrl({ view: 'run', runId: 'abc', tab: 'overview' })).toBe('/run/abc');
     });
 
     it('builds /compare/{a}/{b} for compare view', () => {
@@ -104,7 +104,7 @@ describe('useUrlState', () => {
       { view: 'idle' as const },
       { view: 'run' as const, runId: 'test-uuid-123' },
       { view: 'run' as const, runId: 'test-uuid', tab: 'cost' as const },
-      { view: 'run' as const, runId: 'test-uuid', tab: 'events' as const },
+      { view: 'run' as const, runId: 'test-uuid', tab: 'investigation' as const },
       { view: 'compare' as const, compareIds: ['id-a', 'id-b'] as [string, string] },
       { view: 'multi' as const, parentId: 'parent-id' },
     ];

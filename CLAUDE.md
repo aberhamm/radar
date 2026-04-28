@@ -22,7 +22,7 @@ The original implementation spec is archived at `docs/archive/spec.md`. It's a h
 - Node.js 20+
 - pnpm (package manager)
 - Vitest 3.x (unit + e2e testing)
-- Pi Agent (`@mariozechner/pi-agent-core` + `@mariozechner/pi-ai` v0.64.0) — agent loop, tool calling, event streaming
+- Pi Agent (`@mariozechner/pi-agent-core` + `@mariozechner/pi-ai` v0.70.2) — agent loop, tool calling, event streaming
 - Portkey AI gateway (via Pi's `openai-completions` Model with custom `baseUrl` + `headers`) → Amazon Bedrock
 - Provider-agnostic model config: `AGENT_MODEL` (main loop) and `FAST_MODEL` (lightweight tasks) in `.env`
 

@@ -140,9 +140,9 @@ export const SAMPLE_SCORECARD: Scorecard = {
     { category: 'deployment', score: 'yellow', findings: SAMPLE_FINDINGS.filter(f => f.category === 'deployment').map(f => f.id), summary: 'No deployment configuration' },
   ],
   topRisks: [
-    { id: 'SEC-HARDCODED-KEY', severity: 'critical', title: 'Potential hardcoded/redacted API key in middleware' },
-    { id: 'PREVIEW-INCOMPLETE', severity: 'high', title: 'Editing/preview integration is incomplete and non-functional' },
-    { id: 'ARCH-FORCE-DYNAMIC', severity: 'high', title: 'App Router routes marked force-dynamic, disabling all caching' },
+    { rank: 1, findingId: 'SEC-HARDCODED-KEY', severity: 'critical', title: 'Potential hardcoded/redacted API key in middleware', businessContext: 'Credential exposure risk' },
+    { rank: 2, findingId: 'PREVIEW-INCOMPLETE', severity: 'high', title: 'Editing/preview integration is incomplete and non-functional', businessContext: 'Blocks content authoring workflow' },
+    { rank: 3, findingId: 'ARCH-FORCE-DYNAMIC', severity: 'high', title: 'App Router routes marked force-dynamic, disabling all caching', businessContext: 'Performance and cost impact' },
   ],
 };
 

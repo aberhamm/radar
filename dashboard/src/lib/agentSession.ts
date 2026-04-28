@@ -23,13 +23,21 @@ export interface CategoryScore {
   summary: string;
 }
 
+export interface RankedRisk {
+  rank: number;
+  findingId: string;
+  title: string;
+  severity: string;
+  businessContext: string;
+}
+
 export interface Scorecard {
   repoName: string;
   goalType: string;
   generatedAt: string;
   overallScore: ScoreLevel;
   categories: CategoryScore[];
-  topRisks: Array<{ id: string; severity: Severity; title: string }>;
+  topRisks: RankedRisk[];
 }
 
 export interface RunMetrics {

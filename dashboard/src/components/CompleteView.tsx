@@ -69,7 +69,7 @@ function ExecSummaryBanner({ scorecard, metrics }: { scorecard: Scorecard; metri
             <div className="flex flex-wrap gap-2">
               {scorecard.topRisks.slice(0, 3).map((risk, i) => (
                 <span
-                  key={risk.id ?? `risk-${i}`}
+                  key={risk.findingId ?? `risk-${i}`}
                   className="text-[11px] px-2 py-0.5 rounded-md"
                   style={{
                     background: risk.severity === 'critical' || risk.severity === 'high'
@@ -165,9 +165,9 @@ export function ScorecardGrid({ scorecard, metrics }: { scorecard: Scorecard; me
           </div>
           {scorecard.topRisks.slice(0, 3).map((risk, i) => (
             <button
-              key={risk.id ?? `risk-${i}`}
+              key={risk.findingId ?? `risk-${i}`}
               type="button"
-              onClick={() => scrollToFinding(risk.id)}
+              onClick={() => scrollToFinding(risk.findingId)}
               className="w-full text-left bg-surface rounded-lg border border-separator shadow-sm p-3 mb-2 text-xs cursor-pointer hover:border-danger/30 transition-colors"
             >
               <span className="text-danger font-bold mr-2">
