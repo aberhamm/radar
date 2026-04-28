@@ -15,10 +15,9 @@ import {
   costToMarkdown,
 } from '@/lib/export';
 import { AnalysisView } from './AnalysisView';
-import { FindingsSection, ExportButton, CopiedToast, CostTab } from './CompleteView';
-import { FindingsLoadingSkeleton } from './Skeleton';
+import { ExportButton, CopiedToast, CostTab } from './CompleteView';
 import { CreateIssuesModal } from './CreateIssuesModal';
-import { scoreColor, scoreBg, scoreToGrade, scoreToVerdict } from '@/lib/utils';
+import { scoreColor, scoreBg, scoreToGrade } from '@/lib/utils';
 import type { MultiTab } from '@/lib/useUrlState';
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -371,35 +370,14 @@ function GoalSection({
   onToggle: () => void;
   sectionRef: (el: HTMLDivElement | null) => void;
 }) {
-  const [findings, setFindings] = useState<Finding[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const fetchedRef = useRef(false);
-
-  // Lazy-load findings on first expand
-  const handleToggle = useCallback(() => {
-    if (!isExpanded && !fetchedRef.current && goal.findingsCount > 0) {
-      fetchedRef.current = true;
-      setLoading(true);
-      fetch(`/api/history/${encodeURIComponent(goal.id)}/findings`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.findings?.length > 0) setFindings(normalizeFindings(data.findings));
-          else setFindings([]);
-        })
-        .catch(() => setFindings([]))
-        .finally(() => setLoading(false));
-    }
-    onToggle();
-  }, [isExpanded, goal.id, goal.findingsCount, onToggle]);
-
   const gradeColor = scoreColor(goal.scorecard.overallScore);
 
   return (
-    <div ref={sectionRef} className="rounded-xl border border-separator overflow-hidden">
+    <div ref={sectionRef} data-component={`GoalSection-${goal.goal}`} className="rounded-xl border border-separator overflow-hidden">
       {/* Collapsed header */}
       <button
         type="button"
-        onClick={handleToggle}
+        onClick={onToggle}
         className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-elevated/50 transition-colors cursor-pointer"
       >
         <div
@@ -437,15 +415,26 @@ function GoalSection({
       {/* Expanded content */}
       {isExpanded && (
         <div className="px-4 pb-5 border-t border-separator/50 pt-4">
-          <FindingsSection findings={findings ?? []} scorecard={goal.scorecard} />
-
-          {loading && <FindingsLoadingSkeleton />}
-          {findings && findings.length === 0 && !loading && goal.findingsCount > 0 && (
-            <div className="text-[12px] text-tertiary-label mb-4">No detailed findings available.</div>
+          {/* Per-goal category scores */}
+          {goal.scorecard.categories.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+              {goal.scorecard.categories.map(cat => (
+                <div key={cat.category} className="flex items-center gap-2 text-[12px]">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: scoreColor(cat.score) }}
+                  />
+                  <span className="text-secondary-label truncate">{cat.category}</span>
+                  <span className="font-medium uppercase" style={{ color: scoreColor(cat.score) }}>
+                    {cat.score}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
 
           {goal.briefMarkdown && (
-            <div className="md-content text-sm leading-relaxed mt-4">
+            <div className="md-content text-sm leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{goal.briefMarkdown}</ReactMarkdown>
             </div>
           )}
@@ -534,54 +523,22 @@ export function MultiGoalView({ data, activeTab: controlledTab, onTabChange }: M
     });
   }, []);
 
-  const gradeColor = scoreColor(worstScore);
-  const verdict = scoreToVerdict(worstScore);
-
   return (
     <div data-component="MultiGoalView" className="flex-1 flex flex-col overflow-hidden">
-      {/* Exec summary banner */}
-      <div className="px-6 py-4 border-b border-separator bg-surface shrink-0">
-        <div className="flex items-start gap-5 max-w-[860px]">
-          <div
-            className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: `color-mix(in srgb, ${gradeColor} 10%, transparent)` }}
-          >
-            <span className="text-[28px] font-bold font-brand" style={{ color: gradeColor }}>
-              {scoreToGrade(worstScore)}
-            </span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-[15px] font-semibold text-label">{verdict}</h1>
-              <span className="text-[12px] font-medium text-tint bg-[rgb(0_113_227/0.08)] rounded px-2 py-0.5">
-                {data.goals.length} goals
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-[12px] text-secondary-label mb-2 flex-wrap">
-              <span>{data.repoName}</span>
-              <span>{data.totalFindings} findings</span>
-              <span>{metrics.toolCalls} tool calls</span>
-              <span>${metrics.totalEstimatedCostUsd.toFixed(2)}</span>
-              <span>{(metrics.durationMs / 1000).toFixed(0)}s</span>
-            </div>
-            {mergedScorecard.topRisks.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {mergedScorecard.topRisks.slice(0, 3).map((risk, i) => (
-                  <span
-                    key={risk.findingId || `risk-${i}`}
-                    className="text-[11px] px-2 py-0.5 rounded-md"
-                    style={{
-                      background: risk.severity === 'critical' || risk.severity === 'high'
-                        ? 'rgba(255,59,48,0.08)' : 'rgba(255,149,0,0.08)',
-                      color: risk.severity === 'critical' || risk.severity === 'high'
-                        ? 'var(--color-danger)' : 'var(--color-warning)',
-                    }}
-                  >
-                    {risk.title}
-                  </span>
-                ))}
-              </div>
-            )}
+      {/* Run header */}
+      <div data-component="RunHeader" className="px-6 py-3 border-b border-separator bg-surface shrink-0">
+        <div className="flex items-center gap-4 max-w-[860px]">
+          <h1 className="text-[15px] font-semibold text-label">{data.repoName}</h1>
+          <div className="flex items-center gap-3 text-[12px] text-secondary-label">
+            <span>{data.goals.length} goals</span>
+            <span className="text-separator">·</span>
+            <span>{data.totalFindings} findings</span>
+            <span className="text-separator">·</span>
+            <span>{metrics.toolCalls} tool calls</span>
+            <span className="text-separator">·</span>
+            <span>${metrics.totalEstimatedCostUsd.toFixed(2)}</span>
+            <span className="text-separator">·</span>
+            <span>{(metrics.durationMs / 1000).toFixed(0)}s</span>
           </div>
         </div>
       </div>
@@ -683,30 +640,23 @@ export function MultiGoalView({ data, activeTab: controlledTab, onTabChange }: M
           {activeTab === 'overview' && (
             <div className="max-w-4xl pt-5 pb-8">
               {/* Scoreboard overview */}
-              <div className="mb-6">
+              <div data-component="Scoreboard" className="mb-6">
                 <Scoreboard goals={data.goals} onScrollTo={scrollToGoal} />
               </div>
 
               {/* Top risks + pass breakdown */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <div data-component="TopRisks-PassBreakdown" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 <TopRisks goals={data.goals} />
                 <PassBreakdown events={data.events} />
               </div>
 
-              {/* Cross-goal findings — all findings sorted by severity */}
-              {allFindings.length > 0 && (
-                <div className="mb-8">
-                  <FindingsSection findings={allFindings} scorecard={mergedScorecard} />
-                </div>
-              )}
-
               {/* Per-goal sections */}
-              <div className="mb-2">
+              <div data-component="PerGoalHeader" className="mb-2">
                 <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold mb-3">
                   Per-Goal Details
                 </div>
               </div>
-              <div className="flex flex-col gap-3">
+              <div data-component="PerGoalSections" className="flex flex-col gap-3">
                 {data.goals.map(g => (
                   <GoalSection
                     key={g.id}

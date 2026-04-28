@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Finding, TransformedRunData } from '@/lib/runTransform';
-import { CATEGORIES, buildInstantState } from '@/lib/runTransform';
+import { buildInstantState } from '@/lib/runTransform';
 import { SAMPLE_ANALYSIS_TURNS, SAMPLE_FINDINGS } from '@/lib/sampleRunData';
 import { useAnimationSequence } from '@/lib/useAnimationSequence';
 import type { LiveAnalysisState } from '@/lib/useLiveAnalysis';
@@ -69,7 +69,6 @@ export function AnalysisView({
     turns,
     typingText,
     activeTurnIndex,
-    coveredTopics,
     examinedFiles,
     findings,
     scoreVisible,
@@ -436,7 +435,7 @@ export function AnalysisView({
                 (typingText || (isLive && phase !== 'done' && phase !== 'idle') ? 1 : 0) >
                 1 && (
                 <div
-                  className="absolute left-[9px] top-4 bottom-4 w-px"
+                  className="absolute left-[9px] top-[21px] bottom-[21px] w-px"
                   style={{
                     background: `linear-gradient(to bottom, var(--color-separator), color-mix(in srgb, ${accentColor} 30%, var(--color-separator)), var(--color-separator))`,
                   }}
@@ -647,17 +646,8 @@ export function AnalysisView({
                   </div>
                   {/* Text content — matches TurnContent layout */}
                   <div className="flex-1 min-w-0">
-                    <div
-                      className={`md-content text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}
-                    >
+                    <div className={`md-content text-[13px] leading-relaxed ${isWriting ? 'text-success' : 'text-label'}`}>
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{typingText}</ReactMarkdown>
-                      <span
-                        className="inline-block w-[1.5px] h-[12px] ml-0.5 align-text-bottom rounded-full"
-                        style={{
-                          background: accentColor,
-                          animation: 'pulse-dot 0.8s step-end infinite',
-                        }}
-                      />
                     </div>
                   </div>
                 </div>
@@ -762,88 +752,6 @@ export function AnalysisView({
           )}
         </div>
 
-        {/* Bottom: topic coverage */}
-        <div
-          data-component="TopicCoverage"
-          className="border-t border-separator bg-surface-translucent shrink-0"
-        >
-          <div className="px-4 pt-2 pb-1 flex items-center justify-between">
-            <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
-              Topics
-            </div>
-            {coveredTopics.size > 0 && (
-              <span className="text-[10px] font-mono text-quaternary-label">
-                {coveredTopics.size}/{CATEGORIES.length}
-              </span>
-            )}
-          </div>
-          <div className="px-4 pb-2 flex flex-wrap gap-1">
-            {CATEGORIES.map((cat) => {
-              const isTouched = coveredTopics.has(cat.id);
-              const hasFindings = findings.some((f) => f.category === cat.id);
-              // 3 levels: not started → touched (tool calls) → confirmed (findings)
-              const level = hasFindings ? 2 : isTouched ? 1 : 0;
-
-              return (
-                <span
-                  key={cat.id}
-                  className="relative text-[9px] font-medium px-2 py-0.5 rounded-md transition-all duration-300 overflow-hidden"
-                  style={{
-                    color:
-                      level === 2
-                        ? 'var(--color-tint)'
-                        : level === 1
-                          ? 'var(--color-secondary-label)'
-                          : 'var(--color-quaternary-label)',
-                    background: level === 0 ? 'transparent' : undefined,
-                  }}
-                >
-                  {/* Fill bar background */}
-                  {level > 0 && (
-                    <span
-                      className="absolute inset-0 rounded-md transition-all duration-500"
-                      style={{
-                        background: level === 2 ? 'rgba(0,113,227,0.08)' : 'rgba(0,113,227,0.03)',
-                        width: level === 2 ? '100%' : '50%',
-                      }}
-                    />
-                  )}
-                  <span className="relative">
-                    {level === 2 && (
-                      <svg
-                        width="8"
-                        height="8"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        className="inline mr-0.5 -mt-px"
-                      >
-                        <path
-                          d="M2.5 6.5L5 9l4.5-6"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    )}
-                    {level === 1 && (
-                      <svg
-                        width="8"
-                        height="8"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        className="inline mr-0.5 -mt-px"
-                      >
-                        <circle cx="6" cy="6" r="2" fill="currentColor" opacity="0.4" />
-                      </svg>
-                    )}
-                    {cat.label}
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       {/* Right sidebar: files examined + findings */}
