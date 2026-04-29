@@ -6,8 +6,8 @@ import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 import { useTheme } from '@/lib/useTheme';
 import { useUrlState, buildUrl, type Tab, type InfoPage } from '@/lib/useUrlState';
 import { ContextBar } from '@/components/ContextBar';
-import { Sidebar } from '@/components/Sidebar';
-import { AppSidebar, USE_SIDEBAR_V2 } from '@/components/AppSidebar';
+import { PanelLeft, PanelLeftClose } from 'lucide-react';
+import { AppSidebar, deriveActiveSection, type NavSection } from '@/components/AppSidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { IdleView } from '@/components/IdleView';
 import { RunView } from '@/components/RunView';
@@ -16,9 +16,12 @@ import { AnalysisView } from '@/components/AnalysisView';
 import { RunLoadingSkeleton } from '@/components/Skeleton';
 import { HowItWorksPanel } from '@/components/HowItWorksPanel';
 import { ChangelogView } from '@/components/ChangelogView';
+import { RunsListView } from '@/components/RunsListView';
+import { FindingsTriagePage } from '@/components/FindingsTriagePage';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
 import type { TransformedRunData } from '@/lib/runTransform';
+import { normalizeFindings, deduplicateFindings, type Finding } from '@/lib/runTransform';
 import { toMultiRunData, type RunViewMode, type MultiGoalData } from '@/lib/runViewAdapters';
 
 // ─── Constants ──────────────────────────────────────────────────
@@ -51,7 +54,7 @@ function friendlyError(raw: string): string {
 
 // ─── Types ──────────────────────────────────────────────────────
 
-type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing' | 'info';
+type DashboardStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error' | 'comparing' | 'info' | 'runs' | 'findings' | 'reports' | 'settings';
 
 interface CurrentRun {
   repoPath: string;
@@ -91,6 +94,12 @@ export default function DashboardPage() {
     if (typeof window !== 'undefined') return window.innerWidth >= 1024;
     return true;
   });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
+    }
+    return false;
+  });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newRunModal, setNewRunModal] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
@@ -103,8 +112,21 @@ export default function DashboardPage() {
   const [sampleInvestigation, setSampleInvestigation] = useState<TransformedRunData | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [activeInfoPage, setActiveInfoPage] = useState<InfoPage | undefined>(undefined);
+  const [findingsData, setFindingsData] = useState<{
+    findings: Finding[];
+    runId: string;
+    repoName: string;
+    goal: string;
+    startedAt: string;
+    repoUrl?: string;
+    goalMap?: Record<string, string>;
+    isMultiGoal?: boolean;
+  } | null>(null);
+  const [findingsLoading, setFindingsLoading] = useState(false);
+  const findingsLoadingRef = useRef(false);
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
   const { urlView, pushUrl, replaceUrl } = useUrlState();
+  const activeSection = deriveActiveSection(urlView);
   const urlHandledRef = useRef(false);
 
   // Cache loaded runs to avoid re-fetching on re-selection.
@@ -119,12 +141,15 @@ export default function DashboardPage() {
   // Prepend sample run to history
   const fullHistory = useMemo(() => [SAMPLE_HISTORY_ITEM as HistoryItem, ...history], [history]);
 
-  // Auto-open sidebar on desktop, auto-close on mobile resize
+  // Stable mobile/desktop detection via media query (avoids stale window.innerWidth checks)
+  const isMobileRef = useRef(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (window.innerWidth >= 1024) setSidebarOpen(true);
     const mq = window.matchMedia('(min-width: 1024px)');
+    isMobileRef.current = !mq.matches;
     const handler = (e: MediaQueryListEvent) => {
+      isMobileRef.current = !e.matches;
       if (!e.matches) setSidebarOpen(false);
     };
     mq.addEventListener('change', handler);
@@ -181,7 +206,9 @@ export default function DashboardPage() {
     if (!ready || urlHandledRef.current) return;
     urlHandledRef.current = true;
 
-    if (urlView.view === 'info') {
+    if (urlView.view === 'runs' || urlView.view === 'findings' || urlView.view === 'reports' || urlView.view === 'settings') {
+      setStatus(urlView.view as DashboardStatus);
+    } else if (urlView.view === 'info') {
       setStatus('info');
       setActiveInfoPage(urlView.page);
     } else if (urlView.view === 'run' && urlView.runId) {
@@ -196,7 +223,7 @@ export default function DashboardPage() {
           if (res.ok && !data.error) {
             setCompareData(data as CompareData);
             setStatus('comparing');
-            if (window.innerWidth < 1024) setSidebarOpen(false);
+            if (isMobileRef.current) setSidebarOpen(false);
           } else {
             console.warn('[url] Compare failed:', data.error);
             pushUrl({ view: 'idle' });
@@ -224,7 +251,7 @@ export default function DashboardPage() {
           setSelectedRunId(urlView.parentId);
           setStatus('complete');
           if (urlView.tab) setActiveTab(urlView.tab);
-          if (window.innerWidth < 1024) setSidebarOpen(false);
+          if (isMobileRef.current) setSidebarOpen(false);
         } catch (err) {
           console.error('[url] Failed to load multi-goal group:', urlView.parentId, err);
         } finally {
@@ -239,7 +266,14 @@ export default function DashboardPage() {
     if (!ready) return;
 
     // When URL changes externally (back/forward), sync internal state
-    if (urlView.view === 'info') {
+    if (urlView.view === 'findings') {
+      setStatus('findings');
+      if (urlView.runId && urlView.runId !== findingsData?.runId) {
+        setFindingsData(null);
+      }
+    } else if (urlView.view === 'runs' || urlView.view === 'reports' || urlView.view === 'settings') {
+      setStatus(urlView.view as DashboardStatus);
+    } else if (urlView.view === 'info') {
       setStatus('info');
       setActiveInfoPage(urlView.page);
     } else if (urlView.view === 'idle' && status !== 'idle' && status !== 'running' && status !== 'budget_paused') {
@@ -263,8 +297,16 @@ export default function DashboardPage() {
     setMultiRunData(null);
     setCompareData(null);
     pushUrl({ view: 'info', page });
-    if (window.innerWidth < 1024) setSidebarOpen(false);
+    if (isMobileRef.current) setSidebarOpen(false);
   }, [pushUrl]);
+
+  const handleToggleSidebarCollapse = useCallback(() => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
@@ -428,6 +470,199 @@ export default function DashboardPage() {
     pushUrl({ view: 'idle' });
   }, [pushUrl]);
 
+  const handleSidebarNavigate = useCallback((section: NavSection) => {
+    switch (section) {
+      case 'dashboard':
+        handleNewRun();
+        break;
+      case 'runs':
+        setStatus('runs');
+        pushUrl({ view: 'runs' });
+        break;
+      case 'findings':
+        setStatus('findings');
+        setFindingsData(null);
+        pushUrl({ view: 'findings', runId: findingsRunOptions[0]?.id });
+        break;
+      case 'reports':
+        setStatus('reports');
+        pushUrl({ view: 'reports' });
+        break;
+      case 'settings':
+        setStatus('settings');
+        pushUrl({ view: 'settings' });
+        break;
+    }
+    if (isMobileRef.current) setSidebarOpen(false);
+  }, [status, pushUrl, handleNewRun]);
+
+  const GOAL_LABELS: Record<string, string> = {
+    onboarding: 'Onboarding', audit: 'Audit', 'audit-generic': 'Generic Audit',
+    migration: 'Migration', 'component-map': 'Components', 'ci-check': 'CI Check',
+    'security-review': 'Security', nextjs: 'Next.js', accessibility: 'Accessibility',
+    all: 'All Goals',
+  };
+
+  // Build children-by-parent map for multi-goal detection
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, HistoryItem[]>();
+    for (const h of history) {
+      if (h.parentRunId) {
+        const children = map.get(h.parentRunId) ?? [];
+        children.push(h);
+        map.set(h.parentRunId, children);
+      }
+    }
+    return map;
+  }, [history]);
+
+  // Runs available for findings triage (have findings, deduplicated for multi-goal)
+  const findingsRunOptions = useMemo(() => {
+    const options: HistoryItem[] = [];
+
+    // Synthesize entries for multi-goal parent groups (parents aren't in history[])
+    for (const [parentId, children] of childrenByParent) {
+      const first = children[0];
+      const totalFindings = children.reduce((sum, c) => sum + (c.findingsCount ?? 0), 0);
+      if (totalFindings === 0) continue;
+      options.push({
+        id: parentId,
+        goal: 'all',
+        repoName: first.repoName,
+        startedAt: first.startedAt,
+        completedAt: first.completedAt,
+        hasResult: true,
+        findingsCount: totalFindings,
+        repoUrl: first.repoUrl,
+      });
+    }
+
+    // Add single (non-child) runs with findings
+    for (const h of history) {
+      if (!h.parentRunId && h.findingsCount && h.findingsCount > 0) {
+        options.push(h);
+      }
+    }
+
+    // Sort by startedAt descending (most recent first)
+    options.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    return options;
+  }, [history, childrenByParent]);
+
+  // Load findings for a specific run
+  const loadFindingsForRun = useCallback(async (targetRun: HistoryItem) => {
+    if (findingsLoadingRef.current) return;
+    findingsLoadingRef.current = true;
+    setFindingsLoading(true);
+    try {
+      const children = childrenByParent.get(targetRun.id);
+      if (children && children.length > 0) {
+        const allFindings: Finding[] = [];
+        const goalMap: Record<string, string> = {};
+        for (const child of children) {
+          const res = await fetch(`/api/history/${encodeURIComponent(child.id)}/findings`);
+          const data = await res.json();
+          if (data.findings) {
+            const normalized = normalizeFindings(data.findings);
+            for (const f of normalized) {
+              goalMap[f.id] = GOAL_LABELS[child.goal] ?? child.goal;
+            }
+            allFindings.push(...normalized);
+          }
+        }
+        const dedupedFindings = deduplicateFindings(allFindings);
+        const dedupedGoalMap: Record<string, string> = {};
+        for (const f of dedupedFindings) dedupedGoalMap[f.id] = goalMap[f.id];
+        setFindingsData({
+          findings: dedupedFindings,
+          runId: targetRun.id,
+          repoName: targetRun.repoName,
+          goal: children.length > 1 ? 'all' : targetRun.goal,
+          startedAt: targetRun.startedAt,
+          repoUrl: targetRun.repoUrl,
+          goalMap: dedupedGoalMap,
+          isMultiGoal: true,
+        });
+      } else {
+        const res = await fetch(`/api/history/${encodeURIComponent(targetRun.id)}/findings`);
+        const data = await res.json();
+        const findings = data.findings ? normalizeFindings(data.findings) : [];
+        setFindingsData({
+          findings,
+          runId: targetRun.id,
+          repoName: targetRun.repoName,
+          goal: targetRun.goal,
+          startedAt: targetRun.startedAt,
+          repoUrl: targetRun.repoUrl,
+        });
+      }
+    } catch (err) {
+      console.error('[findings] Failed to load:', err);
+      setFindingsData(null);
+    } finally {
+      findingsLoadingRef.current = false;
+      setFindingsLoading(false);
+    }
+  }, [childrenByParent]);
+
+  // Load findings for triage page — from most recent completed run
+  const loadFindingsForTriage = useCallback(async () => {
+    if (findingsRunOptions.length === 0) {
+      setFindingsData(null);
+      return;
+    }
+    const target = findingsRunOptions[0];
+    await loadFindingsForRun(target);
+    replaceUrl({ view: 'findings', runId: target.id });
+  }, [findingsRunOptions, loadFindingsForRun, replaceUrl]);
+
+  const handleRunSwitch = useCallback((runId: string) => {
+    const run = findingsRunOptions.find(r => r.id === runId);
+    if (run) {
+      loadFindingsForRun(run);
+      pushUrl({ view: 'findings', runId });
+    }
+  }, [findingsRunOptions, loadFindingsForRun, pushUrl]);
+
+  // Load findings when entering findings view — use URL runId if present,
+  // otherwise fall back to the most recent run with findings.
+  const urlRunIdRef = useRef<string | undefined>(undefined);
+  urlRunIdRef.current = urlView.view === 'findings' ? urlView.runId : undefined;
+
+  useEffect(() => {
+    if (status !== 'findings' || findingsData || findingsLoadingRef.current) return;
+    const urlRunId = urlRunIdRef.current;
+    if (urlRunId) {
+      const targetRun = findingsRunOptions.find(r => r.id === urlRunId);
+      if (targetRun) {
+        loadFindingsForRun(targetRun);
+        return;
+      }
+    }
+    loadFindingsForTriage();
+  }, [status, findingsData, findingsRunOptions, loadFindingsForRun, loadFindingsForTriage]);
+
+  const handleFindingSelect = useCallback((findingId: string | null) => {
+    const currentRunId = findingsData?.runId;
+    if (findingId) {
+      pushUrl({ view: 'findings', runId: currentRunId, findingId });
+    } else {
+      pushUrl({ view: 'findings', runId: currentRunId });
+    }
+  }, [pushUrl, findingsData?.runId]);
+
+  const sidebarCollapsedRef = useRef(sidebarCollapsed);
+  sidebarCollapsedRef.current = sidebarCollapsed;
+  const prevSidebarCollapsedRef = useRef(sidebarCollapsed);
+  const handleFindingsSidebarCollapse = useCallback((panelIsOpen: boolean) => {
+    if (panelIsOpen) {
+      prevSidebarCollapsedRef.current = sidebarCollapsedRef.current;
+      setSidebarCollapsed(true);
+    } else {
+      setSidebarCollapsed(prevSidebarCollapsedRef.current);
+    }
+  }, []);
+
   const handleToggleCompareMode = useCallback(() => {
     setCompareMode(prev => !prev);
     setCompareSelections([]);
@@ -523,7 +758,7 @@ export default function DashboardPage() {
       setStatus('complete');
       setActiveTab(initialTab ?? 'overview');
       pushUrl({ view: 'run', runId: id, tab: initialTab });
-      if (window.innerWidth < 1024) setSidebarOpen(false);
+      if (isMobileRef.current) setSidebarOpen(false);
       return;
     }
 
@@ -543,7 +778,7 @@ export default function DashboardPage() {
         setStatus('complete');
         setActiveTab(initialTab ?? 'overview');
         pushUrl({ view: 'multi', parentId: id, tab: initialTab });
-        if (window.innerWidth < 1024) setSidebarOpen(false);
+        if (isMobileRef.current) setSidebarOpen(false);
       } catch (err) {
         console.error('[history] Failed to load group:', id, err);
       } finally {
@@ -572,7 +807,7 @@ export default function DashboardPage() {
       setStatus('complete');
       setActiveTab(initialTab ?? 'overview');
       pushUrl({ view: 'run', runId: id, tab: initialTab });
-      if (window.innerWidth < 1024) setSidebarOpen(false);
+      if (isMobileRef.current) setSidebarOpen(false);
       return;
     }
 
@@ -612,7 +847,7 @@ export default function DashboardPage() {
       setStatus('complete');
       setActiveTab(initialTab ?? 'overview');
       pushUrl({ view: 'run', runId: id, tab: initialTab });
-      if (window.innerWidth < 1024) setSidebarOpen(false);
+      if (isMobileRef.current) setSidebarOpen(false);
     } catch (err) {
       console.error('[history] Failed to load run:', id, err);
     } finally {
@@ -734,172 +969,112 @@ export default function DashboardPage() {
     return <div className="flex flex-col h-screen overflow-hidden bg-canvas" />;
   }
 
+  const isPageView = status === 'runs' || status === 'findings' || status === 'reports' || status === 'settings';
+  const showRunContextBar = status !== 'idle' && status !== 'comparing' && !isPageView && (currentRun?.repoName || multiRunData?.kind === 'multi');
+
   return (
-    <div data-component="DashboardPage" className="relative flex flex-col h-screen overflow-hidden bg-canvas">
-      <header className="bg-surface-translucent backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-4 h-12 flex items-center gap-3 sticky top-0 z-10 shrink-0">
-        {/* Sidebar toggle */}
-        <button
-          onClick={() => setSidebarOpen((prev) => !prev)}
-          className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors cursor-pointer"
-          title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-          aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-        >
-          <svg className="w-4 h-4 text-secondary-label" viewBox="0 0 16 16" fill="currentColor">
-            <rect y="2" width="16" height="1.5" rx="0.75" />
-            <rect y="7.25" width="16" height="1.5" rx="0.75" />
-            <rect y="12.5" width="16" height="1.5" rx="0.75" />
-          </svg>
-        </button>
+    <div data-component="DashboardPage" className="relative flex h-screen overflow-hidden bg-canvas">
+      {/* Global sidebar navigation */}
+      <AppSidebar
+        open={sidebarOpen}
+        collapsed={sidebarCollapsed}
+        activeSection={activeSection}
+        onNavigate={handleSidebarNavigate}
+        onClose={() => setSidebarOpen(false)}
+      />
 
-        {/* Brand */}
-        <span className="text-[20px] font-bold text-tint tracking-[-0.02em] font-brand select-none whitespace-nowrap shrink-0">
-          radar
-        </span>
-
-        <div className="ml-auto flex gap-2 items-center">
-          {/* New Analysis — always accessible from header */}
-          {!isRunningOrPaused && (
-            <button
-              onClick={handleNewRun}
-              className="flex items-center gap-1.5 h-7 rounded-md bg-tint text-white px-3 text-[12px] font-semibold cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-              New Analysis
-            </button>
-          )}
-          {/* Theme toggle */}
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top bar: minimal — toggle + actions */}
+        <header className="bg-surface-translucent backdrop-blur-xl border-b border-separator px-4 h-12 flex items-center gap-3 sticky top-0 z-10 shrink-0">
+          {/* Sidebar toggle: mobile = open/close, desktop = collapse/expand */}
           <button
-            onClick={cycleTheme}
+            onClick={() => {
+              if (isMobileRef.current) {
+                setSidebarOpen((prev) => !prev);
+              } else {
+                handleToggleSidebarCollapse();
+              }
+            }}
             className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors cursor-pointer"
-            title={`Theme: ${themeMode}`}
-            aria-label={`Switch theme, current: ${themeMode}`}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {themeMode === 'light' ? (
-              <svg
-                className="w-4 h-4 text-secondary-label"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="5" />
-                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-              </svg>
-            ) : themeMode === 'dark' ? (
-              <svg
-                className="w-4 h-4 text-secondary-label"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
+            {sidebarCollapsed ? (
+              <PanelLeft className="w-4 h-4 text-secondary-label" strokeWidth={1.5} />
             ) : (
-              <svg
-                className="w-4 h-4 text-secondary-label"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="2" y="3" width="20" height="14" rx="2" />
-                <path d="M8 21h8M12 17v4" />
-              </svg>
+              <PanelLeftClose className="w-4 h-4 text-secondary-label" strokeWidth={1.5} />
             )}
           </button>
-        </div>
-      </header>
 
-      {/* Context bar: shows run info (hidden when idle) */}
-      {status === 'comparing' && compareData && (
-        <ContextBar
-          status="comparing"
-          repoName=""
-          onStop={handleExitCompare}
-          compareRunNames={[compareData.runA.repoName, compareData.runB.repoName]}
-          compareSummary={compareData.diff.summary}
-          onExitCompare={handleExitCompare}
-        />
-      )}
-      {status !== 'idle' && status !== 'comparing' && (currentRun?.repoName || multiRunData?.kind === 'multi') && (
-        <ContextBar
-          status={status as 'running' | 'budget_paused' | 'complete' | 'error'}
-          repoName={multiRunData?.kind === 'multi' ? multiRunData.data.repoName : (currentRun?.repoName ?? '')}
-          goal={multiRunData?.kind === 'multi' ? 'all' : currentRun?.goal}
-          scorecard={multiRunData?.kind === 'multi' ? multiRunData.data.mergedScorecard : result?.scorecard}
-          toolCalls={currentRun?.toolCalls ?? 0}
-          budget={currentRun?.budget ?? 0}
-          onStop={handleStop}
-          onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
-          activeTab={activeTab}
-        />
-      )}
+          {/* Mobile brand (visible only when sidebar is hidden) */}
+          <span className="text-[18px] font-bold text-brand tracking-[-0.02em] font-brand select-none whitespace-nowrap shrink-0 lg:hidden">
+            radar
+          </span>
 
-      <div className="flex-1 flex overflow-hidden">
-        {USE_SIDEBAR_V2 ? (
-          <AppSidebar
-            open={sidebarOpen}
-            history={fullHistory}
-            activeRunId={selectedRunId}
-            currentRepoName={currentRun?.repoName}
-            currentGoal={currentRun?.goal}
-            isRunning={isRunningOrPaused}
-            onSelectHistory={handleSelectHistory}
-            onPrefetch={handlePrefetch}
-            onNewRun={handleNewRun}
-            onClose={() => setSidebarOpen(false)}
-            compareMode={compareMode}
-            compareSelections={compareSelections}
-            onToggleCompare={handleToggleCompareMode}
-            onCompareSelect={handleCompareSelect}
-            onCompare={handleCompare}
-            hasMore={hasMoreHistory}
-            onLoadMore={handleLoadMore}
-            activeTab={activeTab}
-            onSectionClick={handleTabChange}
-            showSections={(status === 'complete' || status === 'error') && !!runViewMode}
-            compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
-            activeInfoPage={status === 'info' ? activeInfoPage : undefined}
-            onInfoNavigate={handleInfoNavigate}
+          <div className="ml-auto flex gap-2 items-center">
+            {!isRunningOrPaused && (
+              <button
+                onClick={handleNewRun}
+                className="flex items-center gap-1.5 h-7 rounded-md bg-tint text-white px-3 text-[12px] font-semibold cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                New Analysis
+              </button>
+            )}
+            <button
+              onClick={cycleTheme}
+              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors cursor-pointer"
+              title={`Theme: ${themeMode}`}
+              aria-label={`Switch theme, current: ${themeMode}`}
+            >
+              {themeMode === 'light' ? (
+                <svg className="w-4 h-4 text-secondary-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="5" />
+                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                </svg>
+              ) : themeMode === 'dark' ? (
+                <svg className="w-4 h-4 text-secondary-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-secondary-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <path d="M8 21h8M12 17v4" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* Context bar: shows run info (visible on run-scoped pages) */}
+        {status === 'comparing' && compareData && (
+          <ContextBar
+            status="comparing"
+            repoName=""
+            onStop={handleExitCompare}
+            compareRunNames={[compareData.runA.repoName, compareData.runB.repoName]}
+            compareSummary={compareData.diff.summary}
+            onExitCompare={handleExitCompare}
           />
-        ) : (
-          <Sidebar
-            open={sidebarOpen}
-            history={fullHistory}
-            activeRunId={selectedRunId}
-            currentRepoName={currentRun?.repoName}
-            currentGoal={currentRun?.goal}
-            isRunning={isRunningOrPaused}
-            onSelectHistory={handleSelectHistory}
-            onPrefetch={handlePrefetch}
-            onNewRun={handleNewRun}
-            onClose={() => setSidebarOpen(false)}
-            compareMode={compareMode}
-            compareSelections={compareSelections}
-            onToggleCompare={handleToggleCompareMode}
-            onCompareSelect={handleCompareSelect}
-            onCompare={handleCompare}
-            hasMore={hasMoreHistory}
-            onLoadMore={handleLoadMore}
+        )}
+        {showRunContextBar && (
+          <ContextBar
+            status={status as 'running' | 'budget_paused' | 'complete' | 'error'}
+            repoName={multiRunData?.kind === 'multi' ? multiRunData.data.repoName : (currentRun?.repoName ?? '')}
+            goal={multiRunData?.kind === 'multi' ? 'all' : currentRun?.goal}
+            scorecard={multiRunData?.kind === 'multi' ? multiRunData.data.mergedScorecard : result?.scorecard}
+            toolCalls={currentRun?.toolCalls ?? 0}
+            budget={currentRun?.budget ?? 0}
+            onStop={handleStop}
+            onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
             activeTab={activeTab}
-            onSectionClick={handleTabChange}
-            showSections={(status === 'complete' || status === 'error') && !!runViewMode}
-            compareHighlight={status === 'comparing' && compareData ? [compareSelections[0], compareSelections[1]] as [string, string] : null}
-            activeInfoPage={status === 'info' ? activeInfoPage : undefined}
-            onInfoNavigate={handleInfoNavigate}
           />
         )}
 
-        <main className="flex-1 flex flex-col overflow-hidden relative" aria-label="Main content">
+        <main className="flex-1 flex flex-col overflow-hidden relative" role="main" aria-label="Main content">
           {(historyLoading || compareLoading) && (
             <div key="loading" className="flex-1 flex flex-col overflow-hidden">
               <RunLoadingSkeleton />
@@ -974,10 +1149,89 @@ export default function DashboardPage() {
               <p className="text-sm text-secondary-label max-w-sm">{friendlyError(errorMessage)}</p>
               <button
                 onClick={handleNewRun}
-                className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+                className="bg-tint text-white rounded-lg h-11 px-5 text-sm font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-tint-focus"
               >
                 Try Again
               </button>
+            </div>
+          )}
+
+          {/* Runs list page */}
+          {status === 'runs' && (
+            <div key="runs" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+              <RunsListView
+                history={history}
+                onSelectRun={handleSelectHistory}
+                onPrefetch={handlePrefetch}
+                onNewAnalysis={handleNewRun}
+                hasMore={hasMoreHistory}
+                onLoadMore={handleLoadMore}
+              />
+            </div>
+          )}
+
+          {/* Findings triage page */}
+          {status === 'findings' && !findingsLoading && (
+            <FindingsTriagePage
+              findings={findingsData?.findings ?? []}
+              runId={findingsData?.runId ?? ''}
+              repoName={findingsData?.repoName}
+              goal={findingsData?.goal}
+              startedAt={findingsData?.startedAt}
+              repoUrl={findingsData?.repoUrl}
+              isMultiGoal={findingsData?.isMultiGoal}
+              goalMap={findingsData?.goalMap}
+              availableRuns={findingsRunOptions}
+              onRunSwitch={handleRunSwitch}
+              onFindingSelect={handleFindingSelect}
+              selectedFindingId={urlView.view === 'findings' ? urlView.findingId : undefined}
+              onSidebarCollapse={handleFindingsSidebarCollapse}
+            />
+          )}
+          {status === 'findings' && findingsLoading && (
+            <div key="findings-loading" className="flex-1 flex flex-col overflow-hidden">
+              <RunLoadingSkeleton />
+            </div>
+          )}
+
+          {/* Reports page */}
+          {status === 'reports' && (
+            <div key="reports" className="animate-slide-up flex-1 flex flex-col overflow-y-auto px-6 py-8">
+              <h1 className="text-xl font-bold font-brand text-label tracking-tight mb-6">Reports</h1>
+              <div className="flex flex-col items-center justify-center py-16 gap-4">
+                <svg className="w-10 h-10 text-quaternary-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
+                </svg>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-secondary-label">No reports yet</p>
+                  <p className="text-[12px] text-tertiary-label mt-1 max-w-xs">
+                    Complete an analysis, then export a PDF or Markdown report from the Overview tab.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Settings page */}
+          {status === 'settings' && (
+            <div key="settings" className="animate-slide-up flex-1 flex flex-col overflow-y-auto px-6 py-8">
+              <h1 className="text-xl font-bold font-brand text-label tracking-tight mb-6">Settings</h1>
+              <div className="flex flex-col items-center justify-center py-16 gap-4">
+                <svg className="w-10 h-10 text-quaternary-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-secondary-label">Settings coming soon</p>
+                  <p className="text-[12px] text-tertiary-label mt-1 max-w-xs">
+                    GitHub tokens, Jira integration, and Azure DevOps connections will be configured here.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </main>
@@ -995,7 +1249,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
 
       <CommandPalette
         open={paletteOpen}

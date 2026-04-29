@@ -71,6 +71,44 @@ describe('useUrlState', () => {
     it('handles /compare with only one id as idle', () => {
       expect(parseUrl('/compare/only-one')).toEqual({ view: 'idle' });
     });
+
+    // ─── New URL patterns (E3: Global Navigation) ─────────────
+
+    it('parses /runs as runs view', () => {
+      expect(parseUrl('/runs')).toEqual({ view: 'runs' });
+    });
+
+    it('parses /findings as findings view', () => {
+      expect(parseUrl('/findings')).toEqual({
+        view: 'findings',
+        runId: undefined,
+        findingId: undefined,
+      });
+    });
+
+    it('parses /findings/{runId} as findings for a run', () => {
+      expect(parseUrl('/findings/run-abc-123')).toEqual({
+        view: 'findings',
+        runId: 'run-abc-123',
+        findingId: undefined,
+      });
+    });
+
+    it('parses /findings/{runId}/{findingId} as findings detail view', () => {
+      expect(parseUrl('/findings/run-abc-123/finding-xyz')).toEqual({
+        view: 'findings',
+        runId: 'run-abc-123',
+        findingId: 'finding-xyz',
+      });
+    });
+
+    it('parses /reports as reports view', () => {
+      expect(parseUrl('/reports')).toEqual({ view: 'reports' });
+    });
+
+    it('parses /settings as settings view', () => {
+      expect(parseUrl('/settings')).toEqual({ view: 'settings' });
+    });
   });
 
   describe('buildUrl', () => {
@@ -97,6 +135,32 @@ describe('useUrlState', () => {
     it('builds /multi/{id} for multi-goal view', () => {
       expect(buildUrl({ view: 'multi', parentId: 'xyz' })).toBe('/multi/xyz');
     });
+
+    // ─── New URL patterns (E3: Global Navigation) ─────────────
+
+    it('builds /runs for runs view', () => {
+      expect(buildUrl({ view: 'runs' })).toBe('/runs');
+    });
+
+    it('builds /findings for findings list', () => {
+      expect(buildUrl({ view: 'findings' })).toBe('/findings');
+    });
+
+    it('builds /findings/{runId} for run-scoped findings', () => {
+      expect(buildUrl({ view: 'findings', runId: 'run-abc' })).toBe('/findings/run-abc');
+    });
+
+    it('builds /findings/{runId}/{findingId} for finding detail', () => {
+      expect(buildUrl({ view: 'findings', runId: 'run-abc', findingId: 'finding-xyz' })).toBe('/findings/run-abc/finding-xyz');
+    });
+
+    it('builds /reports for reports view', () => {
+      expect(buildUrl({ view: 'reports' })).toBe('/reports');
+    });
+
+    it('builds /settings for settings view', () => {
+      expect(buildUrl({ view: 'settings' })).toBe('/settings');
+    });
   });
 
   describe('round-trip', () => {
@@ -107,10 +171,17 @@ describe('useUrlState', () => {
       { view: 'run' as const, runId: 'test-uuid', tab: 'investigation' as const },
       { view: 'compare' as const, compareIds: ['id-a', 'id-b'] as [string, string] },
       { view: 'multi' as const, parentId: 'parent-id' },
+      // New patterns
+      { view: 'runs' as const },
+      { view: 'findings' as const },
+      { view: 'findings' as const, runId: 'run-abc' },
+      { view: 'findings' as const, runId: 'run-abc', findingId: 'finding-xyz' },
+      { view: 'reports' as const },
+      { view: 'settings' as const },
     ];
 
     for (const state of cases) {
-      it(`round-trips ${state.view}${('tab' in state && state.tab) ? `?tab=${state.tab}` : ''}`, () => {
+      it(`round-trips ${state.view}${'findingId' in state && state.findingId ? `/${state.findingId}` : ''}${'tab' in state && state.tab ? `?tab=${state.tab}` : ''}`, () => {
         const url = buildUrl(state);
         const searchParams = url.includes('?')
           ? new URLSearchParams(url.split('?')[1])
@@ -121,6 +192,15 @@ describe('useUrlState', () => {
         // For run views without explicit tab, parsed.tab will be undefined
         if (state.view === 'run' && !('tab' in state)) {
           expect(parsed).toEqual({ ...state, tab: undefined });
+        } else if (state.view === 'multi' && !('tab' in state)) {
+          expect(parsed).toEqual({ ...state, tab: undefined });
+        } else if (state.view === 'findings') {
+          const expected = {
+            ...state,
+            runId: ('runId' in state ? state.runId : undefined) ?? undefined,
+            findingId: ('findingId' in state ? state.findingId : undefined) ?? undefined,
+          };
+          expect(parsed).toEqual(expected);
         } else {
           expect(parsed).toEqual(state);
         }

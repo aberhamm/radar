@@ -334,7 +334,7 @@ describe('recordFinding', () => {
     expect(state.findings[0].fingerprint!.length).toBe(64); // SHA-256 hex
   });
 
-  it('produces stable fingerprints for same category + title + evidence file', async () => {
+  it('merges duplicate findings at record time (same category, overlapping evidence)', async () => {
     const state = makeState();
     state.filesRead.add('src/middleware.ts');
     const finding1: Finding = {
@@ -349,16 +349,22 @@ describe('recordFinding', () => {
     const finding2: Finding = {
       id: 'FP-003',
       category: 'security',
-      severity: 'medium', // different severity
-      title: 'Missing auth middleware', // same title
-      description: 'Second run different description',
-      evidence: [{ filePath: 'src/middleware.ts', lineNumber: 10, snippet: 'const apiKey = process.env.SITECORE_API_KEY;', description: 'Still no auth' }],
+      severity: 'medium',
+      title: 'Missing auth middleware',
+      description: 'Second run different description that is longer than the first',
+      evidence: [{ filePath: 'src/middleware.ts', lineNumber: 5, snippet: 'const apiKey = process.env.SITECORE_API_KEY;', description: 'Still no auth' }],
       tags: ['auth'],
     };
     await recordFinding(state, { finding: finding1 });
-    await recordFinding(state, { finding: finding2 });
-    // Same category + title + first evidence file → same fingerprint
-    expect(state.findings[0].fingerprint).toBe(state.findings[1].fingerprint);
+    const result = await recordFinding(state, { finding: finding2 });
+    // Merged into one finding — not two
+    expect(state.findings).toHaveLength(1);
+    expect(state.findings[0].severity).toBe('high');
+    expect(state.findings[0].description).toContain('longer than the first');
+    expect(state.findings[0].tags).toContain('auth');
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('merged into existing')]),
+    );
   });
 
   it('produces different fingerprints for different categories', async () => {

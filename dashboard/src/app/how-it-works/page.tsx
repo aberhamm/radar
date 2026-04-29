@@ -10,7 +10,7 @@ export default function HowItWorksPage() {
   return (
     <div data-component="HowItWorksPage" className="flex flex-col h-screen overflow-hidden bg-canvas">
       {/* Header — matches dashboard chrome */}
-      <header className="bg-surface-translucent backdrop-blur-xl shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-4 h-12 flex items-center gap-3 sticky top-0 z-10 shrink-0">
+      <header className="bg-surface-translucent backdrop-blur-xl border-b border-separator px-4 h-12 flex items-center gap-3 sticky top-0 z-10 shrink-0">
         <Link
           href="/"
           className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-elevated transition-colors"
@@ -21,7 +21,7 @@ export default function HowItWorksPage() {
           </svg>
         </Link>
 
-        <span className="text-[20px] font-bold text-tint tracking-[-0.02em] font-brand select-none whitespace-nowrap shrink-0">
+        <span className="text-[20px] font-bold text-brand tracking-[-0.02em] font-brand select-none whitespace-nowrap shrink-0">
           radar
         </span>
 

@@ -2,6 +2,7 @@ import type { Finding, FindingCategory, Severity, Evidence, DocRef } from '../..
 import type { AgentState } from '../../types/state.js';
 import { verifyAndCorrectEvidence } from './verifyEvidence.js';
 import { computeFingerprint } from '../../ci/fingerprintUtils.js';
+import { evidenceOverlap, mergeFindings } from './deduplicateFindings.js';
 
 export interface RecordFindingInput {
   finding: Finding;
@@ -271,6 +272,8 @@ export async function recordFinding(
   const warnings: string[] = [];
   let rejectedEvidenceCount = 0;
 
+  const mergedIntoIds: string[] = [];
+
   for (const finding of findings) {
     // Warn if finding has no evidence at all
     if (finding.evidence.length === 0) {
@@ -322,6 +325,26 @@ export async function recordFinding(
     // After verification, check description-evidence coherence
     const coherenceWarnings = checkDescriptionEvidenceCoherence(finding);
     warnings.push(...coherenceWarnings);
+
+    // Record-time dedup: if an existing finding in the same category has 50%+
+    // evidence overlap, merge into it instead of keeping both.
+    const existingIdx = state.findings.findIndex(
+      (existing) =>
+        existing !== finding &&
+        existing.category === finding.category &&
+        evidenceOverlap(existing, finding) >= 0.5,
+    );
+    if (existingIdx !== -1) {
+      const merged = mergeFindings(state.findings[existingIdx], finding);
+      state.findings[existingIdx] = merged;
+      // Remove the eagerly-pushed duplicate
+      const pushIdx = state.findings.lastIndexOf(finding);
+      if (pushIdx !== -1) state.findings.splice(pushIdx, 1);
+      mergedIntoIds.push(state.findings[existingIdx].id);
+      warnings.push(
+        `Finding "${finding.id}" merged into existing "${merged.id}" (overlapping evidence in same category).`,
+      );
+    }
   }
 
   return {

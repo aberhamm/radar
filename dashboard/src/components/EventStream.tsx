@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import type { StepEvent } from '@/lib/agentSession';
+import { sevColor } from '@/lib/runTransform';
 
 interface EventStreamProps {
   events: StepEvent[];
@@ -110,15 +111,6 @@ function parseFinding(ev: StepEvent): { id: string; category: string; severity: 
   }
 }
 
-function severityColor(sev: string): string {
-  switch (sev) {
-    case 'critical': return 'var(--color-danger)';
-    case 'high': return 'var(--color-danger)';
-    case 'medium': return 'var(--color-warning)';
-    case 'low': return 'var(--color-success)';
-    default: return 'var(--color-tertiary-label)';
-  }
-}
 
 const FindingCard = memo(function FindingCard({ event }: { event: StepEvent }) {
   const finding = useMemo(() => parseFinding(event), [event]);
@@ -126,14 +118,14 @@ const FindingCard = memo(function FindingCard({ event }: { event: StepEvent }) {
 
   return (
     <div
-      className="bg-surface rounded-lg border border-separator shadow-sm p-3 mt-1.5"
+      className="bg-surface rounded-lg border border-separator shadow-sm p-3 mt-1.5 animate-in fade-in-0 slide-in-from-top-2 duration-300"
     >
       <div className="flex items-center gap-2 mb-1.5">
         <span
           className="text-[10px] font-bold uppercase tracking-wide rounded-md px-2 py-0.5"
           style={{
-            color: severityColor(finding.severity),
-            background: `${severityColor(finding.severity)}10`,
+            color: sevColor(finding.severity),
+            background: `${sevColor(finding.severity)}10`,
           }}
         >
           {finding.severity}
@@ -244,14 +236,14 @@ const ToolCallChip = memo(function ToolCallChip({ event, isExpanded, onToggle, b
         onClick={hasDetail ? onToggle : undefined}
         className={`flex items-center gap-1.5 w-full text-left rounded-md px-2.5 py-1.5 text-xs font-mono transition-all ${
           isExpanded
-            ? 'bg-[rgb(0_113_227/0.05)] border border-[rgb(0_113_227/0.2)]'
+            ? 'bg-elevated border border-separator'
             : 'bg-elevated border border-transparent hover:border-separator'
         } ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
       >
         <span className="text-quaternary-label text-[10px] shrink-0">#{event.step}</span>
         <span className="font-medium text-label whitespace-nowrap">{event.action}</span>
         {backRef != null && (
-          <span className="text-[9px] text-tint opacity-60 shrink-0">← #{backRef}</span>
+          <span className="text-[9px] text-tertiary-label opacity-60 shrink-0">← #{backRef}</span>
         )}
         {event.details && <ToolDetailsBadge action={event.action} details={event.details} />}
         {event.result && (
@@ -296,19 +288,20 @@ const ToolCallChip = memo(function ToolCallChip({ event, isExpanded, onToggle, b
 
 // ─── Special event badges ─────────────────────────────────────────
 
+const SPECIAL_EVENT_CONFIG: Record<string, { color: string; bg: string; icon: string }> = {
+  model_switch: { color: 'var(--color-tint)', bg: 'color-mix(in srgb, var(--color-tint) 6%, transparent)', icon: '⇄' },
+  budget_warning: { color: 'var(--color-warning)', bg: 'color-mix(in srgb, var(--color-warning) 6%, transparent)', icon: '!' },
+  assemble_output: { color: 'var(--color-success)', bg: 'color-mix(in srgb, var(--color-success) 6%, transparent)', icon: '✓' },
+  budget_plan: { color: 'var(--color-info)', bg: 'color-mix(in srgb, var(--color-info) 6%, transparent)', icon: '▤' },
+  budget_rebalance: { color: 'var(--color-accent-purple)', bg: 'color-mix(in srgb, var(--color-accent-purple) 6%, transparent)', icon: '⇋' },
+};
+
 function SpecialEvent({ event }: { event: StepEvent }) {
-  const config: Record<string, { color: string; bg: string; icon: string }> = {
-    model_switch: { color: '#0071e3', bg: 'rgba(0,113,227,0.06)', icon: '⇄' },
-    budget_warning: { color: '#ff9500', bg: 'rgba(255,149,0,0.06)', icon: '!' },
-    assemble_output: { color: '#34c759', bg: 'rgba(52,199,89,0.06)', icon: '✓' },
-    budget_plan: { color: '#5856d6', bg: 'rgba(88,86,214,0.06)', icon: '▤' },
-    budget_rebalance: { color: '#af52de', bg: 'rgba(175,82,222,0.06)', icon: '⇋' },
-  };
-  const s = config[event.type ?? ''] ?? config[event.action ?? ''] ?? config.budget_warning;
+  const s = SPECIAL_EVENT_CONFIG[event.type ?? ''] ?? SPECIAL_EVENT_CONFIG[event.action ?? ''] ?? SPECIAL_EVENT_CONFIG.budget_warning;
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 rounded-lg mt-2 text-xs"
+      className="flex items-center gap-2 px-3 py-2 rounded-lg mt-2 text-xs animate-in fade-in-0 slide-in-from-top-2 duration-300"
       style={{ background: s.bg }}
     >
       <span className="font-bold text-sm" style={{ color: s.color }}>{s.icon}</span>
@@ -322,9 +315,18 @@ function SpecialEvent({ event }: { event: StepEvent }) {
 
 // ─── Turn card ────────────────────────────────────────────────────
 
-function TurnCard({ turn, turnIndex, isLatest, fileOriginMap }: { turn: Turn; turnIndex: number; isLatest: boolean; fileOriginMap: Map<string, number> }) {
+type TurnStatus = 'active' | 'complete';
+
+const STATUS_OPACITY: Record<TurnStatus, string> = {
+  active: 'opacity-100',
+  complete: 'opacity-75',
+};
+
+function TurnCard({ turn, turnIndex, isLatest, fileOriginMap, status, isLive }: { turn: Turn; turnIndex: number; isLatest: boolean; fileOriginMap: Map<string, number>; status: TurnStatus; isLive: boolean }) {
   const [expandedCalls, setExpandedCalls] = useState<Set<number>>(new Set());
-  const [reasoningExpanded, setReasoningExpanded] = useState(false);
+  const [manualToggle, setManualToggle] = useState<boolean | null>(null);
+
+  const reasoningExpanded = manualToggle ?? (status === 'active' && isLive);
 
   const toggleCall = useCallback((step: number) => {
     setExpandedCalls(prev => {
@@ -357,22 +359,21 @@ function TurnCard({ turn, turnIndex, isLatest, fileOriginMap }: { turn: Turn; tu
 
   return (
     <div
-      className="bg-surface rounded-xl border border-separator shadow-sm mx-4 mb-2 p-4 hover:shadow-elevated hover:-translate-y-[1px] transition-all duration-200"
-      style={isLatest ? { animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both' } : undefined}
+      className={`bg-surface rounded-xl border border-separator shadow-sm p-4 hover:shadow-elevated hover:-translate-y-[1px] transition-all duration-200 ${STATUS_OPACITY[status]} ${isLatest ? 'animate-in fade-in-0 slide-in-from-bottom-3 duration-350' : ''}`}
     >
       {/* Turn header */}
-      <div className={`flex gap-2.5 items-start ${(turn.toolCalls.length > 0 || turn.findings.length > 0) ? 'mb-2.5' : ''}`}>
+      <div className={`flex gap-2.5 items-start ${(totalCalls > 0 || findingCount > 0) ? 'mb-2.5' : ''}`}>
         <span className="text-[10px] text-tertiary-label font-mono bg-elevated rounded-md px-2 py-0.5 shrink-0 mt-0.5 font-medium">
           {turnIndex + 1}
         </span>
         <div className="flex-1 min-w-0">
           <div
-            onClick={isLongReasoning ? () => setReasoningExpanded(!reasoningExpanded) : undefined}
+            onClick={isLongReasoning ? () => setManualToggle(!reasoningExpanded) : undefined}
             className={`text-[13px] text-label leading-relaxed ${isLongReasoning ? 'cursor-pointer' : ''}`}
           >
             {displayReasoning}
             {isLongReasoning && !reasoningExpanded && (
-              <span className="text-tint text-[11px] ml-1 font-medium">more</span>
+              <span className="text-secondary-label text-[11px] ml-1 font-medium">more</span>
             )}
           </div>
 
@@ -385,32 +386,37 @@ function TurnCard({ turn, turnIndex, isLatest, fileOriginMap }: { turn: Turn; tu
                 </span>
               )}
               {findingCount > 0 && (
-                <span className="text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ color: '#ff3b30', background: 'rgba(255,59,48,0.06)' }}>
+                <span className="text-[10px] font-semibold rounded px-1.5 py-0.5 text-danger bg-danger-subtle">
                   {findingCount} finding{findingCount > 1 ? 's' : ''}
                 </span>
               )}
             </div>
           )}
 
-          {totalCalls > 1 && (
-            <div className="mt-1.5">
+          <div className="flex items-center gap-2 mt-1.5">
+            {totalCalls > 1 && (
               <span className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-2 py-0.5 ${
                 isAllParallel
-                  ? 'bg-[rgb(0_113_227/0.06)] text-tint'
+                  ? 'bg-elevated text-secondary-label'
                   : 'bg-elevated text-tertiary-label'
               }`}>
                 {totalCalls} {isAllParallel ? 'parallel' : 'sequential'}
               </span>
-            </div>
-          )}
+            )}
+            {status === 'active' && isLive && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-tint animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-tint" />
+                Thinking…
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Finding count badge (always visible when turn has findings) */}
           {findingCount > 0 && !reasoningExpanded && (
             <span
-              className="text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center"
-              style={{ color: '#ff3b30', background: 'rgba(255,59,48,0.08)' }}
+              className="text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center text-danger bg-danger-subtle"
             >
               {findingCount}
             </span>
@@ -423,36 +429,36 @@ function TurnCard({ turn, turnIndex, isLatest, fileOriginMap }: { turn: Turn; tu
         </div>
       </div>
 
-      {/* Tool calls */}
-      {turn.toolCalls.length > 0 && (
+      {/* Tool calls + findings interleaved by step order */}
+      {(totalCalls > 0 || findingCount > 0) && (
         <div className="flex flex-wrap gap-1.5 ml-7">
-          {turn.toolCalls.map((tc, i) => {
-            // Find back-reference: check if this tool's args reference a file from a previous step
-            let backRef: number | null = null;
-            const argPaths = extractArgPaths(tc.args);
-            for (const p of argPaths) {
-              const origin = fileOriginMap.get(p);
-              if (origin != null && origin < tc.step) { backRef = origin; break; }
-            }
-            return (
-              <ToolCallChip
-                key={`${tc.step}-${tc.action}-${i}`}
-                event={tc}
-                isExpanded={expandedCalls.has(tc.step)}
-                onToggle={() => toggleCall(tc.step)}
-                backRef={backRef}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {/* Findings */}
-      {turn.findings.length > 0 && (
-        <div className="ml-7">
-          {turn.findings.map(f => (
-            <FindingCard key={`finding-${f.step}`} event={f} />
-          ))}
+          {[...turn.toolCalls.map(tc => ({ kind: 'tool' as const, ev: tc })),
+            ...turn.findings.map(f => ({ kind: 'finding' as const, ev: f }))]
+            .sort((a, b) => a.ev.step - b.ev.step)
+            .map((item) => {
+              if (item.kind === 'finding') {
+                return (
+                  <div key={`finding-${item.ev.step}`} className="w-full">
+                    <FindingCard event={item.ev} />
+                  </div>
+                );
+              }
+              let backRef: number | null = null;
+              const argPaths = extractArgPaths(item.ev.args);
+              for (const p of argPaths) {
+                const origin = fileOriginMap.get(p);
+                if (origin != null && origin < item.ev.step) { backRef = origin; break; }
+              }
+              return (
+                <ToolCallChip
+                  key={`${item.ev.step}-${item.ev.action}`}
+                  event={item.ev}
+                  isExpanded={expandedCalls.has(item.ev.step)}
+                  onToggle={() => toggleCall(item.ev.step)}
+                  backRef={backRef}
+                />
+              );
+            })}
         </div>
       )}
 
@@ -540,15 +546,38 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
         </div>
       )}
 
-      {turns.map((turn, i) => (
-        <TurnCard
-          key={turn.id}
-          turn={turn}
-          turnIndex={i}
-          isLatest={i === turns.length - 1}
-          fileOriginMap={fileOriginMap}
-        />
-      ))}
+      <div className="relative mx-4">
+        {/* Timeline connector */}
+        {turns.length > 1 && (
+          <div className="absolute left-6 top-6 bottom-6 w-px bg-separator" />
+        )}
+
+        {turns.map((turn, i) => {
+          const isLast = i === turns.length - 1;
+          const isLive = !readonly;
+          const turnStatus: TurnStatus = (isLast && isLive) ? 'active' : 'complete';
+          return (
+            <div key={turn.id} className="relative mb-2">
+              {/* Timeline dot */}
+              {turns.length > 1 && (
+                <div className={`absolute left-6 top-5 z-10 -translate-x-1/2 w-2 h-2 rounded-full border-2 border-surface ${
+                  turnStatus === 'active' ? 'bg-tint' : 'bg-separator'
+                }`} />
+              )}
+              <div className={turns.length > 1 ? 'ml-8' : ''}>
+                <TurnCard
+                  turn={turn}
+                  turnIndex={i}
+                  isLatest={isLast}
+                  fileOriginMap={fileOriginMap}
+                  status={turnStatus}
+                  isLive={isLive}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       {!autoScroll && (
         <button

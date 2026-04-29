@@ -22,6 +22,7 @@ import {
   type MultiGoalMetrics,
 } from '../output/multiGoalSummary.js';
 import { persistRunToTieredStorage } from '../output/runPersistence.js';
+import { deduplicateFindings } from '../tools/analysis/deduplicateFindings.js';
 import { ALL_GOALS, type GoalType, type AgentState } from '../types/state.js';
 import type { Scorecard } from '../types/output.js';
 
@@ -324,6 +325,14 @@ export async function handleAnalyzeAll(opts: {
         mergedFindings.push(f);
       }
     }
+  }
+
+  // Semantic dedup across the merged pool (catches cross-pass near-duplicates)
+  const dedupResult = deduplicateFindings(mergedFindings);
+  if (dedupResult.mergedCount > 0) {
+    console.log(`  Deduplication: merged ${dedupResult.mergedCount} duplicate finding(s). ${dedupResult.findings.length} retained.`);
+    mergedFindings.length = 0;
+    mergedFindings.push(...dedupResult.findings);
   }
 
   // Build merged shared state from last successful specialist (or Core)

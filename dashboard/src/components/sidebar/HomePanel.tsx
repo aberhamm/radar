@@ -66,7 +66,7 @@ export function HomePanel({
                 onClick={() => onSectionClick(section.id)}
                 className={`text-left rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors cursor-pointer ${
                   activeTab === section.id
-                    ? 'bg-[rgb(0_113_227/0.08)] text-tint'
+                    ? 'bg-tint-subtle text-tint'
                     : 'text-secondary-label hover:text-label hover:bg-surface'
                 }`}
               >

@@ -132,7 +132,7 @@ export function RunLoadingSkeleton() {
       </div>
 
       {/* ── Segmented tab bar ── matches tab control (Report / Events / Rules / Cost) */}
-      <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
+      <div className="bg-surface border-b border-separator px-6 py-2.5 flex items-center">
         <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5">
           {/* First tab appears "selected" — surface bg + shadow */}
           <div className="rounded-md bg-surface shadow-sm" style={{ width: '82px', height: '32px' }} />

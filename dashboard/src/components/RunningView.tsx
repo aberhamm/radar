@@ -56,12 +56,12 @@ export function RunningView({
       </div>
 
       {/* Status bar */}
-      <div className="bg-surface-translucent backdrop-blur-sm shadow-[inset_0_1px_0_0_rgb(0_0_0/0.04)] px-4 py-2 flex items-center gap-4 font-mono text-xs text-tertiary-label shrink-0">
+      <div className="bg-surface-translucent backdrop-blur-sm border-t border-separator px-4 py-2 flex items-center gap-4 font-mono text-xs text-tertiary-label shrink-0">
         <span className={`flex items-center gap-1.5 font-medium ${status === 'budget_paused' ? 'text-warning' : 'text-success'}`}>
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
             style={{
-              background: status === 'budget_paused' ? '#ff9500' : '#34c759',
+              background: status === 'budget_paused' ? 'var(--color-warning)' : 'var(--color-success)',
               animation: status !== 'budget_paused' ? 'pulse-dot 2s ease-in-out infinite' : undefined,
             }}
           />

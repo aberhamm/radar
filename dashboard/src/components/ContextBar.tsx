@@ -81,7 +81,7 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
 
       {/* Goal — context */}
       {goal && (
-        <span className="bg-[rgb(0_113_227/0.08)] rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
+        <span className="bg-tint-subtle rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
           {goal}
         </span>
       )}
@@ -104,19 +104,19 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
         <div className="flex items-center gap-2">
           <button
             onClick={() => onBudgetDecision(true)}
-            className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_113_227/0.3)]"
+            className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:brightness-110 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-tint-focus"
           >
             Resume +50
           </button>
           <button
             onClick={() => onBudgetDecision(false)}
-            className="bg-elevated text-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
+            className="bg-elevated text-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-separator)]"
           >
             Finish Now
           </button>
           <button
             onClick={onStop}
-            className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(255_59_48/0.3)]"
+            className="bg-danger-subtle text-danger rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-danger-muted transition-colors focus:outline-none focus-visible:ring-2 ring-tint-soft"
           >
             Stop
           </button>
@@ -125,7 +125,7 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
       {isRunning && status !== 'budget_paused' && (
         <button
           onClick={onStop}
-          className="bg-[rgb(255_59_48/0.1)] text-danger rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-[rgb(255_59_48/0.15)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(255_59_48/0.3)]"
+          className="bg-danger-subtle text-danger rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-danger-muted transition-colors focus:outline-none focus-visible:ring-2 ring-tint-soft"
         >
           Stop
         </button>
@@ -134,14 +134,14 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
       {isComparing && (
         <div className="flex items-center gap-2">
           {compareSummary && (
-            <span className="bg-[rgb(0_113_227/0.08)] rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
+            <span className="bg-tint-subtle rounded-md px-2.5 py-0.5 text-[11px] font-medium text-tint">
               {compareSummary}
             </span>
           )}
           {onExitCompare && (
             <button
               onClick={onExitCompare}
-              className="bg-elevated text-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(0_0_0/0.1)]"
+              className="bg-elevated text-label rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-separator transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-separator)]"
             >
               Exit Compare
             </button>

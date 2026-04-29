@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -14,7 +13,11 @@ export type UrlView =
   | { view: 'run'; runId: string; tab?: Tab }
   | { view: 'compare'; compareIds: [string, string] }
   | { view: 'multi'; parentId: string; tab?: Tab }
-  | { view: 'info'; page: InfoPage };
+  | { view: 'info'; page: InfoPage }
+  | { view: 'runs' }
+  | { view: 'findings'; runId?: string; findingId?: string }
+  | { view: 'reports' }
+  | { view: 'settings' };
 
 const VALID_TABS = new Set<Tab>(['overview', 'investigation', 'cost']);
 
@@ -57,6 +60,22 @@ export function parseUrl(pathname: string, searchParams?: URLSearchParams): UrlV
     return { view: 'info', page: segments[0] };
   }
 
+  if (segments[0] === 'runs') {
+    return { view: 'runs' };
+  }
+
+  if (segments[0] === 'findings') {
+    return { view: 'findings', runId: segments[1], findingId: segments[2] };
+  }
+
+  if (segments[0] === 'reports') {
+    return { view: 'reports' };
+  }
+
+  if (segments[0] === 'settings') {
+    return { view: 'settings' };
+  }
+
   // Unknown path → idle (will redirect)
   return { view: 'idle' };
 }
@@ -78,7 +97,49 @@ export function buildUrl(state: UrlView): string {
     }
     case 'info':
       return `/${state.page}`;
+    case 'runs':
+      return '/runs';
+    case 'findings': {
+      if (state.runId && state.findingId) return `/findings/${state.runId}/${state.findingId}`;
+      if (state.runId) return `/findings/${state.runId}`;
+      return '/findings';
+    }
+    case 'reports':
+      return '/reports';
+    case 'settings':
+      return '/settings';
   }
+}
+
+// ─── Vanilla URL store (bypasses Next.js router) ────────────────
+
+let listeners: Array<() => void> = [];
+let currentUrl = typeof window !== 'undefined'
+  ? window.location.pathname + window.location.search
+  : '/';
+
+function subscribe(listener: () => void) {
+  listeners = [...listeners, listener];
+  return () => {
+    listeners = listeners.filter(l => l !== listener);
+  };
+}
+
+function getSnapshot() {
+  return currentUrl;
+}
+
+function getServerSnapshot() {
+  return '/';
+}
+
+function notify() {
+  currentUrl = window.location.pathname + window.location.search;
+  for (const listener of listeners) listener();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', notify);
 }
 
 // ─── Hook ───────────────────────────────────────────────────────
@@ -93,36 +154,32 @@ export interface UseUrlStateReturn {
 }
 
 export function useUrlState(): UseUrlStateReturn {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const selfNavigated = useRef(false);
+  const url = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  // Memoize urlView so it only changes when the URL actually changes.
-  // Without this, parseUrl() returns a new object reference every render,
-  // causing any useEffect([urlView]) to fire on every render — which
-  // creates an infinite loop when pushState URL updates arrive in a
-  // later React transition than the accompanying setState calls.
-  const searchStr = searchParams?.toString() ?? '';
-  const urlView = useMemo(() => parseUrl(pathname, searchParams), [pathname, searchStr]); // eslint-disable-line react-hooks/exhaustive-deps
+  const urlView = useMemo(() => {
+    const qIdx = url.indexOf('?');
+    const pathname = qIdx >= 0 ? url.slice(0, qIdx) : url;
+    const search = qIdx >= 0 ? new URLSearchParams(url.slice(qIdx + 1)) : undefined;
+    return parseUrl(pathname, search);
+  }, [url]);
+
+  const prevUrlRef = useRef(url);
 
   const pushUrl = useCallback((state: UrlView) => {
-    const url = buildUrl(state);
-    if (url !== window.location.pathname + window.location.search) {
-      selfNavigated.current = true;
-      window.history.pushState(null, '', url);
+    const next = buildUrl(state);
+    if (next !== prevUrlRef.current) {
+      window.history.pushState(null, '', next);
+      prevUrlRef.current = next;
+      notify();
     }
   }, []);
 
   const replaceUrl = useCallback((state: UrlView) => {
-    const url = buildUrl(state);
-    selfNavigated.current = true;
-    window.history.replaceState(null, '', url);
+    const next = buildUrl(state);
+    window.history.replaceState(null, '', next);
+    prevUrlRef.current = next;
+    notify();
   }, []);
-
-  // Reset the self-navigated flag after Next.js processes the URL change
-  useEffect(() => {
-    selfNavigated.current = false;
-  }, [pathname, searchParams]);
 
   return { urlView, pushUrl, replaceUrl };
 }

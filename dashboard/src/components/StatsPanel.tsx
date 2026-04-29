@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { StepEvent, Severity } from '@/lib/agentSession';
+import { sevColor } from '@/lib/runTransform';
 
 interface StatsPanelProps {
   events: StepEvent[];
@@ -10,17 +11,6 @@ interface StatsPanelProps {
   startedAt: Date | null;
   /** If provided, show this instead of a live timer */
   fixedElapsed?: string;
-}
-
-function severityColor(severity: string): string {
-  switch (severity) {
-    case 'critical': return 'var(--color-danger)';
-    case 'high': return 'var(--color-danger)';
-    case 'medium': return 'var(--color-warning)';
-    case 'low': return 'var(--color-success)';
-    case 'info': return 'var(--color-tertiary-label)';
-    default: return 'var(--color-tertiary-label)';
-  }
 }
 
 export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed }: StatsPanelProps) {
@@ -75,7 +65,7 @@ export function StatsPanel({ events, toolCalls, budget, startedAt, fixedElapsed 
         <div className="flex flex-col gap-1.5 mt-3">
           {severityOrder.filter(s => severityCounts[s]).map(s => (
             <div key={s} className="flex justify-between items-center text-xs">
-              <span className="font-medium capitalize" style={{ color: severityColor(s) }}>{s}</span>
+              <span className="font-medium capitalize" style={{ color: sevColor(s) }}>{s}</span>
               <span className="text-secondary-label font-mono">{severityCounts[s]}</span>
             </div>
           ))}

@@ -119,9 +119,9 @@ export function HistoryPanel({
           isDisabledInCompare
             ? 'opacity-40 cursor-not-allowed'
             : isSelected
-              ? 'bg-[rgb(0_113_227/0.08)] cursor-pointer'
+              ? 'bg-tint-subtle cursor-pointer'
               : isActive && !compareMode
-                ? 'bg-[rgb(0_113_227/0.06)] cursor-pointer'
+                ? 'bg-tint-hover cursor-pointer'
                 : 'hover:bg-surface cursor-pointer'
         }`}
       >
@@ -182,7 +182,7 @@ export function HistoryPanel({
                   <span className="text-[10px] text-tertiary-label">{time}</span>
                   <span className={`text-[10px] rounded px-1 py-0.5 font-medium truncate max-w-[80px] ${
                     isSelected
-                      ? 'bg-[rgb(0_113_227/0.12)] text-tint'
+                      ? 'bg-tint-active text-tint'
                       : 'bg-elevated text-secondary-label'
                   }`}>
                     {h.goal}
@@ -214,7 +214,7 @@ export function HistoryPanel({
             onClick={onToggleCompare}
             className={`text-[10px] font-medium cursor-pointer transition-colors ${
               compareMode
-                ? 'text-danger hover:text-[#ff2d20]'
+                ? 'text-danger hover:text-[var(--color-danger-hover)]'
                 : 'text-tint hover:brightness-110'
             }`}
           >
@@ -305,7 +305,7 @@ export function HistoryPanel({
                             }}
                             onPointerEnter={() => onPrefetch?.(entry.parentId)}
                             className={`w-full text-left rounded-lg p-2 pl-4 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
-                              isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
+                              isActive ? 'bg-tint-hover' : ''
                             }`}
                           >
                             <div className="flex items-center gap-1.5">

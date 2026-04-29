@@ -25,7 +25,7 @@ export function InfoPanel({ activePage, onNavigate }: InfoPanelProps) {
             onClick={() => onNavigate(link.id)}
             className={`text-left rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors cursor-pointer ${
               activePage === link.id
-                ? 'bg-[rgb(0_113_227/0.08)] text-tint'
+                ? 'bg-tint-subtle text-tint'
                 : 'text-secondary-label hover:text-label hover:bg-surface'
             }`}
           >

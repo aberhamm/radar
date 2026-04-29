@@ -127,9 +127,9 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
           isDisabledInCompare
             ? 'opacity-40 cursor-not-allowed'
             : isSelected
-              ? 'bg-[rgb(0_113_227/0.08)] cursor-pointer'
+              ? 'bg-tint-subtle cursor-pointer'
               : isActive && !compareMode
-                ? 'bg-[rgb(0_113_227/0.06)] cursor-pointer'
+                ? 'bg-tint-hover cursor-pointer'
                 : 'hover:bg-surface cursor-pointer'
         }`}
       >
@@ -189,7 +189,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                   <span className="text-[11px] text-tertiary-label">{time}</span>
                   <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium truncate max-w-[100px] ${
                     isSelected
-                      ? 'bg-[rgb(0_113_227/0.12)] text-tint'
+                      ? 'bg-tint-active text-tint'
                       : 'bg-elevated text-secondary-label'
                   }`}>
                     {h.goal}
@@ -223,7 +223,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
         data-component="Sidebar"
         role="navigation"
         aria-label="Run history"
-        className={`bg-canvas border-r border-separator flex flex-col shrink-0 overflow-hidden z-30 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`bg-sidebar border-r border-sidebar-border flex flex-col shrink-0 overflow-hidden z-30 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           open ? 'w-[240px]' : 'w-0'
         } fixed lg:relative h-full`}
       >
@@ -271,7 +271,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                     onClick={() => onSectionClick(section.id)}
                     className={`text-left rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors cursor-pointer ${
                       activeTab === section.id
-                        ? 'bg-[rgb(0_113_227/0.08)] text-tint'
+                        ? 'bg-tint-subtle text-tint'
                         : 'text-secondary-label hover:text-label hover:bg-surface'
                     }`}
                   >
@@ -292,7 +292,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                 onClick={onToggleCompare}
                 className={`text-[10px] font-medium cursor-pointer transition-colors ${
                   compareMode
-                    ? 'text-danger hover:text-[#ff2d20]'
+                    ? 'text-danger hover:text-[var(--color-danger-hover)]'
                     : 'text-tint hover:brightness-110'
                 }`}
               >
@@ -382,7 +382,7 @@ export function Sidebar({ open, history, activeRunId, currentRepoName, currentGo
                                 }}
                                 onPointerEnter={() => onPrefetch?.(entry.parentId)}
                                 className={`w-full text-left rounded-lg p-2.5 pl-5 min-h-touch transition-all hover:bg-surface cursor-pointer group ${
-                                  isActive ? 'bg-[rgb(0_113_227/0.06)]' : ''
+                                  isActive ? 'bg-tint-hover' : ''
                                 }`}
                               >
                                 <div className="flex items-center gap-2">

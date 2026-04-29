@@ -3,6 +3,13 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { StaggeredSpinner, HistoryLoadingSkeleton, CachedReposLoadingSkeleton } from '@/components/Skeleton';
 import { ALL_GOALS } from '@agent/types/state';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const GOAL_LABELS: Record<string, string> = {
   onboarding: 'Onboarding',
@@ -91,7 +98,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
   const [detectedRoots, setDetectedRoots] = useState<AppRoot[]>([]);
   const [isMonorepo, setIsMonorepo] = useState(false);
   const [monorepoTool, setMonorepoTool] = useState<string | undefined>();
-  const [selectedRoot, setSelectedRoot] = useState<string>(''); // '' = entire repo
+  const [selectedRoot, setSelectedRoot] = useState<string>('__entire__');
+  const effectiveRoot = selectedRoot === '__entire__' ? '' : selectedRoot;
   const [detectingRoots, setDetectingRoots] = useState(false);
 
   const isUrl = isGitHubUrl(repoPath);
@@ -123,7 +131,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
       setDetectedRoots(data.roots ?? []);
       setIsMonorepo(data.isMonorepo ?? false);
       setMonorepoTool(data.monorepoTool);
-      setSelectedRoot(''); // default to entire repo
+      setSelectedRoot('__entire__');
     } catch { /* ignore detection failures */ }
     finally { setDetectingRoots(false); }
   }, []);
@@ -139,7 +147,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
       setClonedCached(false);
       setDetectedRoots([]);
       setIsMonorepo(false);
-      setSelectedRoot('');
+      setSelectedRoot('__entire__');
     }
   }, [cloneStatus]);
 
@@ -288,7 +296,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
           goal: effectiveGoal,
           ...(goalsList.length > 1 ? { goals: goalsList } : {}),
           ...(isCloned ? { repoSource: 'github', repoUrl: repoPath.trim() } : {}),
-          ...(selectedRoot ? { appRoot: selectedRoot } : {}),
+          ...(effectiveRoot ? { appRoot: effectiveRoot } : {}),
         }),
       });
       const data = await res.json();
@@ -297,7 +305,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         setLoading(false);
         return;
       }
-      onStart(targetPath, effectiveGoal, isCloned ? clonedRepoName : undefined, selectedRoot || undefined, data.runId, data.budget, goalsList.length > 1 ? goalsList : undefined);
+      onStart(targetPath, effectiveGoal, isCloned ? clonedRepoName : undefined, effectiveRoot || undefined, data.runId, data.budget, goalsList.length > 1 ? goalsList : undefined);
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
@@ -363,15 +371,15 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
           onChange={e => handleInputChange(e.target.value)}
           onBlur={handleInputBlur}
           placeholder="https://github.com/org/repo or /path/to/repo"
-          className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none focus:focus-glow transition-all"
+          className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-tint-focus focus:ring-2 focus:ring-tint-soft focus:outline-none focus:focus-glow transition-all"
           disabled={loading || isCloning || rerunPulling}
         />
       </div>
 
       {/* Clone success banner */}
       {isCloned && (
-        <div className="flex items-center gap-2 bg-[rgb(52_199_89/0.08)] rounded-lg px-3 py-2.5 border border-[rgb(52_199_89/0.15)]">
-          <svg className="w-4 h-4 text-[rgb(52_199_89)] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="flex items-center gap-2 bg-success-subtle rounded-lg px-3 py-2.5 border border-[color-mix(in_srgb,var(--color-success)_15%,transparent)]">
+          <svg className="w-4 h-4 text-success shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <span className="text-xs text-secondary-label flex-1">
@@ -405,24 +413,29 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
               {detectedRoots.length} roots detected{monorepoTool ? ` (${monorepoTool})` : ''}
             </span>
           </label>
-          <select
-            id="root-select"
+          <Select
             value={selectedRoot}
-            onChange={e => setSelectedRoot(e.target.value)}
+            onValueChange={(v) => setSelectedRoot(v ?? '__entire__')}
             disabled={loading || isCloning || rerunPulling}
-            className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label border border-transparent focus:border-[rgb(0_113_227/0.3)] focus:ring-2 focus:ring-[rgb(0_113_227/0.1)] focus:outline-none cursor-pointer"
           >
-            <option value="">Entire repository</option>
-            {detectedRoots.map(root => (
-              <option key={root.path} value={root.path}>
-                {root.path}
-                {root.framework ? ` — ${root.framework}${root.frameworkVersion ? ` ${root.frameworkVersion}` : ''}` : ''}
-              </option>
-            ))}
-          </select>
-          {selectedRoot && (
+            <SelectTrigger
+              className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label border border-transparent focus:border-tint-focus focus:ring-2 focus:ring-tint-soft"
+            >
+              <SelectValue placeholder="Entire repository" />
+            </SelectTrigger>
+            <SelectContent className="bg-[var(--color-surface)] border-[var(--color-separator)]">
+              <SelectItem value="__entire__">Entire repository</SelectItem>
+              {detectedRoots.map(root => (
+                <SelectItem key={root.path} value={root.path}>
+                  {root.path}
+                  {root.framework ? ` — ${root.framework}${root.frameworkVersion ? ` ${root.frameworkVersion}` : ''}` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {effectiveRoot && (
             <p className="text-[11px] text-tertiary-label mt-1.5">
-              Analysis will be scoped to <span className="font-mono text-secondary-label">{selectedRoot}</span>
+              Analysis will be scoped to <span className="font-mono text-secondary-label">{effectiveRoot}</span>
             </p>
           )}
         </div>
@@ -444,7 +457,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
                 className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all cursor-pointer ${
                   isActive
                     ? 'bg-tint text-white'
-                    : 'bg-elevated text-secondary-label hover:text-label hover:bg-[rgb(0_113_227/0.06)]'
+                    : 'bg-elevated text-secondary-label hover:text-label hover:bg-tint-hover'
                 }`}
               >
                 {preset.label}
@@ -576,7 +589,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
                 key={r.localPath}
                 type="button"
                 onClick={() => handleSelectCached(r)}
-                className="flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg bg-elevated hover:bg-[rgb(0_113_227/0.06)] border border-transparent hover:border-[rgb(0_113_227/0.15)] transition-all cursor-pointer group"
+                className="flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg bg-elevated hover:bg-tint-hover border border-transparent hover:border-tint-subtle transition-all cursor-pointer group"
               >
                 <svg className="w-4 h-4 text-tertiary-label group-hover:text-tint shrink-0 transition-colors" viewBox="0 0 16 16" fill="currentColor">
                   <path fillRule="evenodd" d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9zm10.5-1h-8a1 1 0 00-1 1v6.708A2.486 2.486 0 014.5 9h8V1.5zM5 12.25v3.25a.25.25 0 00.4.2l1.45-1.087a.25.25 0 01.3 0L8.6 15.7a.25.25 0 00.4-.2v-3.25a.25.25 0 00-.25-.25h-3.5a.25.25 0 00-.25.25z" />
@@ -620,7 +633,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
                 key={run.parentRunId ?? run.id}
                 type="button"
                 onClick={() => handleSelectHistoryRun(run)}
-                className="flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg bg-elevated hover:bg-[rgb(0_113_227/0.06)] border border-transparent hover:border-[rgb(0_113_227/0.15)] transition-all cursor-pointer group"
+                className="flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg bg-elevated hover:bg-tint-hover border border-transparent hover:border-tint-subtle transition-all cursor-pointer group"
               >
                 <svg className="w-4 h-4 text-tertiary-label group-hover:text-tint shrink-0 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="1 4 1 10 7 10" />

@@ -2,14 +2,15 @@
  * Finding deduplication — merges near-duplicate findings before output.
  *
  * Two findings are considered duplicates when they share:
- * 1. Same category AND severity
+ * 1. Same category (severity may differ — higher severity wins on merge)
  * 2. Overlapping evidence file paths (50%+ Jaccard similarity)
  *
- * When merging, the longer description wins, evidence arrays are combined
- * (deduped by filePath + lineNumber), and tags are unioned.
+ * When merging, the higher severity wins, the longer description wins,
+ * evidence arrays are combined (deduped by filePath + lineNumber),
+ * and tags are unioned.
  */
 
-import type { Finding, Evidence } from '../../types/findings.js';
+import type { Finding, Evidence, Severity } from '../../types/findings.js';
 
 export interface DeduplicationResult {
   findings: Finding[];
@@ -20,7 +21,7 @@ export interface DeduplicationResult {
 /**
  * Compute Jaccard similarity of evidence file paths between two findings.
  */
-function evidenceOverlap(a: Finding, b: Finding): number {
+export function evidenceOverlap(a: Finding, b: Finding): number {
   const pathsA = new Set(a.evidence.map((e) => e.filePath));
   const pathsB = new Set(b.evidence.map((e) => e.filePath));
   if (pathsA.size === 0 && pathsB.size === 0) return 0;
@@ -48,10 +49,23 @@ function mergeEvidence(a: Evidence[], b: Evidence[]): Evidence[] {
   return merged;
 }
 
+const SEVERITY_RANK: Record<Severity, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+  info: 0,
+};
+
+function higherSeverity(a: Severity, b: Severity): Severity {
+  return SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b;
+}
+
 /**
- * Merge two findings into one. Keeps the longer description, combines evidence and tags.
+ * Merge two findings into one. Keeps the higher severity, longer description,
+ * combines evidence and tags.
  */
-function mergeFindings(primary: Finding, secondary: Finding): Finding {
+export function mergeFindings(primary: Finding, secondary: Finding): Finding {
   // Keep the higher confidence on merge (default to 7 for unset)
   const pConf = primary.confidence;
   const sConf = secondary.confidence;
@@ -61,6 +75,7 @@ function mergeFindings(primary: Finding, secondary: Finding): Finding {
 
   return {
     ...primary,
+    severity: higherSeverity(primary.severity, secondary.severity),
     ...(mergedConfidence !== undefined ? { confidence: mergedConfidence } : {}),
     description: primary.description.length >= secondary.description.length
       ? primary.description
@@ -77,16 +92,16 @@ function mergeFindings(primary: Finding, secondary: Finding): Finding {
 }
 
 /**
- * Deduplicate findings with overlapping evidence and matching category + severity.
- * Groups by (category, severity) first so only findings that could match are compared.
+ * Deduplicate findings with overlapping evidence within the same category.
+ * When merging cross-severity pairs, the higher severity wins.
  */
 export function deduplicateFindings(findings: Finding[]): DeduplicationResult {
   if (findings.length <= 1) return { findings: [...findings], mergedCount: 0 };
 
-  // Group findings by (category, severity) — only compare within same group
+  // Group findings by category — only compare within same category
   const groups = new Map<string, number[]>();
   for (let i = 0; i < findings.length; i++) {
-    const key = `${findings[i].category}:${findings[i].severity}`;
+    const key = findings[i].category;
     let group = groups.get(key);
     if (!group) {
       group = [];
@@ -111,7 +126,7 @@ export function deduplicateFindings(findings: Finding[]): DeduplicationResult {
 
         const other = findings[j];
 
-        // Must have 50%+ evidence file overlap
+        // Must have 50%+ evidence file overlap (severity may differ — higher wins)
         if (evidenceOverlap(current, other) < 0.5) continue;
 
         // Merge

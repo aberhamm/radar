@@ -14,10 +14,10 @@
 
 ## Typography
 - **Display/Brand:** Outfit — geometric sans with warmth, signals "modern but not generic." Used for brand wordmark, hero headings, report titles, section titles. At 600-700 weight it carries display duties without needing a second typeface. Think Square, DigitalOcean, OpenRouter: one clean geometric sans does all the work.
-- **Body/UI:** System stack (-apple-system, BlinkMacSystemFont, SF Pro Display, system-ui, Segoe UI) — fastest paint, native feel, zero layout shift.
+- **Body/UI:** Geist Sans (via next/font/google) with system fallbacks — modern geometric sans, Vercel-family aesthetic, clean authority.
 - **Data/Tables:** JetBrains Mono — tabular-nums for aligned score data, file paths, code snippets, finding IDs, metric values.
 - **Code:** JetBrains Mono
-- **Loading:** Outfit and JetBrains Mono via next/font/google (automatic subsetting). Two fonts total. No serif.
+- **Loading:** Geist Sans, Outfit, and JetBrains Mono via next/font/google (automatic subsetting). Three fonts total. No serif.
 - **Scale:**
 
 | Level | Size | Weight | Use |

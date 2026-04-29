@@ -111,7 +111,7 @@ export function useLiveAnalysis(
           let f = args.finding ?? args;
           if (typeof f === 'string') f = JSON.parse(f);
           if (!f || typeof f !== 'object' || !f.title) continue;
-          findings.push({
+          const incoming: Finding = {
             id: f.id ?? `f-${findings.length}`,
             severity: f.severity ?? 'info',
             category: f.category ?? '',
@@ -128,7 +128,47 @@ export function useLiveAnalysis(
             })),
             note: f.investigationNote ?? f.description ?? '',
             tags: f.tags ?? [],
+          };
+
+          // Dedup: same category + 50%+ evidence file overlap → merge
+          const incomingPaths = new Set(incoming.evidenceFiles);
+          const dupIdx = findings.findIndex((existing) => {
+            if (existing.category !== incoming.category) return false;
+            const existPaths = new Set(existing.evidenceFiles);
+            if (incomingPaths.size === 0 && existPaths.size === 0) return false;
+            let inter = 0;
+            for (const p of incomingPaths) if (existPaths.has(p)) inter++;
+            const union = new Set([...incomingPaths, ...existPaths]).size;
+            return union > 0 && inter / union >= 0.5;
           });
+
+          if (dupIdx !== -1) {
+            const existing = findings[dupIdx];
+            const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+            const keepSeverity = (SEV_RANK[existing.severity] ?? 0) >= (SEV_RANK[incoming.severity] ?? 0)
+              ? existing.severity : incoming.severity;
+            const seenEvPaths = new Set(existing.evidenceFiles.map((f, i) => `${f}:${existing.evidence[i]?.lineNumber ?? 'none'}`));
+            const mergedEvidence = [...existing.evidence];
+            const mergedEvFiles = [...existing.evidenceFiles];
+            for (let ei = 0; ei < incoming.evidence.length; ei++) {
+              const key = `${incoming.evidenceFiles[ei]}:${incoming.evidence[ei]?.lineNumber ?? 'none'}`;
+              if (!seenEvPaths.has(key)) {
+                seenEvPaths.add(key);
+                mergedEvidence.push(incoming.evidence[ei]);
+                mergedEvFiles.push(incoming.evidenceFiles[ei]);
+              }
+            }
+            findings[dupIdx] = {
+              ...existing,
+              severity: keepSeverity,
+              note: existing.note.length >= incoming.note.length ? existing.note : incoming.note,
+              evidence: mergedEvidence,
+              evidenceFiles: mergedEvFiles,
+              tags: [...new Set([...existing.tags, ...incoming.tags])],
+            };
+          } else {
+            findings.push(incoming);
+          }
         } catch { /* parse error */ }
         // Clear pending state on any matching activity chip (tool_start fires
         // before the finding event, so the activity exists but stays pending=true

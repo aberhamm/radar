@@ -74,21 +74,42 @@ describe('deduplicateFindings', () => {
     expect(result.mergedCount).toBe(0);
   });
 
-  it('does not merge findings with different severities', () => {
+  it('merges findings with different severities and keeps the higher one', () => {
     const f1 = makeFinding({
       id: 'DEP-001',
-      severity: 'high',
+      severity: 'medium',
       evidence: [{ filePath: 'package.json', lineNumber: 1, snippet: 'code', description: 'desc' }],
     });
     const f2 = makeFinding({
       id: 'DEP-002',
-      severity: 'medium',
+      severity: 'high',
       evidence: [{ filePath: 'package.json', lineNumber: 1, snippet: 'code', description: 'desc' }],
     });
 
     const result = deduplicateFindings([f1, f2]);
-    expect(result.findings).toHaveLength(2);
-    expect(result.mergedCount).toBe(0);
+    expect(result.findings).toHaveLength(1);
+    expect(result.mergedCount).toBe(1);
+    expect(result.findings[0].severity).toBe('high');
+  });
+
+  it('keeps critical over high when merging cross-severity duplicates', () => {
+    const f1 = makeFinding({
+      id: 'SEC-001',
+      severity: 'high',
+      category: 'security',
+      evidence: [{ filePath: 'middleware.ts', lineNumber: 5, snippet: 'code', description: 'desc' }],
+    });
+    const f2 = makeFinding({
+      id: 'SEC-002',
+      severity: 'critical',
+      category: 'security',
+      evidence: [{ filePath: 'middleware.ts', lineNumber: 10, snippet: 'code2', description: 'desc2' }],
+    });
+
+    const result = deduplicateFindings([f1, f2]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.mergedCount).toBe(1);
+    expect(result.findings[0].severity).toBe('critical');
   });
 
   it('does not merge findings with low evidence overlap', () => {

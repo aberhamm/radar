@@ -171,7 +171,7 @@ function PassBreakdown({ events }: { events: StepEvent[] }) {
             ? Math.min((pass.eventCount / pass.budget) * 100, 100)
             : totalCalls > 0 ? (pass.eventCount / totalCalls) * 100 : 0;
           const exceeded = pass.budget ? pass.eventCount >= pass.budget : false;
-          const barColor = exceeded ? 'var(--color-warning, #ff9500)' : 'var(--color-tint)';
+          const barColor = exceeded ? 'var(--color-warning)' : 'var(--color-tint)';
           return (
             <div key={pass.name} className="flex items-center gap-3">
               <span className="text-[12px] text-secondary-label w-[140px] shrink-0 truncate">

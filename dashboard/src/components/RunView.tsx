@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Tab } from '@/lib/useUrlState';
 import type { RunViewMode } from '@/lib/runViewAdapters';
 import { normalizeFindings, type Finding } from '@/lib/runTransform';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   copyToClipboard,
   buildReportMarkdown,
@@ -199,55 +200,53 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
       <RunHeader repoName={headerRepoName} stats={headerStats} metrics={metrics} />
 
       {/* Tab bar */}
-      <div className="bg-surface shadow-[inset_0_-1px_0_0_rgb(0_0_0/0.06)] px-6 py-2.5 flex items-center">
-        <div className="bg-elevated rounded-lg p-0.5 flex gap-0.5" role="tablist" aria-label="Report sections">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`px-5 py-1.5 min-w-[72px] min-h-touch rounded-md text-[13px] font-medium transition-all cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-surface text-label shadow-sm'
-                  : 'text-secondary-label hover:text-label'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as Tab)} className="gap-0">
+        <div className="bg-surface border-b border-separator px-6 py-2.5 flex items-center">
+          <TabsList className="bg-elevated rounded-lg p-0.5 gap-0.5 h-auto">
+            {TABS.map(tab => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className={`px-5 py-1.5 min-w-[72px] min-h-touch rounded-md text-[13px] font-medium transition-all cursor-pointer border-0 shadow-none
+                  data-active:bg-surface data-active:text-[var(--color-label)] data-active:shadow-sm
+                  text-[var(--color-secondary-label)] hover:text-[var(--color-label)]`}
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {/* Export actions */}
+          <div className="ml-auto flex items-center gap-2">
+            <CopiedToast visible={copied} />
+
+            {activeTab === 'overview' && (
+              <>
+                <ExportButton label="Copy Markdown" onClick={handleCopyMarkdown} />
+                <ExportButton label="Export .md" onClick={handleExportMarkdown} />
+                <ExportButton
+                  label={pdfExporting ? 'Exporting...' : 'Export PDF'}
+                  onClick={handleExportPDF}
+                />
+                {showCreateIssues && (
+                  <ExportButton label="Create Issues" onClick={() => setIssueModalOpen(true)} />
+                )}
+              </>
+            )}
+
+            {activeTab === 'investigation' && hasInvestigationData && (
+              <ExportButton label="Export CSV" onClick={handleExportEventsCSV} />
+            )}
+
+            {activeTab === 'cost' && (
+              <>
+                <ExportButton label="Copy Markdown" onClick={handleCopyCostMarkdown} />
+                <ExportButton label="Export CSV" onClick={handleExportCostCSV} />
+              </>
+            )}
+          </div>
         </div>
-
-        {/* Export actions */}
-        <div className="ml-auto flex items-center gap-2">
-          <CopiedToast visible={copied} />
-
-          {activeTab === 'overview' && (
-            <>
-              <ExportButton label="Copy Markdown" onClick={handleCopyMarkdown} />
-              <ExportButton label="Export .md" onClick={handleExportMarkdown} />
-              <ExportButton
-                label={pdfExporting ? 'Exporting...' : 'Export PDF'}
-                onClick={handleExportPDF}
-              />
-              {showCreateIssues && (
-                <ExportButton label="Create Issues" onClick={() => setIssueModalOpen(true)} />
-              )}
-            </>
-          )}
-
-          {activeTab === 'investigation' && hasInvestigationData && (
-            <ExportButton label="Export CSV" onClick={handleExportEventsCSV} />
-          )}
-
-          {activeTab === 'cost' && (
-            <>
-              <ExportButton label="Copy Markdown" onClick={handleCopyCostMarkdown} />
-              <ExportButton label="Export CSV" onClick={handleExportCostCSV} />
-            </>
-          )}
-        </div>
-      </div>
+      </Tabs>
 
       {/* Tab content */}
       <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'investigation' ? '' : 'px-6'}`}>

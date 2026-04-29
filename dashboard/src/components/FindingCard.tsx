@@ -4,9 +4,9 @@ import { useState, memo } from 'react';
 import { Finding, sevColor, sevBg } from '@/lib/runTransform';
 
 const VERIFICATION_COLORS: Record<string, { text: string; bg: string; label: string }> = {
-  verified: { text: 'var(--color-success)', bg: 'rgba(52,199,89,0.10)', label: 'Verified' },
-  corrected: { text: 'var(--color-warning)', bg: 'rgba(255,149,0,0.10)', label: 'Corrected' },
-  unverifiable: { text: 'var(--color-danger)', bg: 'rgba(255,59,48,0.10)', label: 'Unverifiable' },
+  verified: { text: 'var(--color-success)', bg: 'color-mix(in srgb, var(--color-success) 10%, transparent)', label: 'Verified' },
+  corrected: { text: 'var(--color-warning)', bg: 'color-mix(in srgb, var(--color-warning) 10%, transparent)', label: 'Corrected' },
+  unverifiable: { text: 'var(--color-danger)', bg: 'color-mix(in srgb, var(--color-danger) 10%, transparent)', label: 'Unverifiable' },
 };
 
 export const FindingCard = memo(function FindingCard({ finding, index }: { finding: Finding; index?: number }) {

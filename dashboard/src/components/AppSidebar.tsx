@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import type { SidebarProps } from '@/components/Sidebar';
-import { HomePanel } from '@/components/sidebar/HomePanel';
-import { HistoryPanel } from '@/components/sidebar/HistoryPanel';
-import { InfoPanel } from '@/components/sidebar/InfoPanel';
-import { SettingsPanel } from '@/components/sidebar/SettingsPanel';
+import { useState, useCallback, useEffect } from 'react';
+import {
+  LayoutDashboard,
+  History,
+  Search,
+  FileText,
+  Settings,
+} from 'lucide-react';
+import type { UrlView } from '@/lib/useUrlState';
 
 // ─── Feature flag ──────────────────────────────────────────────
 export const USE_SIDEBAR_V2 = true;
@@ -13,234 +16,158 @@ export const USE_SIDEBAR_V2 = true;
 // ─── Animation ─────────────────────────────────────────────────
 const spring = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
-// ─── Icon helpers ──────────────────────────────────────────────
-
-function IconHome({ className = '' }: { className?: string }) {
-  return (
-    <svg className={`w-4 h-4 ${className}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 6.5L8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5z" />
-      <path d="M6 14V9h4v5" />
-    </svg>
-  );
-}
-
-function IconHistory({ className = '' }: { className?: string }) {
-  return (
-    <svg className={`w-4 h-4 ${className}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="8" r="6" />
-      <path d="M8 4.5V8l2.5 1.5" />
-    </svg>
-  );
-}
-
-function IconSettings({ className = '' }: { className?: string }) {
-  return (
-    <svg className={`w-4 h-4 ${className}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="8" r="2" />
-      <path d="M13.5 8a5.5 5.5 0 0 0-.08-.88l1.36-1.06-.68-1.18-1.6.54a5.4 5.4 0 0 0-1.52-.88L10.6 3H9.24l-.38 1.54a5.4 5.4 0 0 0-1.52.88l-1.6-.54-.68 1.18 1.36 1.06A5.5 5.5 0 0 0 6.34 7a5.5 5.5 0 0 0 .08.88l-1.36 1.06.68 1.18 1.6-.54c.44.38.96.68 1.52.88L9.24 12h1.36l.38-1.54a5.4 5.4 0 0 0 1.52-.88l1.6.54.68-1.18-1.36-1.06c.06-.28.08-.58.08-.88z" />
-    </svg>
-  );
-}
-
-function IconInfo({ className = '' }: { className?: string }) {
-  return (
-    <svg className={`w-4 h-4 ${className}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="8" r="6" />
-      <path d="M8 7v4M8 5.5v-.01" />
-    </svg>
-  );
-}
-
 // ─── Types ─────────────────────────────────────────────────────
 
-type Section = 'home' | 'history' | 'info' | 'settings';
+export type NavSection = 'dashboard' | 'runs' | 'findings' | 'reports' | 'settings';
 
-const NAV_ITEMS: { id: Section; icon: typeof IconHome; label: string }[] = [
-  { id: 'home', icon: IconHome, label: 'Home' },
-  { id: 'history', icon: IconHistory, label: 'History' },
-  { id: 'info', icon: IconInfo, label: 'Info' },
+const NAV_ITEMS: { id: NavSection; icon: typeof LayoutDashboard; label: string }[] = [
+  { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { id: 'runs', icon: History, label: 'Runs' },
+  { id: 'findings', icon: Search, label: 'Findings' },
+  { id: 'reports', icon: FileText, label: 'Reports' },
+  { id: 'settings', icon: Settings, label: 'Settings' },
 ];
 
-// ─── Rail button ───────────────────────────────────────────────
+export interface AppSidebarProps {
+  open: boolean;
+  collapsed: boolean;
+  activeSection: NavSection;
+  onNavigate: (section: NavSection) => void;
+  onClose: () => void;
+}
 
-function RailButton({
-  children,
-  isActive = false,
-  onClick,
+// ─── Nav item ─────────────────────────────────────────────────
+
+function NavItem({
+  icon: Icon,
   label,
+  isActive,
+  isCollapsed,
+  onClick,
 }: {
-  children: React.ReactNode;
-  isActive?: boolean;
-  onClick?: () => void;
+  icon: typeof LayoutDashboard;
   label: string;
+  isActive: boolean;
+  isCollapsed: boolean;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      title={label}
+      title={isCollapsed ? label : undefined}
       aria-label={label}
-      className={`relative flex items-center justify-center rounded-lg size-10 min-w-10 transition-colors cursor-pointer ${
+      aria-current={isActive ? 'page' : undefined}
+      onClick={onClick}
+      className={`relative flex items-center gap-3 rounded-lg min-h-[40px] transition-all cursor-pointer ${
+        isCollapsed ? 'justify-center w-10 mx-auto' : 'px-3 w-full'
+      } ${
         isActive
-          ? 'text-tint'
-          : 'text-tertiary-label hover:text-secondary-label'
+          ? 'text-[var(--color-tint)] font-semibold'
+          : 'text-[var(--color-label)] hover:bg-[var(--color-elevated)]'
       }`}
       style={{ transitionTimingFunction: spring }}
-      onClick={onClick}
     >
       {isActive && (
-        <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-tint" />
+        <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-[var(--color-tint)]" />
       )}
-      {children}
+      <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={isActive ? 2 : 1.5} />
+      {!isCollapsed && (
+        <span className="text-sm truncate">{label}</span>
+      )}
     </button>
-  );
-}
-
-// ─── Icon rail ─────────────────────────────────────────────────
-
-function IconRail({
-  activeSection,
-  onSectionClick,
-}: {
-  activeSection: Section;
-  onSectionClick: (section: Section) => void;
-}) {
-  return (
-    <div data-component="IconRail" className="bg-canvas border-r border-separator flex flex-col gap-1 items-center py-3 px-2 w-14 h-full shrink-0">
-      {/* Brand mark */}
-      <div className="mb-1 size-10 flex items-center justify-center">
-        <span className="text-[16px] font-bold text-tint font-brand select-none">R</span>
-      </div>
-
-      {/* Nav icons */}
-      <div className="flex flex-col gap-0.5 w-full items-center">
-        {NAV_ITEMS.map(({ id, icon: Icon, label }) => (
-          <RailButton
-            key={id}
-            isActive={activeSection === id}
-            onClick={() => onSectionClick(id)}
-            label={label}
-          >
-            <Icon />
-          </RailButton>
-        ))}
-      </div>
-
-      <div className="flex-1" />
-
-      <RailButton
-        isActive={activeSection === 'settings'}
-        onClick={() => onSectionClick('settings')}
-        label="Settings"
-      >
-        <IconSettings />
-      </RailButton>
-    </div>
-  );
-}
-
-// ─── Detail panel ──────────────────────────────────────────────
-
-function DetailPanel({
-  activeSection,
-  isCollapsed,
-  props,
-}: {
-  activeSection: Section;
-  isCollapsed: boolean;
-  props: SidebarProps;
-}) {
-  return (
-    <div
-      data-component="DetailPanel"
-      className={`bg-canvas border-r border-separator flex flex-col shrink-0 overflow-hidden transition-all duration-300 h-full ${
-        isCollapsed ? 'w-0' : 'w-[184px]'
-      }`}
-      style={{ transitionTimingFunction: spring }}
-    >
-      <div className="w-[184px] flex flex-col h-full overflow-hidden px-3 pt-3">
-        {activeSection === 'home' && (
-          <HomePanel
-            isRunning={props.isRunning}
-            currentRepoName={props.currentRepoName}
-            currentGoal={props.currentGoal}
-            showSections={props.showSections}
-            activeTab={props.activeTab}
-            onSectionClick={props.onSectionClick}
-          />
-        )}
-
-        {activeSection === 'history' && (
-          <HistoryPanel
-            history={props.history}
-            activeRunId={props.activeRunId}
-            isRunning={props.isRunning}
-            onSelectHistory={props.onSelectHistory}
-            onPrefetch={props.onPrefetch}
-            compareMode={props.compareMode}
-            compareSelections={props.compareSelections}
-            onToggleCompare={props.onToggleCompare}
-            onCompareSelect={props.onCompareSelect}
-            onCompare={props.onCompare}
-            hasMore={props.hasMore}
-            onLoadMore={props.onLoadMore}
-            compareHighlight={props.compareHighlight}
-          />
-        )}
-
-        {activeSection === 'info' && (
-          <InfoPanel
-            activePage={props.activeInfoPage}
-            onNavigate={(page) => props.onInfoNavigate?.(page)}
-          />
-        )}
-
-        {activeSection === 'settings' && <SettingsPanel />}
-      </div>
-    </div>
   );
 }
 
 // ─── AppSidebar ────────────────────────────────────────────────
 
-export function AppSidebar(props: SidebarProps) {
-  const [activeSection, setActiveSection] = useState<Section>('history');
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  const handleSectionClick = useCallback((section: Section) => {
-    if (section === activeSection) {
-      // Toggle collapse when clicking the active section
-      setIsCollapsed(prev => !prev);
-    } else {
-      // Switch section and ensure expanded
-      setActiveSection(section);
-      setIsCollapsed(false);
-    }
-  }, [activeSection]);
+export function AppSidebar({
+  open,
+  collapsed,
+  activeSection,
+  onNavigate,
+  onClose,
+}: AppSidebarProps) {
+  const sidebarWidth = collapsed ? 64 : 155;
 
   return (
     <>
       {/* Backdrop for mobile */}
-      {props.open && (
+      {open && (
         <div
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-20 lg:hidden"
-          onClick={props.onClose}
+          onClick={onClose}
         />
       )}
 
       <aside
         data-component="AppSidebar"
         role="navigation"
-        aria-label="Run history"
-        className={`flex shrink-0 overflow-hidden z-30 transition-all duration-300 h-full fixed lg:relative ${
-          props.open ? (isCollapsed ? 'w-14' : 'w-[240px]') : 'w-0'
-        }`}
-        style={{ transitionTimingFunction: spring }}
+        aria-label="Main navigation"
+        className="flex flex-col shrink-0 overflow-hidden z-30 transition-all duration-300 h-full fixed lg:relative bg-sidebar border-r border-sidebar-border"
+        style={{
+          width: open ? sidebarWidth : 0,
+          transitionTimingFunction: spring,
+        }}
       >
-        <IconRail activeSection={activeSection} onSectionClick={handleSectionClick} />
-        <DetailPanel activeSection={activeSection} isCollapsed={isCollapsed} props={props} />
+        <div
+          className="flex flex-col h-full overflow-hidden"
+          style={{ width: sidebarWidth }}
+        >
+          {/* Brand header */}
+          <div className={`flex items-center shrink-0 h-12 ${collapsed ? 'justify-center' : 'px-4'}`}>
+            {collapsed ? (
+              <span className="text-[18px] font-bold text-brand font-brand select-none">
+                R
+              </span>
+            ) : (
+              <span className="text-[18px] font-bold text-brand tracking-[-0.02em] font-brand select-none">
+                radar
+              </span>
+            )}
+          </div>
+
+          {/* Navigation */}
+          <nav className={`flex flex-col gap-0.5 flex-1 ${collapsed ? 'px-2' : 'px-2'} py-2`}>
+            {NAV_ITEMS.map(({ id, icon, label }) => (
+              <NavItem
+                key={id}
+                icon={icon}
+                label={label}
+                isActive={activeSection === id}
+                isCollapsed={collapsed}
+                onClick={() => onNavigate(id)}
+              />
+            ))}
+          </nav>
+
+        </div>
       </aside>
     </>
   );
+}
+
+// ─── Helper: derive active section from URL view ──────────────
+
+export function deriveActiveSection(urlView: UrlView): NavSection {
+  switch (urlView.view) {
+    case 'idle':
+      return 'dashboard';
+    case 'runs':
+    case 'run':
+    case 'multi':
+    case 'compare':
+      return 'runs';
+    case 'findings':
+      return 'findings';
+    case 'reports':
+      return 'reports';
+    case 'settings':
+      return 'settings';
+    case 'info':
+      return 'dashboard';
+    default:
+      return 'dashboard';
+  }
 }
 
 export default AppSidebar;

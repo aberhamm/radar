@@ -119,7 +119,7 @@ export function sevBg(sev: string): string {
 
 // ─── Finding Normalizer ─────────────────────────────────────────
 
-/** Normalize raw finding objects (from API/storage) into typed Finding[] */
+/** Normalize raw finding objects (from API/storage) into typed Finding[], deduplicated by id and fingerprint. */
 export function normalizeFindings(raw: unknown[]): Finding[] {
   const arr = raw as Array<{
     id: string; severity: string; category: string; title: string;
@@ -131,26 +131,55 @@ export function normalizeFindings(raw: unknown[]): Finding[] {
     investigationNote?: string; tags?: string[];
     fingerprint?: string; confidence?: number;
   }>;
-  return arr.map(f => ({
-    id: f.id,
-    severity: f.severity as Finding['severity'],
-    category: f.category,
-    title: f.title,
-    evidenceFiles: (f.evidence ?? []).map(e => e.filePath),
-    evidence: (f.evidence ?? []).map(e => ({
-      filePath: e.filePath,
-      lineNumber: e.lineNumber,
-      snippet: e.snippet ?? '',
-      description: e.description ?? '',
-      verificationStatus: e.verificationStatus as EvidenceItem['verificationStatus'],
-      sourceContext: e.sourceContext,
-      originalSnippet: e.originalSnippet,
-    })),
-    note: f.investigationNote ?? f.description ?? '',
-    tags: f.tags ?? [],
-    fingerprint: f.fingerprint,
-    confidence: f.confidence,
-  }));
+  const seenIds = new Set<string>();
+  const seenFingerprints = new Set<string>();
+  const results: Finding[] = [];
+  for (const f of arr) {
+    if (seenIds.has(f.id)) continue;
+    if (f.fingerprint && seenFingerprints.has(f.fingerprint)) continue;
+    seenIds.add(f.id);
+    if (f.fingerprint) seenFingerprints.add(f.fingerprint);
+    results.push({
+      id: f.id,
+      severity: f.severity as Finding['severity'],
+      category: f.category,
+      title: f.title,
+      evidenceFiles: (f.evidence ?? []).map(e => e.filePath),
+      evidence: (f.evidence ?? []).map(e => ({
+        filePath: e.filePath,
+        lineNumber: e.lineNumber,
+        snippet: e.snippet ?? '',
+        description: e.description ?? '',
+        verificationStatus: e.verificationStatus as EvidenceItem['verificationStatus'],
+        sourceContext: e.sourceContext,
+        originalSnippet: e.originalSnippet,
+      })),
+      note: f.investigationNote ?? f.description ?? '',
+      tags: f.tags ?? [],
+      fingerprint: f.fingerprint,
+      confidence: f.confidence,
+    });
+  }
+  return results;
+}
+
+/** Deduplicate an already-normalized Finding[] by fingerprint, then by title+category+file. */
+export function deduplicateFindings(findings: Finding[]): Finding[] {
+  const seenFingerprints = new Set<string>();
+  const seenContentKeys = new Set<string>();
+  const results: Finding[] = [];
+  for (const f of findings) {
+    if (f.fingerprint) {
+      if (seenFingerprints.has(f.fingerprint)) continue;
+      seenFingerprints.add(f.fingerprint);
+    } else {
+      const key = `${f.title}::${f.category}::${f.evidenceFiles[0] ?? ''}`;
+      if (seenContentKeys.has(key)) continue;
+      seenContentKeys.add(key);
+    }
+    results.push(f);
+  }
+  return results;
 }
 
 // ─── Transformer ────────────────────────────────────────────────
