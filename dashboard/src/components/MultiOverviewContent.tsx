@@ -1,22 +1,24 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { Scorecard, StepEvent, RankedRisk } from '@/lib/agentSession';
+import { useState, useRef, useCallback, useMemo } from 'react';
+import type { Scorecard, StepEvent, RankedRisk, CategoryScore } from '@/lib/agentSession';
 import type { Finding } from '@/lib/runTransform';
-import { FindingsSection } from './CompleteView';
 import { scoreColor, scoreBg, scoreToGrade } from '@/lib/utils';
 import type { MultiGoalGoal } from '@/lib/runViewAdapters';
+import { FindingCard } from './FindingCard';
 
-// ─── Helpers ────────────────────────────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────
 
+const SCORE_ORDER: Record<string, number> = { red: 3, yellow: 2, green: 1 };
 const SEV_ORDER: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
+
+// ─── Helpers ───────────────────────────────────────────────────
 
 export function goalDisplayName(goal: string): string {
   const names: Record<string, string> = {
     onboarding: 'Onboarding',
     audit: 'Audit',
+    'audit-generic': 'Generic Audit',
     migration: 'Migration',
     'component-map': 'Components',
     'ci-check': 'CI Check',
@@ -31,6 +33,7 @@ function goalDescription(goal: string): string {
   const descs: Record<string, string> = {
     onboarding: 'Developer onboarding brief',
     audit: 'Architecture quality assessment',
+    'audit-generic': 'Stack-agnostic assessment',
     migration: 'Upgrade path readiness',
     'component-map': 'Component inventory',
     'ci-check': 'CI pipeline health',
@@ -41,9 +44,69 @@ function goalDescription(goal: string): string {
   return descs[goal] ?? '';
 }
 
+function sortGoalsWorstFirst(goals: MultiGoalGoal[]): MultiGoalGoal[] {
+  return [...goals].sort((a, b) => {
+    const scoreDiff = (SCORE_ORDER[b.scorecard.overallScore] ?? 0) - (SCORE_ORDER[a.scorecard.overallScore] ?? 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return goalDisplayName(a.goal).localeCompare(goalDisplayName(b.goal));
+  });
+}
+
+function sevDotColor(sev: string): string {
+  switch (sev) {
+    case 'critical': case 'high': return 'var(--color-danger)';
+    case 'medium': return 'var(--color-warning)';
+    case 'low': return 'var(--color-success)';
+    default: return 'var(--color-tertiary-label)';
+  }
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function categoryMatchesFinding(scorecardCat: string, findingCat: string): boolean {
+  const catSlug = slugify(scorecardCat);
+  const findSlug = slugify(findingCat || 'uncategorized');
+  if (catSlug === findSlug) return true;
+  const catParts = catSlug.split('-');
+  const findParts = findSlug.split('-');
+  return findParts.every(part => catParts.includes(part));
+}
+
+function sevCounts(items: Finding[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const f of items) counts[f.severity] = (counts[f.severity] ?? 0) + 1;
+  return counts;
+}
+
+function findingsForCategory(findings: Finding[], categoryName: string): Finding[] {
+  return findings
+    .filter(f => categoryMatchesFinding(categoryName, f.category))
+    .sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0));
+}
+
+function findingsForGoal(allFindings: Finding[], goal: MultiGoalGoal): Finding[] {
+  const seen = new Set<string>();
+  const result: Finding[] = [];
+  for (const cat of goal.scorecard.categories) {
+    for (const f of allFindings) {
+      if (!seen.has(f.id) && categoryMatchesFinding(cat.category, f.category)) {
+        seen.add(f.id);
+        result.push(f);
+      }
+    }
+  }
+  return result.sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0));
+}
+
 // ─── Scoreboard ─────────────────────────────────────────────────
 
-function Scoreboard({ goals, onScrollTo }: { goals: MultiGoalGoal[]; onScrollTo: (goalId: string) => void }) {
+function Scoreboard({ goals, goalFindingCounts, onScrollTo }: {
+  goals: MultiGoalGoal[];
+  goalFindingCounts: Map<string, number>;
+  onScrollTo: (goalId: string) => void;
+}) {
   return (
     <div className="flex gap-1 overflow-x-auto pb-2">
       {goals.map(g => (
@@ -63,7 +126,7 @@ function Scoreboard({ goals, onScrollTo }: { goals: MultiGoalGoal[]; onScrollTo:
             {goalDisplayName(g.goal)}
           </div>
           <div className="text-[11px] text-tertiary-label">
-            {g.findingsCount} findings
+            {goalFindingCounts.get(g.id) ?? 0} findings
           </div>
         </button>
       ))}
@@ -91,7 +154,7 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
 
   if (sorted.length === 0) return null;
 
-  const sevColor = (s: string) =>
+  const sevTextColor = (s: string) =>
     s === 'critical' || s === 'high' ? 'text-danger' : s === 'medium' ? 'text-warning' : 'text-tertiary-label';
 
   return (
@@ -101,7 +164,7 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
         {sorted.map((risk, i) => (
           <div key={risk.findingId} className="flex items-start gap-2.5 text-[12px]">
             <span className="text-tertiary-label shrink-0 w-4 text-right">{i + 1}.</span>
-            <span className={`shrink-0 font-medium uppercase text-[10px] mt-0.5 ${sevColor(risk.severity)}`}>
+            <span className={`shrink-0 font-medium uppercase text-[10px] mt-0.5 ${sevTextColor(risk.severity)}`}>
               {risk.severity}
             </span>
             <span className="text-secondary-label">{risk.title}</span>
@@ -194,7 +257,7 @@ function PassBreakdown({ events }: { events: StepEvent[] }) {
   );
 }
 
-// ─── Per-Goal Score Summary ─────────────────────────────────────
+// ─── Per-Goal Summary Table (used by Cost tab) ─────────────────
 
 export function PerGoalSummaryTable({ goals }: { goals: MultiGoalGoal[] }) {
   return (
@@ -221,7 +284,7 @@ export function PerGoalSummaryTable({ goals }: { goals: MultiGoalGoal[] }) {
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-secondary-label">{g.scorecard.categories.length}</td>
-                <td className="px-4 py-2.5 text-secondary-label">{g.findingsCount}</td>
+                <td className="px-4 py-2.5 text-secondary-label">{g.findings.length}</td>
               </tr>
             ))}
           </tbody>
@@ -231,26 +294,113 @@ export function PerGoalSummaryTable({ goals }: { goals: MultiGoalGoal[] }) {
   );
 }
 
-// ─── Goal Section (collapsible per-goal report) ─────────────────
+// ─── Category Row (within a goal accordion) ────────────────────
 
-function GoalSection({
+function CategoryRow({ cat, findings, isExpanded, onToggle }: {
+  cat: CategoryScore;
+  findings: Finding[];
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const counts = sevCounts(findings);
+  const hasFindingsToShow = findings.length > 0;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={hasFindingsToShow ? onToggle : undefined}
+        role="treeitem"
+        aria-expanded={hasFindingsToShow ? isExpanded : undefined}
+        className={`w-full text-left pl-4 sm:pl-6 pr-3 py-2 flex items-center gap-2 transition-colors ${
+          hasFindingsToShow ? 'hover:bg-elevated/50 cursor-pointer' : 'cursor-default'
+        }`}
+      >
+        {hasFindingsToShow && (
+          <svg
+            width="8" height="8" viewBox="0 0 8 8" fill="none"
+            className={`shrink-0 text-tertiary-label transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+          >
+            <path d="M3 2l2 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+        {!hasFindingsToShow && <span className="w-2 shrink-0" />}
+        <span
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ background: scoreColor(cat.score) }}
+        />
+        <span className="text-[12px] text-secondary-label flex-1 truncate">
+          {cat.category}
+        </span>
+        <span
+          className="text-[10px] font-bold uppercase shrink-0"
+          style={{ color: scoreColor(cat.score) }}
+        >
+          {cat.score}
+        </span>
+        {hasFindingsToShow && (
+          <div className="flex items-center gap-1.5 ml-2">
+            {(['critical', 'high', 'medium', 'low', 'info'] as const)
+              .filter(s => counts[s])
+              .map(s => (
+                <span key={s} className="flex items-center gap-0.5">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: sevDotColor(s) }}
+                  />
+                  <span className="text-[10px] text-tertiary-label">{counts[s]}</span>
+                </span>
+              ))}
+          </div>
+        )}
+        <span className="text-[10px] text-tertiary-label ml-1 shrink-0">
+          {findings.length}
+        </span>
+      </button>
+      {isExpanded && hasFindingsToShow && (
+        <div className="pl-8 sm:pl-12 pr-3 pb-2 space-y-1.5">
+          {findings.map((f, i) => (
+            <FindingCard key={`${f.id}-${i}`} finding={f} index={i} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Goal Accordion Section ────────────────────────────────────
+
+function GoalAccordionSection({
   goal,
+  distributedFindings,
   isExpanded,
   onToggle,
   sectionRef,
+  expandedCategories,
+  onToggleCategory,
 }: {
   goal: MultiGoalGoal;
+  distributedFindings: Finding[];
   isExpanded: boolean;
   onToggle: () => void;
   sectionRef: (el: HTMLDivElement | null) => void;
+  expandedCategories: Set<string>;
+  onToggleCategory: (catKey: string) => void;
 }) {
   const gradeColor = scoreColor(goal.scorecard.overallScore);
+  const catPrefix = `${goal.id}::`;
 
   return (
-    <div ref={sectionRef} data-component={`GoalSection-${goal.goal}`} className="rounded-xl border border-separator overflow-hidden">
+    <div
+      ref={sectionRef}
+      data-component={`GoalAccordion-${goal.goal}`}
+      className="rounded-xl border border-separator overflow-hidden"
+    >
       <button
         type="button"
         onClick={onToggle}
+        role="treeitem"
+        aria-expanded={isExpanded}
         className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-elevated/50 transition-colors cursor-pointer"
       >
         <div
@@ -271,7 +421,7 @@ function GoalSection({
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-[11px] text-tertiary-label">
-            {goal.findingsCount} findings
+            {distributedFindings.length} findings
           </span>
           <span className="text-[11px] text-tertiary-label">
             {goal.scorecard.categories.length} categories
@@ -286,29 +436,20 @@ function GoalSection({
       </button>
 
       {isExpanded && (
-        <div className="px-4 pb-5 border-t border-separator/50 pt-4">
-          {goal.scorecard.categories.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-              {goal.scorecard.categories.map(cat => (
-                <div key={cat.category} className="flex items-center gap-2 text-[12px]">
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ background: scoreColor(cat.score) }}
-                  />
-                  <span className="text-secondary-label truncate">{cat.category}</span>
-                  <span className="font-medium uppercase" style={{ color: scoreColor(cat.score) }}>
-                    {cat.score}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {goal.briefMarkdown && (
-            <div className="md-content text-sm leading-relaxed">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{goal.briefMarkdown}</ReactMarkdown>
-            </div>
-          )}
+        <div className="border-t border-separator/50" role="group">
+          {goal.scorecard.categories.map(cat => {
+            const catFindings = findingsForCategory(distributedFindings, cat.category);
+            const catKey = `${catPrefix}${cat.category}`;
+            return (
+              <CategoryRow
+                key={cat.category}
+                cat={cat}
+                findings={catFindings}
+                isExpanded={expandedCategories.has(catKey)}
+                onToggle={() => onToggleCategory(catKey)}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -324,8 +465,49 @@ interface MultiOverviewContentProps {
   mergedScorecard: Scorecard;
 }
 
-export function MultiOverviewContent({ goals, events, findings, mergedScorecard }: MultiOverviewContentProps) {
-  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
+export function MultiOverviewContent({ goals, events, findings }: MultiOverviewContentProps) {
+  const sorted = useMemo(() => sortGoalsWorstFirst(goals), [goals]);
+
+  const goalFindingsMap = useMemo(() => {
+    const map = new Map<string, Finding[]>();
+    for (const g of sorted) {
+      map.set(g.id, findingsForGoal(findings, g));
+    }
+    return map;
+  }, [sorted, findings]);
+
+  const goalFindingCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [id, f] of goalFindingsMap) {
+      map.set(id, f.length);
+    }
+    return map;
+  }, [goalFindingsMap]);
+
+  // Auto-expand: worst goal + its worst category
+  const worstGoal = sorted[0];
+  const worstCatKey = useMemo(() => {
+    if (!worstGoal) return null;
+    const cats = worstGoal.scorecard.categories;
+    const worstCat = cats.reduce<CategoryScore | null>((worst, c) => {
+      if (!worst) return c;
+      return (SCORE_ORDER[c.score] ?? 0) > (SCORE_ORDER[worst.score] ?? 0) ? c : worst;
+    }, null);
+    return worstCat ? `${worstGoal.id}::${worstCat.category}` : null;
+  }, [worstGoal]);
+
+  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    if (worstGoal) initial.add(worstGoal.id);
+    return initial;
+  });
+
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    if (worstCatKey) initial.add(worstCatKey);
+    return initial;
+  });
+
   const sectionRefs = useRef(new Map<string, HTMLDivElement>());
 
   const toggleGoal = useCallback((goalId: string) => {
@@ -337,6 +519,15 @@ export function MultiOverviewContent({ goals, events, findings, mergedScorecard 
     });
   }, []);
 
+  const toggleCategory = useCallback((catKey: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(catKey)) next.delete(catKey);
+      else next.add(catKey);
+      return next;
+    });
+  }, []);
+
   const scrollToGoal = useCallback((goalId: string) => {
     setExpandedGoals(prev => new Set(prev).add(goalId));
     requestAnimationFrame(() => {
@@ -344,39 +535,54 @@ export function MultiOverviewContent({ goals, events, findings, mergedScorecard 
     });
   }, []);
 
+  const allExpanded = expandedGoals.size === sorted.length;
+  const toggleAll = useCallback(() => {
+    if (allExpanded) {
+      setExpandedGoals(new Set());
+      setExpandedCategories(new Set());
+    } else {
+      setExpandedGoals(new Set(sorted.map(g => g.id)));
+    }
+  }, [allExpanded, sorted]);
+
   return (
     <div data-component="MultiOverviewContent" className="max-w-4xl pt-5 pb-8">
       <div data-component="Scoreboard" className="mb-6">
-        <Scoreboard goals={goals} onScrollTo={scrollToGoal} />
+        <Scoreboard goals={sorted} goalFindingCounts={goalFindingCounts} onScrollTo={scrollToGoal} />
       </div>
 
       <div data-component="TopRisks-PassBreakdown" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <TopRisks goals={goals} />
+        <TopRisks goals={sorted} />
         <PassBreakdown events={events} />
       </div>
 
-      {findings.length > 0 && (
-        <div className="mb-8">
-          <FindingsSection findings={findings} scorecard={mergedScorecard} />
-        </div>
-      )}
-
-      <div data-component="PerGoalHeader" className="mb-2">
-        <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold">
           Per-Goal Details
         </div>
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="text-[11px] text-tint hover:text-tint-hover transition-colors cursor-pointer"
+        >
+          {allExpanded ? 'Collapse All' : 'Expand All'}
+        </button>
       </div>
-      <div data-component="PerGoalSections" className="flex flex-col gap-3">
-        {goals.map(g => (
-          <GoalSection
+
+      <div data-component="GoalAccordion" role="tree" className="flex flex-col gap-3">
+        {sorted.map(g => (
+          <GoalAccordionSection
             key={g.id}
             goal={g}
+            distributedFindings={goalFindingsMap.get(g.id) ?? []}
             isExpanded={expandedGoals.has(g.id)}
             onToggle={() => toggleGoal(g.id)}
             sectionRef={(el) => {
               if (el) sectionRefs.current.set(g.id, el);
               else sectionRefs.current.delete(g.id);
             }}
+            expandedCategories={expandedCategories}
+            onToggleCategory={toggleCategory}
           />
         ))}
       </div>

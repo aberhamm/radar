@@ -10,6 +10,17 @@ export interface MultiGoalGoal {
   metrics: RunMetrics;
   briefMarkdown: string;
   findingsCount: number;
+  findings: Finding[];
+}
+
+export interface MultiGoalDataGoal {
+  id: string;
+  goal: string;
+  scorecard: Scorecard;
+  metrics: RunMetrics;
+  briefMarkdown: string;
+  findingsCount: number;
+  findings: unknown[];
 }
 
 export interface MultiGoalData {
@@ -18,7 +29,7 @@ export interface MultiGoalData {
   repoUrl?: string;
   startedAt: string;
   completedAt?: string;
-  goals: MultiGoalGoal[];
+  goals: MultiGoalDataGoal[];
   events: StepEvent[];
   findings: unknown[];
   totalFindings: number;
@@ -145,9 +156,14 @@ export function computeWorstScore(goals: MultiGoalGoal[]): ScoreLevel {
 // ─── Adapter: MultiGoalData → MultiRunData ──────────────────────
 
 export function toMultiRunData(data: MultiGoalData): MultiRunData {
-  const worstScore = computeWorstScore(data.goals);
-  const metrics = aggregateMetrics(data.goals, data.events, data.startedAt, data.completedAt);
-  const mergedScorecard = buildMergedScorecard(data.goals, data.repoName, data.startedAt, worstScore);
+  const goalsWithFindings: MultiGoalGoal[] = data.goals.map(g => ({
+    ...g,
+    findings: g.findings?.length > 0 ? normalizeFindings(g.findings) : [],
+  }));
+
+  const worstScore = computeWorstScore(goalsWithFindings);
+  const metrics = aggregateMetrics(goalsWithFindings, data.events, data.startedAt, data.completedAt);
+  const mergedScorecard = buildMergedScorecard(goalsWithFindings, data.repoName, data.startedAt, worstScore);
   const findings = data.findings?.length > 0 ? normalizeFindings(data.findings) : [];
 
   const runData = data.events.length > 0
@@ -165,7 +181,7 @@ export function toMultiRunData(data: MultiGoalData): MultiRunData {
     parentId: data.parentId,
     repoName: data.repoName,
     repoUrl: data.repoUrl,
-    goals: data.goals,
+    goals: goalsWithFindings,
     events: data.events,
     findings,
     totalFindings: data.totalFindings,

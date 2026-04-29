@@ -185,7 +185,7 @@ export function CreateIssuesModal({ isOpen, onClose, findings, repoUrl }: Create
                     value={owner}
                     onChange={e => setOwner(e.target.value)}
                     placeholder="owner"
-                    className="flex-1 bg-[var(--color-elevated)] rounded-md px-3 py-2 text-[13px] text-[var(--color-label)] placeholder:text-[var(--color-quaternary-label)] border border-[var(--color-separator)]/60 outline-none focus:border-[var(--color-tint)]"
+                    className="flex-1 min-w-0 bg-[var(--color-elevated)] rounded-md px-3 py-2 text-[13px] text-[var(--color-label)] placeholder:text-[var(--color-quaternary-label)] border border-[var(--color-separator)]/60 outline-none focus:border-[var(--color-tint)]"
                   />
                   <span className="text-[var(--color-quaternary-label)] self-center">/</span>
                   <input
@@ -193,7 +193,7 @@ export function CreateIssuesModal({ isOpen, onClose, findings, repoUrl }: Create
                     value={repo}
                     onChange={e => setRepo(e.target.value)}
                     placeholder="repo"
-                    className="flex-1 bg-[var(--color-elevated)] rounded-md px-3 py-2 text-[13px] text-[var(--color-label)] placeholder:text-[var(--color-quaternary-label)] border border-[var(--color-separator)]/60 outline-none focus:border-[var(--color-tint)]"
+                    className="flex-1 min-w-0 bg-[var(--color-elevated)] rounded-md px-3 py-2 text-[13px] text-[var(--color-label)] placeholder:text-[var(--color-quaternary-label)] border border-[var(--color-separator)]/60 outline-none focus:border-[var(--color-tint)]"
                   />
                 </div>
               </div>

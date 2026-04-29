@@ -8,12 +8,15 @@ const nextConfig: NextConfig = {
       '.js': ['.ts', '.tsx', '.js'],
     },
   },
-  webpack: (config, { dev }) => {
+  webpack: (config, { dev, isServer }) => {
     if (dev) {
       config.watchOptions = {
         ...config.watchOptions,
         ignored: /[\\/](output|dist|\.repos|node_modules|\.next|\.git)[\\/]/,
       };
+    }
+    if (isServer) {
+      config.externals = [...(config.externals || []), 'pdfkit'];
     }
     return config;
   },

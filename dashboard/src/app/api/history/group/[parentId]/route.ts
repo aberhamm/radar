@@ -21,7 +21,7 @@ export async function GET(
     return NextResponse.json({ error: 'Multi-goal group not found' }, { status: 404 });
   }
 
-  // Load each child's scorecard
+  // Load each child's scorecard + findings
   const goals: Array<{
     id: string;
     goal: string;
@@ -29,9 +29,11 @@ export async function GET(
     metrics: unknown;
     briefMarkdown: string;
     findingsCount: number;
+    findings: unknown[];
   }> = [];
 
   const goalResults = await Promise.all(children.map(async (child) => {
+    const childFindings = (child.result?.state?.findings as unknown[]) ?? loadRunFindings(child) ?? [];
     if (child.result) {
       return {
         id: child.id,
@@ -39,7 +41,8 @@ export async function GET(
         scorecard: child.result.scorecard,
         metrics: child.result.metrics,
         briefMarkdown: child.result.briefMarkdown ?? '',
-        findingsCount: (child.result.state?.findings as unknown[])?.length ?? 0,
+        findingsCount: childFindings.length,
+        findings: childFindings,
       };
     }
     const envelope = loadRunEnvelope(child);
@@ -50,7 +53,8 @@ export async function GET(
         scorecard: envelope.scorecard,
         metrics: envelope.metrics,
         briefMarkdown: envelope.briefMarkdown ?? '',
-        findingsCount: envelope.findingsSummary?.length ?? 0,
+        findingsCount: childFindings.length,
+        findings: childFindings,
       };
     }
     return null;
