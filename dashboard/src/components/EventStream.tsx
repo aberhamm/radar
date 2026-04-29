@@ -507,6 +507,8 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
         const data = JSON.parse(e.data);
         if (data.type === 'budget_paused') {
           onBudgetPaused(data);
+        } else if (data.type === 'budget_resumed' || data.type === 'heartbeat') {
+          // Handled by page-level useEventSource
         } else if (data.type === 'run_complete') {
           onRunComplete(data.result);
           es.close();

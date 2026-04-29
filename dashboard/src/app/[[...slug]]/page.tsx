@@ -386,6 +386,11 @@ export default function DashboardPage() {
     [],
   );
 
+  const handleBudgetResumed = useCallback(() => {
+    setStatus('running');
+    setBudgetPausedData(null);
+  }, []);
+
   const handleBudgetDecision = useCallback((extend: boolean) => {
     if (extend) {
       setStatus('running');
@@ -651,17 +656,6 @@ export default function DashboardPage() {
     }
   }, [pushUrl, findingsData?.runId]);
 
-  const sidebarCollapsedRef = useRef(sidebarCollapsed);
-  sidebarCollapsedRef.current = sidebarCollapsed;
-  const prevSidebarCollapsedRef = useRef(sidebarCollapsed);
-  const handleFindingsSidebarCollapse = useCallback((panelIsOpen: boolean) => {
-    if (panelIsOpen) {
-      prevSidebarCollapsedRef.current = sidebarCollapsedRef.current;
-      setSidebarCollapsed(true);
-    } else {
-      setSidebarCollapsed(prevSidebarCollapsedRef.current);
-    }
-  }, []);
 
   const handleToggleCompareMode = useCallback(() => {
     setCompareMode(prev => !prev);
@@ -913,6 +907,7 @@ export default function DashboardPage() {
   useEventSource(isRunningOrPaused, {
     onEvent: handleNewEvent,
     onBudgetPaused: handleBudgetPaused,
+    onBudgetResumed: handleBudgetResumed,
     onRunComplete: handleRunComplete,
     onRunError: handleRunError,
   });
@@ -1185,7 +1180,6 @@ export default function DashboardPage() {
               onRunSwitch={handleRunSwitch}
               onFindingSelect={handleFindingSelect}
               selectedFindingId={urlView.view === 'findings' ? urlView.findingId : undefined}
-              onSidebarCollapse={handleFindingsSidebarCollapse}
             />
           )}
           {status === 'findings' && findingsLoading && (

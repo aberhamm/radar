@@ -50,6 +50,7 @@ import {
   DOC_TOKEN_BUDGET,
   CHECKPOINT_INTERVAL,
   RECORDING_GATE_PCT,
+  EXTENSION_GATE_PCT,
   BUDGET_EXTENSION,
 } from '../config/defaults.js';
 import { computeScorecard } from '../output/scorecard.js';
@@ -268,6 +269,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   let lastAssistantReasoning = '';
   let currentBatchId: string = randomUUID();
   let budgetExhaustedFired = false;
+  let extensionGateFired = false;
 
   // Context compression (extracted module — shared mutable state via object references)
   const compressionState = { findings: state.findings, snipBoundaryActive: false };
@@ -338,6 +340,36 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
     if (toolName === 'fetch_url' && state.urlFetchCount >= urlFetchBudget) {
       return { block: true, reason: 'URL fetch budget exhausted.' };
+    }
+
+    // Extension gate: at 80% budget, always offer extension (regardless of findings).
+    // Separate from the 60% recording-enforcement gate and the 100% exhaustion gate.
+    if (
+      !extensionGateFired &&
+      config.onBudgetExhausted &&
+      state.toolCallCount >= Math.floor(currentBudget * EXTENSION_GATE_PCT) &&
+      state.toolCallCount < currentBudget &&
+      !WRITING_TOOLS.has(toolName)
+    ) {
+      extensionGateFired = true;
+      const shouldExtend = await config.onBudgetExhausted({
+        findings: state.findings.length,
+        toolCalls: state.toolCallCount,
+        budget: currentBudget,
+      });
+      if (shouldExtend) {
+        currentBudget += BUDGET_EXTENSION;
+        state.toolCallBudget = currentBudget;
+        extensionGateFired = false;
+        config.onStep?.({
+          step: stepCount,
+          action: 'budget_extended',
+          type: 'budget_warning',
+          newBudget: currentBudget,
+          result: `Budget extended to ${currentBudget} tool calls. Continuing investigation.`,
+        });
+        return undefined;
+      }
     }
 
     if (state.toolCallCount >= currentBudget) {

@@ -22,9 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No budget resolve callback' }, { status: 400 });
   }
 
-  session.status = 'running';
   const resolve = run.budgetResolve;
-  run.budgetResolve = null;
   resolve(extend === true);
 
   return NextResponse.json({ ok: true });

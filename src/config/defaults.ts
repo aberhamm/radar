@@ -21,6 +21,8 @@ export const CHECKPOINT_INTERVAL = 5;
 // ─── Agent behavior thresholds ──────────────────────────────────────
 
 export const RECORDING_GATE_PCT = 0.60;
+export const EXTENSION_GATE_PCT = 0.80;
+export const BUDGET_PAUSE_TIMEOUT_MS = 5 * 60 * 1000;
 export const KEEP_RECENT_NORMAL = 12;
 export const KEEP_RECENT_SNIP = 8;
 export const MIN_SPECIALIST_BUDGET = 10;

@@ -9,6 +9,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const AGENT_OUTPUT_DIR = path.resolve(process.cwd(), '..', 'output');
+const BUDGET_PAUSE_TIMEOUT_MS = 5 * 60 * 1000;
+const HEARTBEAT_INTERVAL_MS = 15_000;
 
 async function loadRunner() {
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
@@ -22,6 +24,54 @@ async function loadScorecard() {
   const distPath = path.resolve(process.cwd(), '..', 'dist', 'output', 'scorecard.js');
   const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
   return mod.computeScorecard as (repoName: string, goal: string, findings: unknown[]) => unknown;
+}
+
+function createBudgetPauseHandler() {
+  return async (state: { findings: number; toolCalls: number; budget: number }): Promise<boolean> => {
+    const session = getSession();
+    session.status = 'budget_paused';
+    const pauseData = { findings: state.findings, toolCalls: state.toolCalls, budget: state.budget };
+
+    if (session.currentRun) {
+      session.currentRun.budgetPausedData = pauseData;
+    }
+
+    sendStreamEvent(session.currentRun?.streamController ?? null, {
+      type: 'budget_paused', ...pauseData,
+    });
+
+    // Heartbeat keeps the SSE connection alive while the user decides
+    const heartbeat = setInterval(() => {
+      sendStreamEvent(session.currentRun?.streamController ?? null, {
+        type: 'heartbeat', timestamp: new Date().toISOString(),
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+
+    try {
+      const decision = await new Promise<boolean>((resolve) => {
+        if (session.currentRun) {
+          session.currentRun.budgetResolve = resolve;
+        }
+
+        // Auto-resolve as "finish" after timeout so the agent never hangs forever
+        setTimeout(() => resolve(false), BUDGET_PAUSE_TIMEOUT_MS);
+      });
+
+      // Emit resume event immediately so the UI shows feedback before the next LLM call
+      session.status = 'running';
+      sendStreamEvent(session.currentRun?.streamController ?? null, {
+        type: 'budget_resumed', extended: decision, timestamp: new Date().toISOString(),
+      });
+
+      return decision;
+    } finally {
+      clearInterval(heartbeat);
+      if (session.currentRun) {
+        session.currentRun.budgetPausedData = null;
+        session.currentRun.budgetResolve = null;
+      }
+    }
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -126,24 +176,7 @@ export async function POST(req: NextRequest) {
                 checkpointRun(run);
               }
             },
-            onBudgetExhausted: async (state: { findings: number; toolCalls: number; budget: number }) => {
-              session.status = 'budget_paused';
-              const pauseData = { findings: state.findings, toolCalls: state.toolCalls, budget: state.budget };
-
-              if (session.currentRun) {
-                session.currentRun.budgetPausedData = pauseData;
-              }
-
-              sendStreamEvent(session.currentRun?.streamController ?? null, {
-                type: 'budget_paused', ...pauseData,
-              });
-
-              return new Promise<boolean>((resolve) => {
-                if (session.currentRun) {
-                  session.currentRun.budgetResolve = resolve;
-                }
-              });
-            },
+            onBudgetExhausted: createBudgetPauseHandler(),
             abortSignal: abortController.signal,
           },
         );
@@ -199,24 +232,7 @@ export async function POST(req: NextRequest) {
             checkpointRun(run);
           }
         },
-        onBudgetExhausted: async (state) => {
-          session.status = 'budget_paused';
-          const pauseData = { findings: state.findings, toolCalls: state.toolCalls, budget: state.budget };
-
-          if (session.currentRun) {
-            session.currentRun.budgetPausedData = pauseData;
-          }
-
-          sendStreamEvent(session.currentRun?.streamController ?? null, {
-            type: 'budget_paused', ...pauseData,
-          });
-
-          return new Promise<boolean>((resolve) => {
-            if (session.currentRun) {
-              session.currentRun.budgetResolve = resolve;
-            }
-          });
-        },
+        onBudgetExhausted: createBudgetPauseHandler(),
       });
 
       const run = session.currentRun;

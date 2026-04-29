@@ -6,6 +6,7 @@ import type { StepEvent } from './agentSession';
 interface UseEventSourceCallbacks {
   onEvent: (event: StepEvent) => void;
   onBudgetPaused: (data: { findings: number; toolCalls: number; budget: number }) => void;
+  onBudgetResumed?: () => void;
   onRunComplete: (data: { scorecard: unknown; metrics: unknown; terminationReason: string }) => void;
   onRunError: (error: string) => void;
 }
@@ -34,6 +35,10 @@ export function useEventSource(enabled: boolean, callbacks: UseEventSourceCallba
         const data = JSON.parse(e.data);
         if (data.type === 'budget_paused') {
           cbRef.current.onBudgetPaused(data);
+        } else if (data.type === 'budget_resumed') {
+          cbRef.current.onBudgetResumed?.();
+        } else if (data.type === 'heartbeat') {
+          // Keep-alive during budget pause — no action needed, lastEventAt already updated
         } else if (data.type === 'run_complete') {
           cbRef.current.onRunComplete(data.result);
           es.close();
