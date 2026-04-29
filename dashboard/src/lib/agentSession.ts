@@ -76,6 +76,12 @@ export interface StepEvent {
   details?: Record<string, unknown>;
 }
 
+export interface SourceFile {
+  content: string;
+  lineCount: number;
+  language: string;
+}
+
 export interface RunResult {
   scorecard: Scorecard;
   metrics: RunMetrics;
@@ -84,6 +90,7 @@ export interface RunResult {
   outputPaths: string[];
   state: { findings: unknown[] };
   errorDetail?: string;
+  sources?: Record<string, SourceFile>;
 }
 
 export type SessionStatus = 'idle' | 'running' | 'budget_paused' | 'complete' | 'error';
@@ -273,6 +280,10 @@ function writeFindings(dirPath: string, findings: unknown[]): void {
   fs.writeFileSync(path.join(dirPath, 'findings.json'), JSON.stringify(findings, null, 2));
 }
 
+function writeSources(dirPath: string, sources: Record<string, SourceFile>): void {
+  fs.writeFileSync(path.join(dirPath, 'sources.json'), JSON.stringify(sources, null, 2));
+}
+
 // ── Persist & checkpoint ──────────────────────────────────────
 
 /**
@@ -319,9 +330,12 @@ export function persistRun(record: RunRecord): void {
       writeEnvelope(dirPath, record);
     }
 
-    // Tier 3: events + full findings
+    // Tier 3: events + full findings + source files
     writeEventsJsonl(dirPath, record.events);
     writeFindings(dirPath, record.result?.state?.findings ?? []);
+    if (record.result?.sources && Object.keys(record.result.sources).length > 0) {
+      writeSources(dirPath, record.result.sources);
+    }
 
     // Tier 1: update index
     const findings = (record.result?.state?.findings ?? []) as unknown[];
@@ -521,6 +535,20 @@ export function loadRunFindings(record: RunRecord): unknown[] {
   } catch (err) {
     console.warn(`[loadRunFindings] Failed for run ${record.id}:`, (err as Error).message);
     return [];
+  }
+}
+
+/** Load source files (Tier 3) for a specific run. Returns null for old runs without sources. */
+export function loadRunSources(record: RunRecord): Record<string, SourceFile> | null {
+  const dirPath = record._dirPath;
+  if (!dirPath) return null;
+  const sourcesPath = path.join(dirPath, 'sources.json');
+  try {
+    if (!fs.existsSync(sourcesPath)) return null;
+    return JSON.parse(fs.readFileSync(sourcesPath, 'utf-8'));
+  } catch (err) {
+    console.warn(`[loadRunSources] Failed for run ${record.id}:`, (err as Error).message);
+    return null;
   }
 }
 

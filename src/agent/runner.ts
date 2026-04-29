@@ -54,7 +54,9 @@ import {
 } from '../config/defaults.js';
 import { computeScorecard } from '../output/scorecard.js';
 import { renderBrief } from '../output/brief.js';
-import { buildFullExport, serializeExport } from '../output/json.js';
+import { buildFullExport, serializeExport, type SourceFile } from '../output/json.js';
+import { detectLanguage } from '../tools/utils/detectLanguage.js';
+import { readFile as readFileAsync } from 'node:fs/promises';
 import { saveSessionCost, buildSessionCostEntry } from '../output/sessionCosts.js';
 import {
   saveCheckpoint, buildCheckpointEntry, buildSessionId,
@@ -809,6 +811,27 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     });
   }
 
+  // ─── Source file capture ──────────────────────────────────────────────
+  // Read full content of every evidence-referenced file for the dashboard
+  // file viewer. Uses direct fs.readFile (bypasses the 60K resolveAndRead
+  // budget) with a 500KB per-file safety cap.
+  const MAX_SOURCE_BYTES = 500_000;
+  const sourcePaths = new Set<string>();
+  for (const f of state.findings) {
+    for (const ev of f.evidence) sourcePaths.add(ev.filePath);
+  }
+  const sources: Record<string, SourceFile> = {};
+  await Promise.all([...sourcePaths].map(async (fp) => {
+    try {
+      const abs = path.resolve(config.repoPath, fp);
+      if (!abs.startsWith(path.resolve(config.repoPath))) return;
+      const raw = await readFileAsync(abs, 'utf-8');
+      if (raw.length > MAX_SOURCE_BYTES) return;
+      const lineCount = raw.split('\n').length;
+      sources[fp] = { content: raw, lineCount, language: detectLanguage(fp) };
+    } catch { /* file may have been deleted since investigation — skip */ }
+  }));
+
   config.onStep?.({
     step: ++stepCount,
     action: 'post_process',
@@ -838,7 +861,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     metrics,
   );
 
-  const fullExport = buildFullExport(state, scorecard, sections, metrics, terminationReason, currentBudget);
+  const fullExport = buildFullExport(state, scorecard, sections, metrics, terminationReason, currentBudget, sources);
   const exportJson = serializeExport(fullExport);
 
   const outputPaths = writeOutputFiles(
@@ -848,6 +871,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     briefMarkdown,
     exportJson,
     state,
+    sources,
   );
 
   try {

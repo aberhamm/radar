@@ -1,6 +1,12 @@
 import type { AgentState } from '../types/state.js';
 import type { Scorecard, RunMetrics } from '../types/output.js';
 
+export interface SourceFile {
+  content: string;
+  lineCount: number;
+  language: string;
+}
+
 /**
  * Full JSON export of an agent run — enables diffing, debugging, auditing.
  */
@@ -23,6 +29,7 @@ export interface FullExport {
   stackProfile: AgentState['stackProfile'];
   sections: Record<string, string>;
   metrics: RunMetrics;
+  sources?: Record<string, SourceFile>;
 }
 
 /**
@@ -35,6 +42,7 @@ export function buildFullExport(
   metrics: RunMetrics,
   terminationReason?: string,
   toolCallBudget?: number,
+  sources?: Record<string, SourceFile>,
 ): FullExport {
   return {
     metadata: {
@@ -55,6 +63,7 @@ export function buildFullExport(
     stackProfile: state.stackProfile,
     sections,
     metrics,
+    ...(sources && Object.keys(sources).length > 0 ? { sources } : {}),
   };
 }
 

@@ -38,6 +38,8 @@ import { getTriageStatuses, setTriageStatus, setTriageStatuses, countTriaged } f
 import { buildBulkAiFixPrompt, buildBulkJiraPayload, buildBulkAdoPayload } from '@/lib/exportPayloads';
 import { FindingDetailPanel } from '@/components/FindingDetailPanel';
 import { CreateIssuesModal } from '@/components/CreateIssuesModal';
+import { SourceFileViewer } from '@/components/SourceFileViewer';
+import { useSourceFiles } from '@/lib/useSourceFiles';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -548,6 +550,15 @@ export function FindingsTriagePage({
     } catch { /* clipboard API may fail */ }
   }, []);
 
+  // ─── Source file viewer ───────────────────────────────────────
+  const [viewingFile, setViewingFile] = useState<{ filePath: string; highlightLines: number[] } | null>(null);
+  const { sources, loading: sourcesLoading, load: loadSources } = useSourceFiles(runId);
+
+  const handleViewFile = useCallback((filePath: string, highlightLine?: number) => {
+    loadSources();
+    setViewingFile({ filePath, highlightLines: highlightLine ? [highlightLine] : [] });
+  }, [loadSources]);
+
   // ─── Table data ────────────────────────────────────────────────
   const data: FindingRow[] = useMemo(() =>
     findings.map(f => ({
@@ -683,11 +694,16 @@ export function FindingsTriagePage({
       id: 'filePath',
       header: 'File',
       cell: (info) => {
-        const path = info.getValue();
-        return path ? (
-          <span className="text-[12px] text-[var(--color-tertiary-label)] font-data truncate block max-w-[200px]" title={path}>
-            {path}
-          </span>
+        const filePath = info.getValue();
+        return filePath ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleViewFile(filePath); }}
+            className="text-[12px] text-[var(--color-tint)] font-data truncate block max-w-[200px] hover:underline cursor-pointer text-left"
+            title={filePath}
+          >
+            {filePath}
+          </button>
         ) : null;
       },
       size: 200,
@@ -703,7 +719,7 @@ export function FindingsTriagePage({
       filterFn: (row, _id, filterValue) => row.original.triageStatus === filterValue,
       size: 140,
     }),
-  ], [handleTriageChange]);
+  ], [handleTriageChange, handleViewFile]);
 
   // ─── Table instance ────────────────────────────────────────────
   const table = useReactTable({
@@ -1067,11 +1083,46 @@ export function FindingsTriagePage({
           onClose={() => onFindingSelect?.(null)}
           onNav={handlePanelNav}
           onExport={handleExport}
+          onViewFile={handleViewFile}
           currentIndex={selectedFindingIndex + 1}
           totalCount={rows.length}
           runId={runId}
         />
       )}
+
+      {/* Source file viewer */}
+      {viewingFile && (() => {
+        const src = sources?.[viewingFile.filePath];
+        if (sourcesLoading) {
+          return (
+            <div className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex items-center justify-center absolute right-0 top-0 z-10"
+              style={{ animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+              <span className="text-[13px] text-[var(--color-tertiary-label)]">Loading source file...</span>
+            </div>
+          );
+        }
+        if (!src) {
+          return (
+            <div className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col items-center justify-center gap-3 absolute right-0 top-0 z-10"
+              style={{ animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+              <span className="text-[13px] text-[var(--color-tertiary-label)]">Source not available for this run.</span>
+              <button type="button" onClick={() => setViewingFile(null)}
+                className="text-[12px] text-[var(--color-tint)] hover:underline">
+                Go back
+              </button>
+            </div>
+          );
+        }
+        return (
+          <SourceFileViewer
+            filePath={viewingFile.filePath}
+            source={src}
+            highlightLines={viewingFile.highlightLines}
+            onClose={() => setViewingFile(null)}
+            onBack={() => setViewingFile(null)}
+          />
+        );
+      })()}
 
       {/* Export modal */}
       <CreateIssuesModal

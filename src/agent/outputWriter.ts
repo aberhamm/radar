@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Scorecard } from '../types/output.js';
 import type { AgentState } from '../types/state.js';
+import type { SourceFile } from '../output/json.js';
 import { renderInvestigationHtml } from '../output/investigationHtml.js';
 
 /** Write all output artifacts to outputDir. Returns the list of written file paths. */
@@ -28,6 +29,7 @@ export function writeOutputFiles(
   briefMarkdown: string,
   exportJson: string,
   state: AgentState,
+  sources?: Record<string, SourceFile>,
 ): string[] {
   fs.mkdirSync(outputDir, { recursive: true });
 
@@ -65,6 +67,12 @@ export function writeOutputFiles(
   });
   fs.writeFileSync(htmlLogPath, htmlContent, 'utf-8');
   paths.push(htmlLogPath);
+
+  if (sources && Object.keys(sources).length > 0) {
+    const sourcesPath = path.join(outputDir, `${slug}-sources.json`);
+    fs.writeFileSync(sourcesPath, JSON.stringify(sources, null, 2), 'utf-8');
+    paths.push(sourcesPath);
+  }
 
   return paths;
 }

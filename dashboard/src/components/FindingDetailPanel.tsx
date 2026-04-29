@@ -45,6 +45,7 @@ export interface FindingDetailPanelProps {
   onClose: () => void;
   onNav: (direction: 'prev' | 'next') => void;
   onExport?: (findings: Finding[]) => void;
+  onViewFile?: (filePath: string, highlightLine?: number) => void;
   currentIndex: number;
   totalCount: number;
   runId: string;
@@ -52,14 +53,26 @@ export interface FindingDetailPanelProps {
 
 // ─── Code snippet ────────────────────────────────────────────────
 
-function CodeSnippet({ evidence }: { evidence: EvidenceItem }) {
+function CodeSnippet({ evidence, onViewFile }: { evidence: EvidenceItem; onViewFile?: (filePath: string, highlightLine?: number) => void }) {
   return (
     <div className="rounded-lg bg-[var(--color-elevated)] border border-[var(--color-separator)]/50 overflow-hidden">
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-separator)]/30">
-        <span className="text-[11px] font-data text-[var(--color-tertiary-label)] truncate">
-          {evidence.filePath}
-          {evidence.lineNumber ? `:${evidence.lineNumber}` : ''}
-        </span>
+        {onViewFile ? (
+          <button
+            type="button"
+            onClick={() => onViewFile(evidence.filePath, evidence.lineNumber)}
+            className="text-[11px] font-data text-[var(--color-tint)] truncate hover:underline cursor-pointer text-left"
+            title="View full file"
+          >
+            {evidence.filePath}
+            {evidence.lineNumber ? `:${evidence.lineNumber}` : ''}
+          </button>
+        ) : (
+          <span className="text-[11px] font-data text-[var(--color-tertiary-label)] truncate">
+            {evidence.filePath}
+            {evidence.lineNumber ? `:${evidence.lineNumber}` : ''}
+          </span>
+        )}
         {evidence.verificationStatus && (
           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
             evidence.verificationStatus === 'verified'
@@ -100,6 +113,7 @@ export function FindingDetailPanel({
   onClose,
   onNav,
   onExport,
+  onViewFile,
   currentIndex,
   totalCount,
 }: FindingDetailPanelProps) {
@@ -240,7 +254,7 @@ export function FindingDetailPanel({
             </h3>
             <div className="flex flex-col gap-2">
               {evidenceWithSnippets.map((e, i) => (
-                <CodeSnippet key={`${e.filePath}-${i}`} evidence={e} />
+                <CodeSnippet key={`${e.filePath}-${i}`} evidence={e} onViewFile={onViewFile} />
               ))}
             </div>
           </section>
@@ -256,9 +270,20 @@ export function FindingDetailPanel({
               {affectedFiles.map(f => (
                 <div key={f} className="flex items-center gap-2 py-1">
                   <FileCode className="w-3.5 h-3.5 text-[var(--color-tertiary-label)] shrink-0" />
-                  <span className="text-[12px] font-data text-[var(--color-secondary-label)] truncate">
-                    {f}
-                  </span>
+                  {onViewFile ? (
+                    <button
+                      type="button"
+                      onClick={() => onViewFile(f)}
+                      className="text-[12px] font-data text-[var(--color-tint)] truncate hover:underline cursor-pointer text-left"
+                      title="View full file"
+                    >
+                      {f}
+                    </button>
+                  ) : (
+                    <span className="text-[12px] font-data text-[var(--color-secondary-label)] truncate">
+                      {f}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
