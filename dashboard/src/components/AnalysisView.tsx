@@ -57,7 +57,7 @@ export function AnalysisView({
 
   const {
     phase, turns, typingText, activeTurnIndex,
-    examinedFiles, findings, scoreVisible,
+    examinedFiles, findings,
     progressPercent, pendingActions, statusMessage,
   } =
     isLive && liveState
@@ -65,8 +65,6 @@ export function AnalysisView({
       : instantState
         ? instantState
         : { ...animState, statusMessage: '' };
-
-  const scorePanelFindings = isLive ? findings : DATA_FINDINGS;
 
   // ─── UI state ──────────────────────────────────────────────────
 
@@ -173,8 +171,6 @@ export function AnalysisView({
         isLive={!!isLive}
         examinedFiles={examinedFiles}
         findings={findings}
-        scorePanelFindings={scorePanelFindings}
-        scoreVisible={scoreVisible}
       />
 
       {/* Budget pause overlay */}

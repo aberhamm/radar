@@ -12,8 +12,6 @@ interface RightPanelProps {
   isLive: boolean;
   examinedFiles: string[];
   findings: Finding[];
-  scorePanelFindings: Finding[];
-  scoreVisible: boolean;
 }
 
 export function RightPanel({
@@ -22,8 +20,6 @@ export function RightPanel({
   isLive,
   examinedFiles,
   findings,
-  scorePanelFindings,
-  scoreVisible,
 }: RightPanelProps) {
   const [filesCollapsed, setFilesCollapsed] = useState(false);
   const [findingsCollapsed, setFindingsCollapsed] = useState(false);
@@ -161,84 +157,6 @@ export function RightPanel({
           </div>
         </div>
 
-        {/* Score panel */}
-        <ScorePanel
-          findings={scorePanelFindings}
-          scoreVisible={scoreVisible}
-          isLive={isLive}
-          liveFindings={findings}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ─── Score Panel ────────────────────────────────────────────────
-
-function ScorePanel({
-  findings,
-  scoreVisible,
-  isLive,
-  liveFindings,
-}: {
-  findings: Finding[];
-  scoreVisible: boolean;
-  isLive: boolean;
-  liveFindings: Finding[];
-}) {
-  const severityCounts = [
-    { n: findings.filter((f) => f.severity === 'critical').length, l: 'Crit', c: 'var(--color-danger)' },
-    { n: findings.filter((f) => f.severity === 'high').length, l: 'High', c: 'var(--color-danger)' },
-    { n: findings.filter((f) => f.severity === 'medium').length, l: 'Med', c: 'var(--color-warning)' },
-    { n: findings.filter((f) => f.severity === 'low' || f.severity === 'info').length, l: 'Low', c: 'var(--color-success)' },
-  ];
-
-  return (
-    <div
-      data-component="ScorePanel"
-      className="border-t border-separator bg-surface-translucent shrink-0"
-    >
-      <div className="px-3 pt-2 pb-1 flex items-center justify-between">
-        <div className="text-[10px] uppercase tracking-wide text-tertiary-label font-semibold">
-          Score
-        </div>
-        {scoreVisible && (
-          <span
-            className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-danger-subtle text-danger"
-            style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both' }}
-          >
-            RED
-          </span>
-        )}
-      </div>
-      <div className="px-3 pb-2 flex gap-1.5">
-        {severityCounts.map((s) => {
-          const showCount = isLive ? liveFindings.length > 0 : scoreVisible;
-          return (
-            <div
-              key={s.l}
-              className={`flex-1 text-center rounded-md py-0.5 transition-all duration-500 ${showCount ? (scoreVisible ? 'opacity-100' : 'opacity-40') : 'opacity-30'}`}
-              style={
-                showCount
-                  ? {
-                      background: `color-mix(in srgb, ${s.c} 6%, transparent)`,
-                      animation: scoreVisible
-                        ? 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both'
-                        : undefined,
-                    }
-                  : undefined
-              }
-            >
-              <div
-                className="text-xs font-bold font-brand"
-                style={{ color: showCount ? s.c : 'var(--color-quaternary-label)' }}
-              >
-                {showCount ? s.n : '—'}
-              </div>
-              <div className="text-[8px] text-tertiary-label leading-none">{s.l}</div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );

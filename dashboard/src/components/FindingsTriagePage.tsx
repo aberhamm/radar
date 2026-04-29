@@ -57,7 +57,6 @@ export interface FindingsTriagePageProps {
   onRunSwitch?: (runId: string) => void;
   onFindingSelect?: (findingId: string | null) => void;
   selectedFindingId?: string | null;
-  onSidebarCollapse?: (collapsed: boolean) => void;
 }
 
 type SeverityOrder = Record<string, number>;
@@ -257,7 +256,7 @@ function ColumnToggle({
       </button>
       {open && (
         <div className="absolute top-full right-0 mt-1 z-50 bg-[var(--color-surface)] border border-[var(--color-separator)] rounded-lg shadow-[var(--shadow-elevated)] py-1 min-w-[160px] animate-scale-in">
-          {table.getAllLeafColumns().filter(c => c.id !== 'select').map(column => (
+          {table.getAllLeafColumns().filter(c => c.id !== 'select' && c.id !== 'category' && c.id !== 'goalLabel').map(column => (
             <label
               key={column.id}
               className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-[var(--color-secondary-label)] hover:bg-[var(--color-elevated)] cursor-pointer"
@@ -509,7 +508,6 @@ export function FindingsTriagePage({
   onRunSwitch,
   onFindingSelect,
   selectedFindingId,
-  onSidebarCollapse,
 }: FindingsTriagePageProps) {
   // ─── Triage state ──────────────────────────────────────────────
   const [triageStates, setTriageStates] = useState<Record<string, TriageStatus>>(() =>
@@ -559,6 +557,11 @@ export function FindingsTriagePage({
     setViewingFile({ filePath, highlightLines: highlightLine ? [highlightLine] : [] });
   }, [loadSources]);
 
+  // Close file viewer when switching findings
+  useEffect(() => {
+    setViewingFile(null);
+  }, [selectedFindingId]);
+
   // ─── Table data ────────────────────────────────────────────────
   const data: FindingRow[] = useMemo(() =>
     findings.map(f => ({
@@ -572,12 +575,12 @@ export function FindingsTriagePage({
   // ─── Table state ───────────────────────────────────────────────
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'severity', desc: false },
-    { id: 'category', desc: false },
   ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => ({
-    goalLabel: isMultiGoal ?? false,
+    category: false,
+    goalLabel: false,
   }));
   const [focusedRowIndex, setFocusedRowIndex] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -658,55 +661,35 @@ export function FindingsTriagePage({
       filterFn: (row, _id, filterValue) => row.original.severity === filterValue,
       size: 100,
     }),
+    // Hidden columns for filtering (not rendered in table, but filterable)
     columnHelper.accessor('category', {
       header: 'Category',
-      cell: (info) => (
-        <span className="text-[12px] text-[var(--color-secondary-label)]">
-          {info.getValue().replace(/-/g, ' ')}
-        </span>
-      ),
       filterFn: (row, _id, filterValue) => row.original.category === filterValue,
-      size: 130,
+      size: 0,
     }),
     columnHelper.accessor('goalLabel', {
       header: 'Goal',
-      cell: (info) => {
-        const val = info.getValue();
-        return val ? (
-          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--color-elevated)] text-[var(--color-secondary-label)] font-medium">
-            {val}
-          </span>
-        ) : null;
-      },
       filterFn: (row, _id, filterValue) => row.original.goalLabel === filterValue,
-      size: 100,
+      size: 0,
     }),
     columnHelper.accessor('title', {
       header: 'Title',
       cell: (info) => (
-        <span className="text-[13px] font-medium text-[var(--color-label)] truncate block max-w-[400px]">
-          {info.getValue()}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[13px] font-medium text-[var(--color-label)] truncate">
+            {info.getValue()}
+          </span>
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--color-elevated)] text-[var(--color-tertiary-label)] font-medium shrink-0 whitespace-nowrap">
+            {info.row.original.category.replace(/-/g, ' ')}
+          </span>
+          {info.row.original.goalLabel && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-tint)_8%,transparent)] text-[var(--color-tint)] font-medium shrink-0 whitespace-nowrap" style={{ opacity: 0.8 }}>
+              {info.row.original.goalLabel}
+            </span>
+          )}
+        </div>
       ),
-      size: 400,
-    }),
-    columnHelper.accessor(row => row.evidenceFiles[0] ?? '', {
-      id: 'filePath',
-      header: 'File',
-      cell: (info) => {
-        const filePath = info.getValue();
-        return filePath ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); handleViewFile(filePath); }}
-            className="text-[12px] text-[var(--color-tint)] font-data truncate block max-w-[200px] hover:underline cursor-pointer text-left"
-            title={filePath}
-          >
-            {filePath}
-          </button>
-        ) : null;
-      },
-      size: 200,
+      size: 600,
     }),
     columnHelper.accessor('triageStatus', {
       header: 'Status',
@@ -719,7 +702,7 @@ export function FindingsTriagePage({
       filterFn: (row, _id, filterValue) => row.original.triageStatus === filterValue,
       size: 140,
     }),
-  ], [handleTriageChange, handleViewFile]);
+  ], [handleTriageChange]);
 
   // ─── Table instance ────────────────────────────────────────────
   const table = useReactTable({
@@ -764,10 +747,6 @@ export function FindingsTriagePage({
     return rows.findIndex(r => r.original.id === selectedFindingId);
   }, [selectedFindingId, rows]);
 
-  // Auto-collapse sidebar when panel opens
-  useEffect(() => {
-    onSidebarCollapse?.(panelOpen);
-  }, [panelOpen, onSidebarCollapse]);
 
   // ─── Keyboard navigation ───────────────────────────────────────
   useEffect(() => {
@@ -1120,6 +1099,7 @@ export function FindingsTriagePage({
             highlightLines={viewingFile.highlightLines}
             onClose={() => setViewingFile(null)}
             onBack={() => setViewingFile(null)}
+            onBackdropClick={() => setViewingFile(null)}
           />
         );
       })()}

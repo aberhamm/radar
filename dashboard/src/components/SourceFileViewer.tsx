@@ -10,6 +10,7 @@ interface SourceFileViewerProps {
   highlightLines?: number[];
   onClose: () => void;
   onBack?: () => void;
+  onBackdropClick?: () => void;
 }
 
 export function SourceFileViewer({
@@ -18,6 +19,7 @@ export function SourceFileViewer({
   highlightLines = [],
   onClose,
   onBack,
+  onBackdropClick,
 }: SourceFileViewerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -48,16 +50,25 @@ export function SourceFileViewer({
   const lines = source.content.split('\n');
 
   return (
-    <div
-      ref={panelRef}
-      data-component="SourceFileViewer"
-      role="complementary"
-      aria-label="Source file viewer"
-      className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col overflow-hidden absolute right-0 top-0 z-10"
-      style={{
-        animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
-      }}
-    >
+    <>
+      {/* Semi-transparent backdrop for click-outside dismissal */}
+      {onBackdropClick && (
+        <div
+          className="absolute inset-0 z-[9] bg-black/10"
+          onClick={onBackdropClick}
+          aria-hidden="true"
+        />
+      )}
+      <div
+        ref={panelRef}
+        data-component="SourceFileViewer"
+        role="complementary"
+        aria-label="Source file viewer"
+        className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col overflow-hidden absolute right-0 top-0 z-10"
+        style={{
+          animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
+        }}
+      >
       {/* Header */}
       <div className="shrink-0 px-5 py-4 border-b border-[var(--color-separator)]">
         <div className="flex items-center justify-between">
@@ -132,5 +143,6 @@ export function SourceFileViewer({
         </pre>
       </div>
     </div>
+    </>
   );
 }

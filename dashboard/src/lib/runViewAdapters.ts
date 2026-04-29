@@ -143,6 +143,18 @@ export function buildMergedScorecard(goals: MultiGoalGoal[], repoName: string, s
     overallScore: worstScore,
     categories: [...catMap.values()],
     topRisks: allRisks,
+    metadata: {
+      repoName,
+      analysisDate: startedAt,
+      agentVersion: '',
+      goalType: 'all',
+      detectedPlatform: '',
+      toolCallsUsed: 0,
+      webSearchesUsed: 0,
+      urlFetchesUsed: 0,
+      documentationSources: [],
+    },
+    findings: goals.flatMap(g => g.findings ?? []),
   };
 }
 

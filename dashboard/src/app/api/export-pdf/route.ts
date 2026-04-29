@@ -20,13 +20,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const safeMetrics = {
+      ...metrics,
+      durationMs: metrics.durationMs ?? 0,
+      toolCalls: metrics.toolCalls ?? 0,
+      totalEstimatedCostUsd: metrics.totalEstimatedCostUsd ?? 0,
+      models: metrics.models ?? {},
+      startedAt: metrics.startedAt ?? '',
+      completedAt: metrics.completedAt ?? '',
+    };
+
     const pdfBuffer = await renderPdfToBuffer({
       scorecard,
       findings: findings ?? [],
-      metrics,
+      metrics: safeMetrics,
     });
 
-    const slug = scorecard.repoName.replace(/[^a-zA-Z0-9-]/g, '-');
+    const slug = (scorecard.repoName ?? 'report').replace(/[^a-zA-Z0-9-]/g, '-');
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,

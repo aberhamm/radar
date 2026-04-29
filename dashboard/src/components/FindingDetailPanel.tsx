@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
   ChevronUp,
@@ -8,6 +8,7 @@ import {
   CircleDot,
   Eye,
   ExternalLink,
+  Check,
   CheckCircle,
   Copy,
   FileCode,
@@ -119,6 +120,7 @@ export function FindingDetailPanel({
 }: FindingDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const [copied, setCopied] = useState(false);
 
   // Focus panel title on open
   useEffect(() => {
@@ -150,6 +152,8 @@ export function FindingDetailPanel({
     const md = buildAiFixPrompt(finding);
     try {
       await navigator.clipboard.writeText(md);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     } catch {
       // clipboard API might fail in some environments
     }
@@ -367,10 +371,21 @@ export function FindingDetailPanel({
           <button
             type="button"
             onClick={handleCopyAiFix}
-            className="w-7 h-7 rounded-md bg-[var(--color-tint)] flex items-center justify-center text-white cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all"
+            className={`h-7 rounded-md flex items-center justify-center cursor-pointer active:scale-[0.97] transition-all duration-150 ${
+              copied
+                ? 'bg-[var(--color-success)] gap-1 px-2.5'
+                : 'bg-[var(--color-tint)] w-7 hover:brightness-110'
+            } text-white`}
             title="Copy as markdown"
           >
-            <Copy className="w-3.5 h-3.5" />
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span className="text-[11px] font-medium">Copied</span>
+              </>
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
           </button>
         </div>
       </div>

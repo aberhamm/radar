@@ -249,8 +249,8 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
       </Tabs>
 
       {/* Tab content */}
-      <div className={`flex-1 overflow-auto flex flex-col ${activeTab === 'investigation' ? '' : 'px-6'}`}>
-        <div key={activeTab} role="tabpanel" aria-label={activeTab} className="animate-slide-up flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col ${activeTab === 'investigation' ? 'overflow-hidden' : 'overflow-auto'} ${activeTab === 'investigation' ? '' : 'px-6'}`}>
+        <div key={activeTab} role="tabpanel" aria-label={activeTab} className={`animate-slide-up flex-1 flex flex-col ${activeTab === 'investigation' ? 'overflow-hidden' : ''}`}>
 
           {/* Overview */}
           {activeTab === 'overview' && mode.kind === 'single' && (

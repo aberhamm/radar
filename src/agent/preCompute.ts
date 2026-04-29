@@ -41,7 +41,7 @@ export async function runPreCompute(repoPath: string, appRoot?: string): Promise
 
   // Phase 1: independent tools in parallel (Promise.allSettled — never throws)
   const [appRootsResult, packageJsonResult, fileTreeResult] = await Promise.allSettled([
-    detectAppRoots(repoPath, appRoot ? { repoPath: appRoot } : {}),
+    detectAppRoots(scanPath, {}),
     parsePackageJson(repoPath, { path: pkgJsonPath }),
     listDirectory(repoPath, { path: listPath, depth: 2 }),
   ]);

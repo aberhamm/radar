@@ -431,7 +431,7 @@ function renderScorecardTable(
     doc.text(cat.score.toUpperCase(), pipX + 14, rowY + 6, { width: cols.score - 20 });
 
     // Findings count
-    doc.text(String(cat.findings.length), mx + cols.category + cols.score + 6, rowY + 6, { width: cols.findings });
+    doc.text(String((cat.findings ?? []).length), mx + cols.category + cols.score + 6, rowY + 6, { width: cols.findings });
 
     // Summary (truncated)
     doc.font('Helvetica').fontSize(8).fillColor(COLORS.labelSecondary);
@@ -657,14 +657,15 @@ function totalFindings(scorecard: Scorecard): number {
 function severityCounts(scorecard: Scorecard): Record<Severity, number> {
   const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const cat of scorecard.categories) {
-    for (const f of cat.findings) {
+    for (const f of (cat.findings ?? [])) {
       counts[f.severity]++;
     }
   }
   return counts;
 }
 
-function truncate(text: string, maxLen: number): string {
+function truncate(text: string | undefined, maxLen: number): string {
+  if (!text) return '';
   const oneLine = text.replace(/\n/g, ' ').trim();
   if (oneLine.length <= maxLen) return oneLine;
   return oneLine.slice(0, maxLen - 3) + '...';

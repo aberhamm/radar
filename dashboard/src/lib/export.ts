@@ -221,6 +221,6 @@ export async function exportReportPDF(
   }
 
   const blob = await res.blob();
-  const slug = scorecard.repoName.replace(/[^a-zA-Z0-9-]/g, '-');
+  const slug = (scorecard.repoName ?? 'report').replace(/[^a-zA-Z0-9-]/g, '-');
   downloadBlobObj(blob, `${slug}-report.pdf`);
 }

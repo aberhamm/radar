@@ -150,7 +150,7 @@ export default function DashboardPage() {
     isMobileRef.current = !mq.matches;
     const handler = (e: MediaQueryListEvent) => {
       isMobileRef.current = !e.matches;
-      if (!e.matches) setSidebarOpen(false);
+      setSidebarOpen(e.matches);
     };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
@@ -570,7 +570,7 @@ export default function DashboardPage() {
           if (data.findings) {
             const normalized = normalizeFindings(data.findings);
             for (const f of normalized) {
-              goalMap[f.id] = GOAL_LABELS[child.goal] ?? child.goal;
+              if (!goalMap[f.id]) goalMap[f.id] = GOAL_LABELS[child.goal] ?? child.goal;
             }
             allFindings.push(...normalized);
           }
@@ -592,6 +592,9 @@ export default function DashboardPage() {
         const res = await fetch(`/api/history/${encodeURIComponent(targetRun.id)}/findings`);
         const data = await res.json();
         const findings = data.findings ? normalizeFindings(data.findings) : [];
+        const goalLabel = GOAL_LABELS[targetRun.goal] ?? targetRun.goal;
+        const goalMap: Record<string, string> = {};
+        for (const f of findings) goalMap[f.id] = goalLabel;
         setFindingsData({
           findings,
           runId: targetRun.id,
@@ -599,6 +602,7 @@ export default function DashboardPage() {
           goal: targetRun.goal,
           startedAt: targetRun.startedAt,
           repoUrl: targetRun.repoUrl,
+          goalMap,
         });
       }
     } catch (err) {
@@ -1152,7 +1156,7 @@ export default function DashboardPage() {
           )}
 
           {/* Runs list page */}
-          {status === 'runs' && (
+          {status === 'runs' && !historyLoading && (
             <div key="runs" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
               <RunsListView
                 history={history}
