@@ -68,7 +68,6 @@ function groupHistory(history: HistoryItem[]): GroupedRun[] {
     if (seen.has(h.id)) continue;
 
     if (parentIds.has(h.id) || childrenByParent.has(h.id)) {
-      // This is a multi-goal parent (either it has children, or it IS a parent)
       const parentId = h.parentRunId ?? h.id;
       if (seen.has(parentId)) continue;
       seen.add(parentId);
@@ -108,6 +107,36 @@ function groupHistory(history: HistoryItem[]): GroupedRun[] {
         findingsCount: h.findingsCount,
       });
     }
+  }
+
+  // Create groups for parent IDs whose envelope record isn't in the history
+  // (all children have parentRunId but the parent itself wasn't returned)
+  for (const [parentId, children] of childrenByParent) {
+    if (seen.has(parentId)) continue;
+    seen.add(parentId);
+
+    const first = children[0];
+    const worstScore = children.reduce<'red' | 'yellow' | 'green' | null>((worst, c) => {
+      if (!c.score) return worst;
+      if (c.score === 'red') return 'red';
+      if (c.score === 'yellow' && worst !== 'red') return 'yellow';
+      if (c.score === 'green' && !worst) return 'green';
+      return worst;
+    }, null);
+    const totalFindings = children.reduce((sum, c) => sum + (c.findingsCount ?? 0), 0);
+
+    groups.push({
+      kind: 'multi',
+      id: parentId,
+      repoName: first.repoName,
+      goals: children.map(c => c.goal),
+      startedAt: first.startedAt,
+      completedAt: children[children.length - 1]?.completedAt,
+      score: worstScore,
+      findingsCount: totalFindings || undefined,
+      children,
+    });
+    for (const c of children) seen.add(c.id);
   }
 
   return groups;
