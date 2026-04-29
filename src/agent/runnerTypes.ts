@@ -75,11 +75,11 @@ export interface StepEvent {
   action: string;
   reasoning?: string;
   result?: string;
-  /** Full reasoning text (only in verbose mode) */
+  /** Full reasoning text (untruncated) */
   fullReasoning?: string;
-  /** Full result text (only in verbose mode) */
+  /** Full result text (capped at ~10 KB) */
   fullResult?: string;
-  /** Tool call arguments (only in verbose mode) */
+  /** Tool call arguments as JSON string */
   args?: string;
   /** Type of event: tool_call, finding, budget_warning, text_response, assemble_output, model_switch */
   type?: 'tool_call' | 'tool_start' | 'finding' | 'budget_warning' | 'text_response' | 'text_delta' | 'assemble_output' | 'model_switch' | 'verification';
@@ -91,6 +91,12 @@ export interface StepEvent {
   timestamp?: string;
   /** Structured metadata from the tool result (e.g. findingId, severity, matchCount) */
   details?: Record<string, unknown>;
+  /** Accumulated thinking/reasoning block content from the assistant turn */
+  thinking?: string;
+  /** Model ID that generated this turn */
+  model?: string;
+  /** Duration of tool execution in milliseconds */
+  durationMs?: number;
 }
 
 /** Everything produced by a single runAgent() call — scorecard, brief, metrics, and raw state. */
@@ -105,4 +111,6 @@ export interface RunResult {
   terminationReason: 'completed' | 'budget_exhausted' | 'stuck' | 'error';
   /** Error message if terminationReason is 'error' */
   errorDetail?: string;
+  /** Evidence source files captured for the dashboard file viewer */
+  sources?: Record<string, { content: string; lineCount: number; language: string }>;
 }

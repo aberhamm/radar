@@ -325,9 +325,10 @@ export async function dashboardAnalyzeAll(
         scorecard: scorecard as RunResult['scorecard'],
         metrics: lastResult.metrics,
         terminationReason: lastResult.terminationReason,
-        briefMarkdown: '', // Brief writing happens separately or is deferred
+        briefMarkdown: '',
         outputPaths: [],
         state: { findings: allFindings },
+        ...(lastResult.sources ? { sources: lastResult.sources } : {}),
       },
       events: [...allEvents],
       repoPath: opts.repoPath,

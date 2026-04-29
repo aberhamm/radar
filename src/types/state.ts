@@ -16,6 +16,14 @@ export interface InvestigationEntry {
   action: string;
   reasoning: string;
   result: string;
+  fullReasoning?: string;
+  fullResult?: string;
+  args?: string;
+  timestamp?: string;
+  model?: string;
+  batchId?: string;
+  durationMs?: number;
+  thinking?: string;
 }
 
 export interface FetchedDoc {

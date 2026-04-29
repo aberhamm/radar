@@ -100,36 +100,47 @@ function findingsForGoal(allFindings: Finding[], goal: MultiGoalGoal): Finding[]
   return result.sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0));
 }
 
-// ─── Scoreboard ─────────────────────────────────────────────────
+// ─── Verdict ────────────────────────────────────────────────────
 
-function Scoreboard({ goals, goalFindingCounts, onScrollTo }: {
-  goals: MultiGoalGoal[];
-  goalFindingCounts: Map<string, number>;
-  onScrollTo: (goalId: string) => void;
-}) {
+function Verdict({ goals, findings }: { goals: MultiGoalGoal[]; findings: Finding[] }) {
+  const worstScore = goals.reduce((worst, g) => {
+    const order: Record<string, number> = { red: 3, yellow: 2, green: 1 };
+    return (order[g.scorecard.overallScore] ?? 0) > (order[worst] ?? 0)
+      ? g.scorecard.overallScore : worst;
+  }, 'green');
+
+  const verdictText = worstScore === 'green'
+    ? 'All goals pass. Codebase is in good shape.'
+    : worstScore === 'yellow'
+      ? 'Some goals need attention before production.'
+      : 'Critical issues found across multiple goals.';
+
   return (
-    <div className="flex gap-1 overflow-x-auto pb-2">
-      {goals.map(g => (
-        <button
-          key={g.id}
-          onClick={() => onScrollTo(g.id)}
-          className="flex-1 min-w-[120px] text-center p-4 rounded-xl border border-separator hover:border-tint hover:shadow-md transition-all cursor-pointer group"
-          style={{ background: scoreBg(g.scorecard.overallScore) }}
+    <div className="flex items-start gap-5 mb-8">
+      <div
+        className="w-[72px] h-[72px] rounded-2xl flex items-center justify-center shrink-0"
+        style={{ background: scoreBg(worstScore) }}
+      >
+        <span
+          className="text-[36px] font-bold font-brand leading-none"
+          style={{ color: scoreColor(worstScore) }}
         >
-          <div
-            className="text-[24px] font-bold font-brand mb-1"
-            style={{ color: scoreColor(g.scorecard.overallScore) }}
-          >
-            {scoreToGrade(g.scorecard.overallScore)}
-          </div>
-          <div className="text-[13px] font-semibold text-label group-hover:text-tint transition-colors mb-0.5">
-            {goalDisplayName(g.goal)}
-          </div>
-          <div className="text-[11px] text-tertiary-label">
-            {goalFindingCounts.get(g.id) ?? 0} findings
-          </div>
-        </button>
-      ))}
+          {scoreToGrade(worstScore)}
+        </span>
+      </div>
+      <div className="pt-1 min-w-0">
+        <div className="text-[17px] font-semibold text-label">
+          {goals[0]?.scorecard.repoName ?? 'Repository'}
+        </div>
+        <div className="text-[13px] text-secondary-label mt-0.5">
+          {verdictText}
+        </div>
+        <div className="flex items-center gap-2 mt-2 text-[11px] text-tertiary-label">
+          <span>{goals.length} goals</span>
+          <span className="text-quaternary-label">·</span>
+          <span>{findings.length} findings</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -148,20 +159,22 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
     }
   }
 
-  const sorted = allRisks
+  const topRisks = allRisks
     .sort((a, b) => (SEV_ORDER[b.severity] ?? 0) - (SEV_ORDER[a.severity] ?? 0))
-    .slice(0, 8);
+    .slice(0, 5);
 
-  if (sorted.length === 0) return null;
+  if (topRisks.length === 0) return null;
 
   const sevTextColor = (s: string) =>
     s === 'critical' || s === 'high' ? 'text-danger' : s === 'medium' ? 'text-warning' : 'text-tertiary-label';
 
   return (
-    <div>
-      <h3 className="text-[13px] font-semibold text-label mb-3">Top Risks</h3>
+    <div className="mb-8">
+      <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold mb-3">
+        Top Risks
+      </div>
       <div className="flex flex-col gap-2">
-        {sorted.map((risk, i) => (
+        {topRisks.map((risk, i) => (
           <div key={risk.findingId} className="flex items-start gap-2.5 text-[12px]">
             <span className="text-tertiary-label shrink-0 w-4 text-right">{i + 1}.</span>
             <span className={`shrink-0 font-medium uppercase text-[10px] mt-0.5 ${sevTextColor(risk.severity)}`}>
@@ -226,8 +239,10 @@ function PassBreakdown({ events }: { events: StepEvent[] }) {
   if (totalCalls === 0) return null;
 
   return (
-    <div>
-      <h3 className="text-[13px] font-semibold text-label mb-3">Investigation Passes</h3>
+    <div className="border-t border-separator pt-6">
+      <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold mb-3">
+        Investigation Passes
+      </div>
       <div className="flex flex-col gap-2">
         {passes.map(pass => {
           const pct = pass.budget
@@ -476,14 +491,6 @@ export function MultiOverviewContent({ goals, events, findings }: MultiOverviewC
     return map;
   }, [sorted, findings]);
 
-  const goalFindingCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const [id, f] of goalFindingsMap) {
-      map.set(id, f.length);
-    }
-    return map;
-  }, [goalFindingsMap]);
-
   // Auto-expand: worst goal + its worst category
   const worstGoal = sorted[0];
   const worstCatKey = useMemo(() => {
@@ -528,13 +535,6 @@ export function MultiOverviewContent({ goals, events, findings }: MultiOverviewC
     });
   }, []);
 
-  const scrollToGoal = useCallback((goalId: string) => {
-    setExpandedGoals(prev => new Set(prev).add(goalId));
-    requestAnimationFrame(() => {
-      sectionRefs.current.get(goalId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, []);
-
   const allExpanded = expandedGoals.size === sorted.length;
   const toggleAll = useCallback(() => {
     if (allExpanded) {
@@ -546,46 +546,49 @@ export function MultiOverviewContent({ goals, events, findings }: MultiOverviewC
   }, [allExpanded, sorted]);
 
   return (
-    <div data-component="MultiOverviewContent" className="max-w-4xl pt-5 pb-8">
-      <div data-component="Scoreboard" className="mb-6">
-        <Scoreboard goals={sorted} goalFindingCounts={goalFindingCounts} onScrollTo={scrollToGoal} />
-      </div>
+    <div data-component="MultiOverviewContent" className="max-w-[860px] pt-5 pb-8">
+      {/* Level 1: The Verdict */}
+      <Verdict goals={sorted} findings={findings} />
 
-      <div data-component="TopRisks-PassBreakdown" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <TopRisks goals={sorted} />
-        <PassBreakdown events={events} />
-      </div>
+      {/* Level 2: Top Risks */}
+      <TopRisks goals={sorted} />
 
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold">
-          Per-Goal Details
+      {/* Level 3: Per-Goal Details */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[10px] text-tertiary-label uppercase tracking-wide font-semibold">
+            Goals ({sorted.length})
+          </div>
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="text-[11px] text-tint hover:text-tint-hover transition-colors cursor-pointer"
+          >
+            {allExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={toggleAll}
-          className="text-[11px] text-tint hover:text-tint-hover transition-colors cursor-pointer"
-        >
-          {allExpanded ? 'Collapse All' : 'Expand All'}
-        </button>
+
+        <div data-component="GoalAccordion" role="tree" className="flex flex-col gap-1.5">
+          {sorted.map(g => (
+            <GoalAccordionSection
+              key={g.id}
+              goal={g}
+              distributedFindings={goalFindingsMap.get(g.id) ?? []}
+              isExpanded={expandedGoals.has(g.id)}
+              onToggle={() => toggleGoal(g.id)}
+              sectionRef={(el) => {
+                if (el) sectionRefs.current.set(g.id, el);
+                else sectionRefs.current.delete(g.id);
+              }}
+              expandedCategories={expandedCategories}
+              onToggleCategory={toggleCategory}
+            />
+          ))}
+        </div>
       </div>
 
-      <div data-component="GoalAccordion" role="tree" className="flex flex-col gap-3">
-        {sorted.map(g => (
-          <GoalAccordionSection
-            key={g.id}
-            goal={g}
-            distributedFindings={goalFindingsMap.get(g.id) ?? []}
-            isExpanded={expandedGoals.has(g.id)}
-            onToggle={() => toggleGoal(g.id)}
-            sectionRef={(el) => {
-              if (el) sectionRefs.current.set(g.id, el);
-              else sectionRefs.current.delete(g.id);
-            }}
-            expandedCategories={expandedCategories}
-            onToggleCategory={toggleCategory}
-          />
-        ))}
-      </div>
+      {/* Level 4: Investigation Passes */}
+      <PassBreakdown events={events} />
     </div>
   );
 }

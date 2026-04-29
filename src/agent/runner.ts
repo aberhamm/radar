@@ -267,6 +267,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   }
 
   let lastAssistantReasoning = '';
+  let lastAssistantThinking = '';
+  let lastAssistantModel = '';
+  const toolStartTimes = new Map<string, number>();
+  const TRACE_RESULT_CAP = 10_240;
   let currentBatchId: string = randomUUID();
   let budgetExhaustedFired = false;
   let extensionGateFired = false;
@@ -443,16 +447,33 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     }
 
     const reasoning = lastAssistantReasoning;
+    const thinking = lastAssistantThinking;
     const resultText = ctx.result?.content?.[0]?.type === 'text'
       ? (ctx.result.content[0] as { type: 'text'; text: string }).text
       : '';
     const redactedResult = redactSecrets(resultText);
     const cleanResult = redactedResult.replaceAll(config.repoPath, '');
+    const argsJson = JSON.stringify(ctx.args);
+    const cappedResult = cleanResult.length > TRACE_RESULT_CAP
+      ? cleanResult.slice(0, TRACE_RESULT_CAP) + `\n...[truncated ${cleanResult.length - TRACE_RESULT_CAP} chars]`
+      : cleanResult;
+    const startMs = tcId ? toolStartTimes.get(tcId) : undefined;
+    const durationMs = startMs ? Date.now() - startMs : undefined;
+    if (tcId) toolStartTimes.delete(tcId);
+
     state.investigationLog.push({
       step: stepCount,
       action: toolName,
       reasoning: reasoning.slice(0, 200),
       result: cleanResult.slice(0, 200),
+      fullReasoning: reasoning || undefined,
+      fullResult: cappedResult || undefined,
+      args: argsJson !== '{}' && argsJson !== 'null' && argsJson !== 'undefined' ? argsJson : undefined,
+      timestamp: new Date().toISOString(),
+      model: lastAssistantModel || undefined,
+      batchId: currentBatchId,
+      durationMs,
+      thinking: thinking || undefined,
     });
 
     // Keep compressionState.findings in sync (shared reference may diverge after dedup/filter)
@@ -463,6 +484,9 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     const toolDetails = ctx.result?.details && typeof ctx.result.details === 'object' && Object.keys(ctx.result.details as object).length > 0
       ? ctx.result.details as Record<string, unknown>
       : undefined;
+    const cappedRedacted = redactedResult.length > TRACE_RESULT_CAP
+      ? redactedResult.slice(0, TRACE_RESULT_CAP) + `\n...[truncated]`
+      : redactedResult;
     config.onStep?.({
       step: stepCount,
       action: toolName,
@@ -471,11 +495,12 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       type: isAssemble ? 'assemble_output' : isFinding ? 'finding' : 'tool_call',
       batchId: currentBatchId,
       ...(toolDetails ? { details: toolDetails } : {}),
-      ...(config.verbose ? {
-        fullReasoning: reasoning,
-        fullResult: redactedResult,
-        args: JSON.stringify(ctx.args),
-      } : {}),
+      fullReasoning: reasoning,
+      fullResult: cappedRedacted,
+      args: argsJson,
+      model: lastAssistantModel || undefined,
+      durationMs,
+      thinking: thinking || undefined,
     });
 
     if (checkpointInterval > 0 && state.toolCallCount % checkpointInterval === 0) {
@@ -634,6 +659,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     if (event.type === 'message_start' && event.message && 'role' in event.message && event.message.role === 'assistant') {
       currentBatchId = randomUUID();
       streamingText = '';
+      lastAssistantThinking = '';
       turnStartMs = Date.now();
       turnCount++;
     }
@@ -648,11 +674,14 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
           type: 'text_delta',
           reasoning: streamingText,
         });
+      } else if (ame?.type === 'thinking_delta' && ame.delta) {
+        lastAssistantThinking += ame.delta;
       }
     }
 
     if (event.type === 'tool_execution_start') {
-      const te = event as { toolName?: string; args?: Record<string, unknown> };
+      const te = event as { toolCallId?: string; toolName?: string; args?: Record<string, unknown> };
+      if (te.toolCallId) toolStartTimes.set(te.toolCallId, Date.now());
       config.onStep?.({
         step: stepCount,
         action: te.toolName ?? 'unknown',
@@ -669,6 +698,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
       }
 
       const msg = event.message;
+      lastAssistantModel = msg.model ?? '';
       trackUsage(state, msg.model, {
         inputTokens: msg.usage.input,
         outputTokens: msg.usage.output,
@@ -689,7 +719,19 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
               type: 'text_response',
               reasoning: lastAssistantReasoning.slice(0, 100),
               fullReasoning: lastAssistantReasoning,
+              model: lastAssistantModel || undefined,
+              thinking: lastAssistantThinking || undefined,
             });
+          }
+        }
+
+        // Extract thinking blocks from final message as fallback if deltas were missed
+        if (!lastAssistantThinking) {
+          const thinkingParts = (msg.content as { type: string; thinking?: string }[])
+            .filter((c) => c.type === 'thinking' && c.thinking)
+            .map((c) => c.thinking!);
+          if (thinkingParts.length > 0) {
+            lastAssistantThinking = thinkingParts.join('\n').trim();
           }
         }
       }
@@ -936,5 +978,6 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     state,
     terminationReason,
     errorDetail,
+    sources,
   };
 }

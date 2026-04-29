@@ -16,7 +16,10 @@ async function loadRunner() {
   const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
   const distPath = path.resolve(process.cwd(), '..', 'dist', 'agent', 'runner.js');
   const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
-  return mod.runAgent as typeof import('@agent/agent/runner').runAgent;
+  return {
+    runAgent: mod.runAgent as typeof import('@agent/agent/runner').runAgent,
+    runPreCompute: mod.runPreCompute as typeof import('@agent/agent/runner').runPreCompute,
+  };
 }
 
 async function loadScorecard() {
@@ -145,7 +148,7 @@ export async function POST(req: NextRequest) {
       };
 
       emitStatus('Loading agent runner...');
-      const runAgent = await loadRunner();
+      const { runAgent, runPreCompute } = await loadRunner();
       emitStatus('Agent loaded');
 
       const isMultiGoal = goal === 'all' || (goalsArray && goalsArray.length > 1);
@@ -153,6 +156,10 @@ export async function POST(req: NextRequest) {
         const selectedGoals = goalsArray ?? [...ALL_GOALS];
         emitStatus('Loading scorecard engine...');
         const computeScorecard = await loadScorecard();
+
+        emitStatus('Pre-computing repo signals...');
+        const preCompute = await runPreCompute(resolvedRepoPath, appRoot);
+
         emitStatus(`Starting universal analysis (3 passes, ${selectedGoals.length} goals)...`);
 
         const multiResult = await dashboardAnalyzeAll(
@@ -167,6 +174,7 @@ export async function POST(req: NextRequest) {
             budget: requestedBudget ?? 30,
             goals: selectedGoals,
             outputDir: AGENT_OUTPUT_DIR,
+            preCompute,
             onStep: (event: StepEvent) => {
               const run = session.currentRun;
               if (!run) return;

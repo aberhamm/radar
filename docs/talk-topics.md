@@ -183,10 +183,54 @@ Together, they raise the bar significantly. The talk should frame this as defens
 
 ---
 
+## 6. Harness Engineering as a Discipline
+
+**The hook:** When you build an LLM agent, the model is fixed. The real engineering is everything around it: what context to keep, when to switch models, how to manage budget, what to verify. Stanford just published a paper calling this "harness engineering" and built a framework to automate the search over it. Here's what that means for how we think about our own work.
+
+**What it covers:**
+
+The central argument: the harness — the code around the model — is a distinct optimization target, separable from the model itself. This isn't a new idea (everyone tunes prompts), but Meta-Harness (Lee, Nair, Zhang et al., arXiv 2603.28052, March 2026, Chelsea Finn's IRIS Lab at Stanford) formalizes it. Their framework runs an outer-loop search: an Opus-class "proposer" agent reads execution traces from prior runs, proposes new harness code (retrieval strategies, memory management, context construction), evaluates candidates against benchmarks, and iterates.
+
+Their results validate that harness changes move the needle independently of model improvements:
+- Text classification: +7.7 points over SOTA context management, using 4x fewer tokens
+- Math reasoning (IMO-level): +4.7 accuracy gain, consistent across 5 held-out models
+- Agentic coding (TerminalBench-2): surpasses hand-engineered baselines
+
+The key finding for the talk: the proposer needs **full execution traces** (not just scores) to work. Their ablation shows scores-only feedback drops median accuracy from 50.0 to 34.6. The proposer reads a median of 82 files per iteration — 41% harness source, 40% execution traces, 6% scores. Dumbing down the information kills the optimization, even with the same search budget.
+
+**The Radar connection — we already do this manually.** Every Radar harness parameter was tuned through the same loop Meta-Harness automates:
+
+| Meta-Harness component | Our equivalent |
+|------------------------|---------------|
+| Proposer (Opus reading traces) | Claude Code on Opus, reading our runner code and investigation logs |
+| Execution traces | Radar's investigation log, step events, cost tracking, verification pass rates |
+| Candidate evaluation | Running Radar against real repos, reviewing output quality |
+| Iteration | Interactive sessions — "the recording gate fires too early," refine, re-run |
+
+The parameters Meta-Harness would search over are exactly what we hand-tuned:
+- Context compression window size (12 normal / 8 after model switch)
+- Budget warning thresholds (40% / 50% / 60% / 70%)
+- Recording gate percentage (60%)
+- Evidence fuzzy-match threshold
+- Observation eviction strategy (which tool results to keep vs. stub)
+
+**Why we didn't automate it.** Meta-Harness costs ~$150-200 per proposer iteration (10 MTok of Opus context). A 20-iteration search runs $3,000-4,000. The inner loop (evaluation runs) is cheap ($0.30-0.38 per Haiku-only Radar run), but the proposer dominates at 99%+ of spend. For a narrow, well-understood search space, interactive human-guided refinement with Claude Code is the same architecture at a fraction of the cost — and produces better results because the human brings domain insight that blind search lacks.
+
+The paper acknowledges this gap: "a broader study of how the effect varies across proposer agents remains for future work." They only tested Opus. Whether a cheaper proposer (Sonnet, Haiku) can handle the 82-file trace navigation is unknown.
+
+**The talk's thesis.** Harness engineering is the highest-leverage work in production agent systems. The model is a commodity — every team has access to the same Sonnet/Opus/Haiku. The differentiation is in the harness: how you manage context, enforce budgets, verify evidence, switch models, compress history. Stanford's paper validates this as a formal optimization target. The practical path for most teams is human-guided iteration with a capable coding agent, not automated search — and the execution trace infrastructure you need for Meta-Harness is the same infrastructure you need for debugging anyway.
+
+**Why it captivates:** This reframes the audience's mental model. Most developers think "the model is the product." This talk argues "the harness is the product, the model is the engine." Stanford's paper provides academic backing. Radar provides the concrete example. The cost analysis makes it actionable — here's what you'd spend on automated search, here's why interactive refinement is better for most teams.
+
+**Demo opportunity:** Show the interactive loop live. Open a Radar investigation log, point at a failure mode (agent burned budget without recording), show the threshold tuning in runner.ts, re-run, show the improvement. Then reference Meta-Harness: "Stanford built a $3,000 framework to automate what we just did in 10 minutes."
+
+---
+
 ## Suggested episode order
 
 1. **Evidence Verification** — most universally relevant, every LLM developer cares about hallucination
 2. **Dual-Model Cost Optimization** — directly follows prompt caching (both are cost topics), the mutation trick is memorable
 3. **Budget as Architecture** — builds on model switching (budget triggers the switch), introduces the multi-goal system
 4. **Defensive Parsing** — lighter topic, good as a shorter episode or paired with evidence verification
-5. **Prompt Injection Defense** — security topic, good closer for the series, references all prior topics
+5. **Prompt Injection Defense** — security topic, references all prior topics
+6. **Harness Engineering as a Discipline** — capstone episode, reframes the entire series under the Meta-Harness lens, ties all prior topics together as "harness decisions"

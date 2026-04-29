@@ -142,63 +142,41 @@ export function RunLoadingSkeleton() {
         </div>
       </div>
 
-      {/* ── Report body ── matches ScorecardGrid + TopRisks + FindingsSection */}
+      {/* ── Report body ── matches Verdict + TopRisks + Category rows */}
       <div className="flex-1 overflow-y-auto px-6">
         <div className="max-w-[860px] pt-5 pb-8">
-          {/* Overall score bar — dot · bold score · repo label · right-aligned cost */}
-          <div className="flex items-center gap-3 mb-4 p-3 bg-surface rounded-lg border border-separator shadow-sm">
-            <Bar width="12px" height="12px" className="rounded-full shrink-0" />
-            <div className="flex-1 flex items-center gap-3">
-              <Bar width="100px" height="14px" />
-              <Bar width="200px" height="12px" />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Bar width="48px" height="14px" />
-              <Bar width="80px" height="10px" />
+          {/* Verdict — large grade + repo name + metadata */}
+          <div className="flex items-start gap-5 mb-8">
+            <Bar width="72px" height="72px" className="rounded-2xl shrink-0" />
+            <div className="pt-1 flex-1 space-y-2">
+              <Bar width="180px" height="15px" />
+              <Bar width="260px" height="12px" />
+              <Bar width="200px" height="10px" />
             </div>
           </div>
 
-          {/* Category grid — auto-fill minmax(160px, 1fr), ~7 cards like real data */}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2 mb-5">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <div key={i} className="bg-surface rounded-lg border border-separator shadow-sm p-3">
-                <Bar width="80%" height="10px" className="mb-2" />
-                <div className="flex justify-between items-center mt-1.5">
-                  <Bar width="44px" height="12px" />
-                  <Bar width="56px" height="10px" />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Top risks — label + 3 full-width risk cards */}
-          <div className="mt-5 mb-6">
-            <Bar width="64px" height="10px" className="mb-2" />
+          {/* Top risks — label + 3 risk rows */}
+          <div className="mb-8">
+            <Bar width="64px" height="10px" className="mb-3" />
             {[0, 1, 2].map(i => (
-              <div key={i} className="w-full bg-surface rounded-lg border border-separator shadow-sm p-3 mb-2">
-                <div className="flex items-center gap-2">
-                  <Bar width="64px" height="12px" />
-                  <Bar width="55%" height="12px" />
-                </div>
+              <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-separator mb-1.5">
+                <Bar width="52px" height="10px" className="shrink-0" />
+                <Bar width="65%" height="12px" />
               </div>
             ))}
           </div>
 
-          {/* Findings — label + collapsible category rows */}
-          <div className="mb-6">
-            <Bar width="88px" height="10px" className="mb-3" />
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="rounded-lg border border-separator overflow-hidden">
-                  <div className="px-3 py-2.5 flex items-center gap-2">
-                    <Bar width="8px" height="8px" className="shrink-0" />
+          {/* Unified category rows */}
+          <div className="mb-8">
+            <Bar width="120px" height="10px" className="mb-3" />
+            <div className="flex flex-col gap-1.5">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-xl border border-separator overflow-hidden">
+                  <div className="px-3 py-2.5 flex items-center gap-3">
+                    <Bar width="28px" height="28px" className="rounded-lg shrink-0" />
                     <Bar height="12px" className="flex-1" />
-                    <Bar width="36px" height="10px" />
-                    <div className="flex items-center gap-1.5 ml-2">
-                      <Bar width="6px" height="6px" className="rounded-full" />
-                      <Bar width="12px" height="10px" />
-                    </div>
                     <Bar width="16px" height="10px" />
+                    <Bar width="8px" height="8px" className="shrink-0" />
                   </div>
                 </div>
               ))}

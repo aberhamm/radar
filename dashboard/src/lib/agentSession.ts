@@ -31,6 +31,19 @@ export interface RankedRisk {
   businessContext: string;
 }
 
+export interface ScorecardMetadata {
+  repoName: string;
+  repoUrl?: string;
+  analysisDate: string;
+  agentVersion: string;
+  goalType: string;
+  detectedPlatform: string;
+  toolCallsUsed: number;
+  webSearchesUsed: number;
+  urlFetchesUsed: number;
+  documentationSources: { url: string; title: string }[];
+}
+
 export interface Scorecard {
   repoName: string;
   goalType: string;
@@ -38,6 +51,8 @@ export interface Scorecard {
   overallScore: ScoreLevel;
   categories: CategoryScore[];
   topRisks: RankedRisk[];
+  metadata?: ScorecardMetadata;
+  findings?: unknown[];
 }
 
 export interface RunMetrics {
@@ -74,6 +89,9 @@ export interface StepEvent {
   timestamp?: string;
   /** Structured metadata from the tool result (e.g. findingId, severity, matchCount) */
   details?: Record<string, unknown>;
+  thinking?: string;
+  model?: string;
+  durationMs?: number;
 }
 
 export interface SourceFile {
@@ -486,6 +504,13 @@ export function loadPersistedRuns(opts?: { limit?: number; offset?: number }): R
 /** Get total number of runs in the index (for pagination). */
 export function getRunCount(): number {
   return readIndex().length;
+}
+
+/** Find child run IDs for a parent (multi-goal) run. */
+export function findChildRunIds(parentId: string): string[] {
+  return readIndex()
+    .filter(e => e.parentRunId === parentId)
+    .map(e => e.id);
 }
 
 /** Look up a single run by ID from the disk index (bypasses in-memory session). */

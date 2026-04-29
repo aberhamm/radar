@@ -85,6 +85,9 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
   const [clonedRepoName, setClonedRepoName] = useState('');
   const [clonedCached, setClonedCached] = useState(false);
 
+  // Friendly display name shown in input when repo is selected from lists
+  const [displayName, setDisplayName] = useState('');
+
   // Cached repos from .repos/
   const [cachedRepos, setCachedRepos] = useState<CachedRepo[]>([]);
   const [cachedReposReady, setCachedReposReady] = useState(false);
@@ -138,8 +141,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
 
   const handleInputChange = useCallback((value: string) => {
     setRepoPath(value);
+    setDisplayName('');
     setError('');
-    // Reset clone state when the URL changes
     if (cloneStatus !== 'idle') {
       setCloneStatus('idle');
       setClonedPath('');
@@ -161,6 +164,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
 
   const handleSelectCached = useCallback((repo: CachedRepo) => {
     setRepoPath(`https://github.com/${repo.owner}/${repo.repo}`);
+    setDisplayName(`${repo.owner}/${repo.repo}`);
     setClonedPath(repo.localPath);
     setClonedRepoName(repo.repo);
     setClonedCached(true);
@@ -179,8 +183,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
     }
 
     if (run.repoSource === 'github' && run.repoUrl) {
-      // GitHub repo: set URL, auto-pull latest
       setRepoPath(run.repoUrl);
+      setDisplayName(run.repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, ''));
       setRerunPulling(true);
       setCloneStatus('cloning');
       try {
@@ -216,8 +220,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         setRerunPulling(false);
       }
     } else if (run.repoPath) {
-      // Local repo: just pre-fill the path
       setRepoPath(run.repoPath);
+      setDisplayName(run.repoName);
       setCloneStatus('idle');
       setClonedPath('');
       setClonedRepoName('');
@@ -246,11 +250,12 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
       setClonedRepoName(data.repoName);
       setClonedCached(!!data.cached);
       setCloneStatus('cloned');
+      if (!displayName) {
+        setDisplayName(repoPath.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, ''));
+      }
 
-      // Detect app roots for monorepo selection
       detectRoots(data.localPath);
 
-      // Refresh cached repos list
       fetch('/api/repos')
         .then(r => r.json())
         .then(d => { if (d.repos) setCachedRepos(d.repos); })
@@ -367,13 +372,21 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         <input
           id="repo-input"
           type="text"
-          value={repoPath}
+          value={displayName || repoPath}
           onChange={e => handleInputChange(e.target.value)}
+          onFocus={() => {
+            if (displayName) {
+              setDisplayName('');
+            }
+          }}
           onBlur={handleInputBlur}
           placeholder="https://github.com/org/repo or /path/to/repo"
           className="w-full h-11 bg-elevated rounded-lg px-3 text-sm text-label font-mono placeholder:text-quaternary-label border border-transparent focus:border-tint-focus focus:ring-2 focus:ring-tint-soft focus:outline-none focus:focus-glow transition-all"
           disabled={loading || isCloning || rerunPulling}
         />
+        {displayName && repoPath !== displayName && (
+          <p className="text-[11px] text-quaternary-label font-mono mt-1 truncate">{repoPath}</p>
+        )}
       </div>
 
       {/* Clone success banner */}
@@ -576,20 +589,26 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         </div>
       </div>
 
-      {/* Cached repos — skeleton while loading */}
-      {!cachedReposReady && !isCloned && !isCloning && !loading && (
+      {/* Cached repos */}
+      {!cachedReposReady && !loading && (
         <CachedReposLoadingSkeleton />
       )}
-      {cachedReposReady && cachedRepos.length > 0 && !isCloned && !isCloning && !loading && (
+      {cachedReposReady && cachedRepos.length > 0 && !loading && (
         <div className="px-6 pb-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
           <h2 className="text-[13px] font-semibold text-label mb-3">Previously Pulled</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {(showAllCached ? cachedRepos : cachedRepos.slice(0, 3)).map(r => (
+            {(showAllCached ? cachedRepos : cachedRepos.slice(0, 3)).map(r => {
+              const isSelected = repoPath === `https://github.com/${r.owner}/${r.repo}`;
+              return (
               <button
                 key={r.localPath}
                 type="button"
                 onClick={() => handleSelectCached(r)}
-                className="flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg bg-elevated hover:bg-tint-hover border border-transparent hover:border-tint-subtle transition-all cursor-pointer group"
+                className={`flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg transition-all cursor-pointer group ${
+                  isSelected
+                    ? 'bg-tint-hover border border-tint-subtle'
+                    : 'bg-elevated hover:bg-tint-hover border border-transparent hover:border-tint-subtle'
+                }`}
               >
                 <svg className="w-4 h-4 text-tertiary-label group-hover:text-tint shrink-0 transition-colors" viewBox="0 0 16 16" fill="currentColor">
                   <path fillRule="evenodd" d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9zm10.5-1h-8a1 1 0 00-1 1v6.708A2.486 2.486 0 014.5 9h8V1.5zM5 12.25v3.25a.25.25 0 00.4.2l1.45-1.087a.25.25 0 01.3 0L8.6 15.7a.25.25 0 00.4-.2v-3.25a.25.25 0 00-.25-.25h-3.5a.25.25 0 00-.25.25z" />
@@ -606,7 +625,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
-            ))}
+              );
+            })}
           </div>
           {cachedRepos.length > 3 && (
             <button
@@ -620,20 +640,27 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         </div>
       )}
 
-      {/* Recent runs — skeleton while loading, real cards once ready */}
-      {!historyReady && !isCloned && !isCloning && !loading && !rerunPulling && (
+      {/* Recent runs */}
+      {!historyReady && !loading && (
         <HistoryLoadingSkeleton />
       )}
-      {historyReady && deduplicatedHistory.length > 0 && !isCloned && !isCloning && !loading && !rerunPulling && (
+      {historyReady && deduplicatedHistory.length > 0 && !loading && (
         <div className="px-6 pb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
           <h2 className="text-[13px] font-semibold text-label mb-3">Recent Runs</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {(showAllHistory ? deduplicatedHistory : deduplicatedHistory.slice(0, 3)).map(run => (
+            {(showAllHistory ? deduplicatedHistory : deduplicatedHistory.slice(0, 3)).map(run => {
+              const runRepoId = run.repoSource === 'github' && run.repoUrl ? run.repoUrl : run.repoPath ?? '';
+              const isSelected = repoPath === runRepoId;
+              return (
               <button
                 key={run.parentRunId ?? run.id}
                 type="button"
                 onClick={() => handleSelectHistoryRun(run)}
-                className="flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg bg-elevated hover:bg-tint-hover border border-transparent hover:border-tint-subtle transition-all cursor-pointer group"
+                className={`flex items-center gap-2.5 w-full text-left px-3 py-2 min-h-touch rounded-lg transition-all cursor-pointer group ${
+                  isSelected
+                    ? 'bg-tint-hover border border-tint-subtle'
+                    : 'bg-elevated hover:bg-tint-hover border border-transparent hover:border-tint-subtle'
+                }`}
               >
                 <svg className="w-4 h-4 text-tertiary-label group-hover:text-tint shrink-0 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="1 4 1 10 7 10" />
@@ -657,7 +684,8 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
-            ))}
+              );
+            })}
           </div>
           {deduplicatedHistory.length > 3 && (
             <button

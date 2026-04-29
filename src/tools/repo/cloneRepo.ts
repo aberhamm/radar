@@ -29,32 +29,35 @@ export function reposRoot(): string {
   return path.resolve(__dirname, '..', '..', '..', '.repos');
 }
 
-/**
- * List all previously-cloned repos in .repos/.
- * Returns owner/repo pairs with local path and last commit info.
- */
-export async function listCachedRepos(): Promise<Array<{
+type CachedRepo = {
   owner: string;
   repo: string;
   localPath: string;
   defaultBranch: string;
   lastCommit: { hash: string; date: string };
-}>> {
+};
+
+let _repoListCache: CachedRepo[] | null = null;
+
+export function invalidateRepoListCache(): void {
+  _repoListCache = null;
+}
+
+/**
+ * List all previously-cloned repos in .repos/.
+ * Returns owner/repo pairs with local path and last commit info.
+ * Results are cached in memory — only re-scans after clone/pull.
+ */
+export async function listCachedRepos(): Promise<CachedRepo[]> {
+  if (_repoListCache) return _repoListCache;
+
   const root = reposRoot();
   if (!fs.existsSync(root)) return [];
-
-  const results: Array<{
-    owner: string;
-    repo: string;
-    localPath: string;
-    defaultBranch: string;
-    lastCommit: { hash: string; date: string };
-  }> = [];
 
   const owners = fs.readdirSync(root, { withFileTypes: true })
     .filter(d => d.isDirectory());
 
-  const pending: Array<Promise<typeof results[number] | null>> = [];
+  const pending: Array<Promise<CachedRepo | null>> = [];
 
   for (const ownerDir of owners) {
     const ownerPath = path.join(root, ownerDir.name);
@@ -89,8 +92,10 @@ export async function listCachedRepos(): Promise<Array<{
   }
 
   const settled = await Promise.all(pending);
+  const results: CachedRepo[] = [];
   for (const r of settled) { if (r) results.push(r); }
 
+  _repoListCache = results;
   return results;
 }
 
@@ -114,7 +119,6 @@ export async function cloneRepo(input: CloneRepoInput): Promise<CloneRepoOutput>
   const cached = fs.existsSync(path.join(targetDir, '.git'));
 
   if (cached && pull) {
-    // Fetch latest from remote
     await execFileAsync('git', ['fetch', '--depth', '1'], {
       cwd: targetDir,
       timeout: 300_000,
@@ -123,6 +127,7 @@ export async function cloneRepo(input: CloneRepoInput): Promise<CloneRepoOutput>
       cwd: targetDir,
       timeout: 60_000,
     });
+    invalidateRepoListCache();
   } else if (!cached) {
     // Fresh clone (async — doesn't block event loop)
     fs.mkdirSync(targetDir, { recursive: true });
@@ -145,6 +150,7 @@ export async function cloneRepo(input: CloneRepoInput): Promise<CloneRepoOutput>
       }
       throw new Error(`Failed to clone ${url}: ${(err as Error).message}`);
     }
+    invalidateRepoListCache();
   }
 
   // Get default branch name

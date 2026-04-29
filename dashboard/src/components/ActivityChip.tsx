@@ -160,7 +160,7 @@ export function ActivityChipGroup({
       {expandedActivity && (expandedActivity.files.length > 0 || expandedActivity.detail) && (
         <div
           key={expandedIndex}
-          className="mt-2 pl-3 rounded-md space-y-1.5"
+          className="mt-2 p-3 rounded-md space-y-1.5"
           style={{
             background: active
               ? `color-mix(in srgb, ${accentColor} 5%, transparent)`

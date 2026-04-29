@@ -114,6 +114,16 @@ The difference: the dashboard runs it asynchronously and streams events back to 
 
 Same `runAgent()`, different I/O layer.
 
+**Multi-goal path.** When `goal === 'all'`, the route runs `runPreCompute()` first, then passes the result to `dashboardAnalyzeAll()` in `dashboard/src/lib/dashboardAnalyzeAll.ts`. This ordering is critical — `planBudget()` uses the pre-compute signals (app root types, framework detection) to decide whether to allocate budget to the Next.js and Accessibility specialists or skip them. Without pre-compute, the budget planner sees an empty signal set and gives 100% to core, skipping both specialists entirely.
+
+`dashboardAnalyzeAll()` runs 3 sequential passes against the same `runAgent()`:
+
+1. **Core** — `goal: 'universal'`, gets the bulk of the budget. Findings, file caches, and stack profile are captured as shared state.
+2. **Next.js Specialist** — runs if pre-compute detected Next.js roots (or core discovered them via rebalancing). Receives shared state from core so it doesn't re-read files.
+3. **Accessibility Specialist** — runs if any UI framework was detected.
+
+After all passes complete, the accumulated findings are scored against all 9 goal scorecards and persisted as 9 child run envelopes under a single parent run ID. The dashboard renders these as a unified multi-goal view.
+
 ---
 
 ## 2. The Agent Runner — Modular Architecture
@@ -405,7 +415,7 @@ Trend tracking is fingerprint-based — no database needed. Previous run's JSON 
 
 When running in `--goal all` mode, three investigation passes share a single tool budget: a core audit pass, a Next.js specialist pass, and an accessibility specialist pass. The budget planner decides how to split.
 
-**`planBudget()` — pre-pass allocation.** Uses a signal matrix from the pre-compute results:
+**`planBudget()` — pre-pass allocation.** Depends on `runPreCompute()` having run first — the signal matrix is built from detected app roots. Both the CLI (`analyzeAll.ts`) and the dashboard route run pre-compute before calling `planBudget()`, then pass the same result through to `runAgent()` so the core pass reuses it instead of re-scanning.
 
 | Signal | Core | Next.js | A11y |
 |--------|------|---------|------|
