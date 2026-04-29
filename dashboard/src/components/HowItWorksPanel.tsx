@@ -35,7 +35,7 @@ const LAYERS = [
   },
   {
     name: 'Structured Output',
-    stat: '10 goals',
+    stat: '9 goals',
     lines: [
       'Scorecard, findings, brief, PDF, SARIF, GitHub Issues.',
       'Schema-enforced, evidence-verified, scored.',
