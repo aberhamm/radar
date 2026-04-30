@@ -25,6 +25,7 @@ const GOAL_SECTIONS: Record<string, string[]> = {
   'security-review': ['project_overview', 'stack_and_architecture', 'configuration_environment', 'next_actions'],
   nextjs: ['project_overview', 'stack_and_architecture', 'configuration_environment', 'next_actions'],
   accessibility: ['project_overview', 'stack_and_architecture', 'next_actions'],
+  performance: ['project_overview', 'stack_and_architecture', 'performance_assessment', 'configuration_environment', 'next_actions'],
 };
 
 export async function writeBriefSections(

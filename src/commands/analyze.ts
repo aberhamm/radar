@@ -35,7 +35,7 @@ export async function handleAnalyze(opts: {
   }
 
   const goal = (opts.goal ?? 'onboarding') as GoalType;
-  const validGoals = ['onboarding', 'audit', 'audit-generic', 'migration', 'component-map', 'ci-check', 'security-review', 'nextjs', 'accessibility'];
+  const validGoals = ['onboarding', 'audit', 'audit-generic', 'migration', 'component-map', 'ci-check', 'security-review', 'nextjs', 'accessibility', 'performance'];
   if (!validGoals.includes(goal)) {
     throw new Error(`Invalid goal: ${goal}. Valid: ${validGoals.join(', ')}`);
   }
@@ -133,7 +133,7 @@ export async function handleAnalyze(opts: {
     onStep: (step) => {
       if (verbose) {
         formatVerboseStep(step);
-      } else if (step.type !== 'text_delta' && step.type !== 'tool_start') {
+      } else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') {
         const truncated = step.result?.slice(0, 60) ?? '';
         console.log(`  [Step ${step.step}] ${step.action} → ${truncated}`);
       }

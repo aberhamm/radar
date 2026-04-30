@@ -219,6 +219,24 @@ describe('verifyAndCorrectEvidence', () => {
     expect(result.evidence.snippet).toContain('SITECORE_API_KEY');
   });
 
+  it('corrects snippet to right location using identifier search instead of wrong lineNumber', async () => {
+    // Simulates the Shopify API bug: agent hallucinates snippet at line 1 but the
+    // real constant is deeper in the file. The correction should search for key
+    // identifiers from the hallucinated snippet to find the right location.
+    const ev: Evidence = {
+      filePath: 'src/middleware.ts',
+      lineNumber: 1, // wrong line — actual use of SITECORE_API_KEY is at line 5
+      snippet: "const key = process.env.SITECORE_API_KEY || 'fallback';", // hallucinated variant
+      description: 'Reads from env',
+    };
+    const result = await verifyAndCorrectEvidence(FIXTURE_ROOT, ev);
+    expect(result.status).toBe('corrected');
+    // The corrected snippet should contain the real code around SITECORE_API_KEY (line 5),
+    // NOT from line 1 (import statement).
+    expect(result.evidence.snippet).toContain('SITECORE_API_KEY');
+    expect(result.evidence.lineNumber).toBe(5);
+  });
+
   it('returns rejected when file does not exist', async () => {
     const ev: Evidence = {
       filePath: 'src/nonexistent.ts',
@@ -289,6 +307,29 @@ describe('verifyFindingEvidence', () => {
     };
     const { allUnverifiable } = await verifyFindingEvidence(FIXTURE_ROOT, finding);
     expect(allUnverifiable).toBe(false);
+  });
+
+  it('preserves corrected status when post-loop re-verifies an already-corrected snippet', async () => {
+    // Record-time sets originalSnippet + verificationStatus='corrected'.
+    // Post-loop pass should NOT overwrite to 'verified' just because the
+    // corrected snippet matches the file (it was extracted from there).
+    const finding: Finding = {
+      id: 'TEST-CORRECTED-PRESERVE',
+      category: 'configuration',
+      severity: 'high',
+      title: 'Previously corrected',
+      description: 'Snippet was auto-corrected',
+      evidence: [{
+        filePath: 'src/middleware.ts',
+        lineNumber: 5,
+        snippet: 'const apiKey = process.env.SITECORE_API_KEY;',
+        originalSnippet: 'const secret = process.env.SITECORE_EDITING_SECRET;',
+        description: 'Was corrected',
+      }],
+      tags: [],
+    };
+    const { finding: verified } = await verifyFindingEvidence(FIXTURE_ROOT, finding);
+    expect(verified.evidence[0].verificationStatus).toBe('corrected');
   });
 
   it('auto-corrects mismatched snippets and adds verificationNotes', async () => {

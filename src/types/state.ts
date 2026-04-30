@@ -4,11 +4,11 @@
 
 import type { Finding } from './findings.js';
 
-export type GoalType = 'onboarding' | 'audit' | 'audit-generic' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility';
+export type GoalType = 'onboarding' | 'audit' | 'audit-generic' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility' | 'performance';
 
 export const ALL_GOALS: GoalType[] = [
   'onboarding', 'audit', 'audit-generic', 'migration', 'component-map',
-  'ci-check', 'security-review', 'nextjs', 'accessibility',
+  'ci-check', 'security-review', 'nextjs', 'accessibility', 'performance',
 ];
 
 export interface InvestigationEntry {

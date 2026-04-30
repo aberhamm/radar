@@ -39,7 +39,7 @@ import { analyzeRouteStructure } from './analysis/analyzeRouteStructure.js';
 import { analyzeComponentDirectives } from './analysis/analyzeComponentDirectives.js';
 import { analyzeEnvUsage } from './analysis/analyzeEnvUsage.js';
 import { analyzeMiddleware } from './analysis/analyzeMiddleware.js';
-import { recordFinding } from './analysis/recordFinding.js';
+import { recordFinding, type FindingProgressEvent } from './analysis/recordFinding.js';
 import { webSearch } from './web/webSearch.js';
 import { fetchUrl } from './web/fetchUrl.js';
 import { detectAppRoots } from './analysis/detectAppRoots.js';
@@ -325,6 +325,7 @@ function err(name: string, error: Error): AgentToolResult<unknown> {
  */
 export function buildPiTools(
   state: AgentState,
+  onFindingProgress?: (event: FindingProgressEvent) => void,
 ): { tools: AgentTool[]; assembledRef: AssembledSections; cleanup: () => void; mutex: StatefulToolMutex } {
   // Per-run spill context — each buildPiTools() call gets an isolated spill dir
   // so parallel runs (e.g. `radar compare`) don't race on cleanup.
@@ -750,7 +751,7 @@ export function buildPiTools(
       }),
       async (_id, params) => {
         try {
-          const result = await recordFinding(state, norm(params));
+          const result = await recordFinding(state, norm(params), onFindingProgress);
           const f = (norm(params) as { finding: { id: string; severity: string; evidence: unknown[] } }).finding;
           return ok('record_finding', result, {
             details: { findingId: f.id, severity: f.severity, evidenceCount: f.evidence?.length ?? 0 },

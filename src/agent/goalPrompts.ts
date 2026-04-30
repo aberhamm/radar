@@ -144,6 +144,28 @@ If you find real issues, document them with file paths and code evidence.
 Your consulting rules define the scoring criteria and required categories.
 You must record at least 8 findings. Every category needs at least one.`,
 
+  performance: (localPath) => `You have access to a repository at ${localPath}.
+Conduct a web performance audit of this project focused on Lighthouse and Core Web Vitals impact.
+
+You are a web performance engineer, not a generic linter. Your audit should identify patterns
+in the code that degrade Largest Contentful Paint (LCP), Cumulative Layout Shift (CLS),
+Interaction to Next Paint (INP), and Total Blocking Time (TBT) — with evidence from the code.
+
+Investigate all seven scorecard categories: bundle & code splitting, image & media optimization,
+rendering strategy, font loading, third-party scripts, caching & data fetching, and CSS & layout
+stability. Follow your performance audit rules.
+
+After every 2-3 tool calls, explain WHAT YOU FOUND — concrete facts from the results.
+Never just announce what you're about to do ("Let me check X") or label without explaining
+("This is critical"). State what the data shows and what Core Web Vitals metric it impacts.
+
+Frame findings in terms of measurable user impact: LCP delay, CLS score contributors,
+main-thread blocking time, unnecessary bytes shipped to the client.
+
+IMPORTANT: Record findings throughout your investigation.
+You must record at least 8 findings across all scorecard categories.
+Every scorecard category must have at least one finding.`,
+
   accessibility: (localPath) => `You have access to a repository at ${localPath}.
 Conduct a WCAG 2.1 AA accessibility audit of this project's codebase.
 
@@ -172,6 +194,7 @@ const CATEGORY_COVERAGE: Partial<Record<GoalType | 'universal', string>> = {
   'audit-generic': 'stack, security, configuration, architecture, dependencies, deployment, testing, dx',
   nextjs: 'routing, architecture, data-fetching, nextjs, stack, performance, configuration, dependencies, dx',
   accessibility: 'media-alt, semantic-html, keyboard-focus, forms, color-contrast, aria',
+  performance: 'bundle, media, rendering, performance, caching, configuration, dependencies',
   universal: 'stack, cms-integration, preview-editing, security, configuration, architecture, dependencies, deployment, nextjs',
 };
 

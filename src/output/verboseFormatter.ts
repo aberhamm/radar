@@ -26,6 +26,21 @@ export function formatVerboseStep(step: StepEvent, repoPrefix?: string): void {
       break;
     }
 
+    case 'finding_progress': {
+      const d = step.details;
+      if (!d) break;
+      const phase = d.phase as string;
+      if (phase === 'verifying_evidence') {
+        process.stdout.write(`${prefix} ${DIM}  verifying evidence ${d.evidenceIndex}/${d.evidenceTotal}: ${d.evidenceFile}${RESET}\r`);
+      } else if (phase === 'evidence_verified') {
+        const statusColor = d.evidenceStatus === 'rejected' ? RED : d.evidenceStatus === 'corrected' ? YELLOW : GREEN;
+        console.log(`${prefix} ${DIM}  evidence ${d.evidenceIndex}/${d.evidenceTotal}:${RESET} ${statusColor}${d.evidenceStatus}${RESET} ${DIM}${d.evidenceFile}${RESET}`);
+      } else if (phase === 'finding_recorded') {
+        console.log(`${prefix} ${GREEN}  ✓ ${d.findingId} recorded (${d.findingIndex}/${d.findingTotal} in batch)${RESET}`);
+      }
+      break;
+    }
+
     case 'finding': {
       const d = step.details;
       const findingId = d?.findingId ?? '?';

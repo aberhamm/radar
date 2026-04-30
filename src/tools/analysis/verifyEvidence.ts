@@ -220,19 +220,39 @@ export async function verifyAndCorrectEvidence(
     };
   }
 
-  // Snippet doesn't match — auto-correct with actual code at claimed line
-  const actualSnippet = extractCodeWindow(fileContent, evidence.lineNumber, 2);
+  // Snippet doesn't match — try to find the right location via key identifiers,
+  // then auto-correct with actual code at that location.
+  const snippetIdentifiers = extractKeyIdentifiers(evidence.snippet);
+  let correctedLine = evidence.lineNumber;
+
+  if (snippetIdentifiers.size > 0) {
+    const contentLines = fileContent.split('\n');
+    for (let i = 0; i < contentLines.length; i++) {
+      const lineIds = extractKeyIdentifiers(contentLines[i]);
+      for (const id of snippetIdentifiers) {
+        if (lineIds.has(id)) {
+          correctedLine = i + 1;
+          break;
+        }
+      }
+      if (correctedLine !== evidence.lineNumber) break;
+    }
+  }
+
+  const actualSnippet = extractCodeWindow(fileContent, correctedLine, 2);
+  const correctedSourceContext = extractCodeWindow(fileContent, correctedLine, 3);
   return {
     evidence: {
       ...evidence,
       originalSnippet: evidence.snippet,
       snippet: actualSnippet,
+      lineNumber: correctedLine,
       verified: true,
       verificationStatus: 'corrected',
-      sourceContext,
+      sourceContext: correctedSourceContext,
     },
     status: 'corrected',
-    note: `Snippet did not match ${evidence.filePath}${evidence.lineNumber ? `:${evidence.lineNumber}` : ''}. Auto-corrected to actual code.`,
+    note: `Snippet did not match ${evidence.filePath}${evidence.lineNumber ? `:${evidence.lineNumber}` : ''}. Auto-corrected to actual code at line ${correctedLine}.`,
   };
 }
 
@@ -268,28 +288,45 @@ export async function verifyFindingEvidence(
     const window = extractCodeWindow(fileContent, ev.lineNumber);
     const sourceContext = extractCodeWindow(fileContent, ev.lineNumber, 3);
 
+    // Preserve prior correction status — don't overwrite 'corrected' with 'verified'
+    // when the post-loop pass re-checks an already-corrected snippet.
+    const wasPreviouslyCorrected = ev.originalSnippet != null;
+
     if (ev.snippet != null && (snippetMatchesContent(ev.snippet, window) ||
         snippetMatchesContent(ev.snippet, fileContent))) {
-      // Auto-correct line number if snippet is found at a different location
       const actualLine = findSnippetLine(ev.snippet, fileContent);
       const correctedLine = actualLine ?? ev.lineNumber;
       verifiedEvidence.push({
         ...ev,
         ...(correctedLine ? { lineNumber: correctedLine } : {}),
         verified: true,
-        verificationStatus: 'verified',
+        verificationStatus: wasPreviouslyCorrected ? 'corrected' : 'verified',
         sourceContext,
       });
     } else {
-      const actualSnippet = extractCodeWindow(fileContent, ev.lineNumber, 2);
+      const snippetIds = extractKeyIdentifiers(ev.snippet ?? '');
+      let targetLine = ev.lineNumber;
+      if (snippetIds.size > 0) {
+        const contentLines = fileContent.split('\n');
+        for (let i = 0; i < contentLines.length; i++) {
+          const lineIds = extractKeyIdentifiers(contentLines[i]);
+          for (const id of snippetIds) {
+            if (lineIds.has(id)) { targetLine = i + 1; break; }
+          }
+          if (targetLine !== ev.lineNumber) break;
+        }
+      }
+      const actualSnippet = extractCodeWindow(fileContent, targetLine, 2);
+      const correctedCtx = extractCodeWindow(fileContent, targetLine, 3);
       notes.push(`Evidence corrected: snippet for ${ev.filePath} did not match actual code.`);
       verifiedEvidence.push({
         ...ev,
         originalSnippet: ev.snippet,
         snippet: actualSnippet,
+        lineNumber: targetLine,
         verified: true,
         verificationStatus: 'corrected',
-        sourceContext,
+        sourceContext: correctedCtx,
       });
     }
   }

@@ -368,7 +368,7 @@ export async function handleGauntlet(opts: {
 
   const goalStr = opts.goals ?? 'onboarding,audit,security-review';
   const goals = goalStr.split(',').map(g => g.trim()) as GoalType[];
-  const validGoals = ['onboarding', 'audit', 'audit-generic', 'migration', 'component-map', 'ci-check', 'security-review', 'nextjs', 'accessibility'];
+  const validGoals = ['onboarding', 'audit', 'audit-generic', 'migration', 'component-map', 'ci-check', 'security-review', 'nextjs', 'accessibility', 'performance'];
   for (const g of goals) {
     if (!validGoals.includes(g)) {
       throw new Error(`Invalid goal: ${g}. Valid: ${validGoals.join(', ')}`);

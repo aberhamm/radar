@@ -315,6 +315,24 @@ This robustness is necessary because LLMs don't always follow schemas perfectly.
 - Check `state.filesRead` — was this file actually read during the run? If the agent cites a file it never read, the evidence is **rejected**.
 - Call `verifyAndCorrectEvidence()` — reads the real file from disk, compares the snippet the LLM provided against the actual content. If the snippet doesn't match, it **auto-corrects** to the real code. If the file doesn't exist, the evidence is **rejected**.
 
+### Snippet Verification — `src/tools/analysis/verifyEvidence.ts`
+
+`verifyAndCorrectEvidence()` is the function that decides whether a snippet the LLM provided actually matches the file on disk. It never calls an LLM — purely deterministic string comparison.
+
+**Three-layer matching in `snippetMatchesContent()`:**
+
+1. **Normalized substring match.** Both snippet and file content are normalized (trim lines, collapse whitespace, remove blanks), then tested with `includes()`. Handles indentation and whitespace differences — the most common case.
+
+2. **Line-by-line ordered match.** If substring fails, each snippet line is compared against content lines in order using bidirectional `includes()`. Passes if 60%+ of snippet lines match. This handles cases where the LLM omits or adds a line.
+
+3. **Identifier guard.** After passing the 60% threshold, extracts UPPER_SNAKE_CASE identifiers from *unmatched* snippet lines and verifies they exist somewhere in the file. This is the hallucination detector — LLMs frequently invent plausible env var names (`SITECORE_EDITING_SECRET` when the real one is `SITECORE_API_KEY`). If any identifier in an unmatched line doesn't appear in the file, the match is rejected.
+
+**Auto-correction when the snippet doesn't match.** When all three layers fail, the evidence is "corrected" — the LLM's snippet is saved as `originalSnippet` and replaced with actual code from the file. The correction searches for UPPER_SNAKE_CASE identifiers from the original snippet to find the right location, rather than blindly using the agent's claimed line number. This matters when the agent gets the file right but the line number wrong — without the identifier search, correction would grab unrelated code from the wrong location.
+
+**Line number correction.** Even when the snippet *does* match, the actual line number might differ from what the agent claimed. `findSnippetLine()` searches the file for the snippet's first line and verifies subsequent lines match in order. The corrected line number is what the dashboard displays.
+
+**Post-loop second pass.** After the agent loop completes, `verifyFindingEvidence()` in `runner.ts` re-verifies all findings against disk. Findings where *all* evidence is unverifiable (files moved/deleted between tool calls and post-processing) are removed entirely. Previously corrected evidence preserves its `corrected` status — the post-loop pass doesn't overwrite it to `verified` just because the corrected snippet trivially matches the file it was extracted from.
+
 **3. Compute fingerprint:**
 ```
 SHA-256(category + filePath + normalizedTitle)

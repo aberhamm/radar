@@ -167,7 +167,7 @@ export async function handleAnalyzeAll(opts: {
       onStep: (step) => {
         allEvents.push(step);
         if (verbose) formatVerboseStep(step, '[Core]');
-        else if (step.type !== 'text_delta' && step.type !== 'tool_start') console.log(`  [Core] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+        else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') console.log(`  [Core] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
       },
     });
     const coreDuration = Date.now() - coreStart;
@@ -246,7 +246,7 @@ export async function handleAnalyzeAll(opts: {
           onStep: (step) => {
             allEvents.push(step);
             if (verbose) formatVerboseStep(step, '[Next.js]');
-            else if (step.type !== 'text_delta' && step.type !== 'tool_start') console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+            else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
           },
         });
         const nextjsDuration = Date.now() - nextjsStart;
@@ -288,7 +288,7 @@ export async function handleAnalyzeAll(opts: {
           onStep: (step) => {
             allEvents.push(step);
             if (verbose) formatVerboseStep(step, '[A11y]');
-            else if (step.type !== 'text_delta' && step.type !== 'tool_start') console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+            else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
           },
         });
         const a11yDuration = Date.now() - a11yStart;

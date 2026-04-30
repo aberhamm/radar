@@ -207,8 +207,21 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     goalPrompt = `RESUME CONTEXT — This is a resumed investigation. Here is what was found before the interruption:\n\n${summary}\n\nContinue the investigation from where it left off. Do not re-investigate files already read. Focus on uncovered categories and assembling the final output.\n\n---\n\n${goalPrompt}`;
   }
 
-  // Build Pi tools from registry
-  const { tools, assembledRef, cleanup, mutex } = buildPiTools(state);
+  // Build Pi tools from registry, wiring finding progress events to onStep
+  const { tools, assembledRef, cleanup, mutex } = buildPiTools(state, (progress) => {
+    config.onStep?.({
+      step: stepCount,
+      action: 'record_finding',
+      type: 'finding_progress',
+      timestamp: new Date().toISOString(),
+      details: { ...progress },
+      result: progress.phase === 'finding_recorded'
+        ? `Finding ${progress.findingIndex}/${progress.findingTotal} recorded: ${progress.findingId}`
+        : progress.phase === 'verifying_evidence'
+          ? `Verifying evidence ${progress.evidenceIndex}/${progress.evidenceTotal} for ${progress.findingId}: ${progress.evidenceFile}`
+          : `Evidence ${progress.evidenceIndex}/${progress.evidenceTotal} ${progress.evidenceStatus}: ${progress.evidenceFile}`,
+    });
+  });
 
   // Build Pi models (or use provided overrides, e.g. faux provider for testing)
   let apiKey: string | undefined;

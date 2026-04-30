@@ -19,6 +19,24 @@ export interface RecordFindingOutput {
   rejectedEvidenceCount?: number;
 }
 
+/** Sub-event emitted during record_finding execution for live progress. */
+export interface FindingProgressEvent {
+  /** Which finding in the batch (1-based) */
+  findingIndex: number;
+  /** Total findings in this batch */
+  findingTotal: number;
+  findingId: string;
+  /** 'verifying_evidence' | 'evidence_verified' | 'finding_recorded' */
+  phase: 'verifying_evidence' | 'evidence_verified' | 'finding_recorded';
+  /** Which evidence item (1-based), only for evidence phases */
+  evidenceIndex?: number;
+  /** Total evidence items for this finding */
+  evidenceTotal?: number;
+  /** Verification outcome for evidence_verified */
+  evidenceStatus?: 'verified' | 'corrected' | 'rejected';
+  evidenceFile?: string;
+}
+
 const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low', 'info']);
 const VALID_CATEGORIES = new Set([
   'stack', 'cms-integration', 'preview-editing', 'configuration',
@@ -267,6 +285,7 @@ function checkDescriptionEvidenceCoherence(finding: Finding): string[] {
 export async function recordFinding(
   state: AgentState,
   input: RecordFindingInput,
+  onProgress?: (event: FindingProgressEvent) => void,
 ): Promise<RecordFindingOutput> {
   const findings = extractFindings(input as unknown as Record<string, unknown>);
   const warnings: string[] = [];
@@ -274,7 +293,8 @@ export async function recordFinding(
 
   const mergedIntoIds: string[] = [];
 
-  for (const finding of findings) {
+  for (let fi = 0; fi < findings.length; fi++) {
+    const finding = findings[fi];
     // Warn if finding has no evidence at all
     if (finding.evidence.length === 0) {
       warnings.push(
@@ -291,7 +311,18 @@ export async function recordFinding(
 
     const verifiedEvidence: Evidence[] = [];
 
-    for (const ev of finding.evidence) {
+    for (let ei = 0; ei < finding.evidence.length; ei++) {
+      const ev = finding.evidence[ei];
+      onProgress?.({
+        findingIndex: fi + 1,
+        findingTotal: findings.length,
+        findingId: finding.id,
+        phase: 'verifying_evidence',
+        evidenceIndex: ei + 1,
+        evidenceTotal: finding.evidence.length,
+        evidenceFile: ev.filePath,
+      });
+
       const normalizedEvPath = normalizePath(ev.filePath);
       const wasRead = [...state.filesRead].some(
         (readPath) => normalizePath(readPath) === normalizedEvPath,
@@ -302,6 +333,16 @@ export async function recordFinding(
           `Use read_file or read_files_batch first.`,
         );
         rejectedEvidenceCount++;
+        onProgress?.({
+          findingIndex: fi + 1,
+          findingTotal: findings.length,
+          findingId: finding.id,
+          phase: 'evidence_verified',
+          evidenceIndex: ei + 1,
+          evidenceTotal: finding.evidence.length,
+          evidenceFile: ev.filePath,
+          evidenceStatus: 'rejected',
+        });
         continue;
       }
 
@@ -310,12 +351,33 @@ export async function recordFinding(
       if (result.status === 'rejected') {
         warnings.push(`Evidence rejected: ${result.note}`);
         rejectedEvidenceCount++;
+        onProgress?.({
+          findingIndex: fi + 1,
+          findingTotal: findings.length,
+          findingId: finding.id,
+          phase: 'evidence_verified',
+          evidenceIndex: ei + 1,
+          evidenceTotal: finding.evidence.length,
+          evidenceFile: ev.filePath,
+          evidenceStatus: 'rejected',
+        });
         continue;
       }
 
       if (result.status === 'corrected') {
         warnings.push(`Evidence auto-corrected: ${result.note}`);
       }
+
+      onProgress?.({
+        findingIndex: fi + 1,
+        findingTotal: findings.length,
+        findingId: finding.id,
+        phase: 'evidence_verified',
+        evidenceIndex: ei + 1,
+        evidenceTotal: finding.evidence.length,
+        evidenceFile: ev.filePath,
+        evidenceStatus: result.status,
+      });
 
       verifiedEvidence.push(result.evidence);
     }
@@ -345,6 +407,13 @@ export async function recordFinding(
         `Finding "${finding.id}" merged into existing "${merged.id}" (overlapping evidence in same category).`,
       );
     }
+
+    onProgress?.({
+      findingIndex: fi + 1,
+      findingTotal: findings.length,
+      findingId: finding.id,
+      phase: 'finding_recorded',
+    });
   }
 
   return {

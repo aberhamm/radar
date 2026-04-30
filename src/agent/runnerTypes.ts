@@ -81,8 +81,8 @@ export interface StepEvent {
   fullResult?: string;
   /** Tool call arguments as JSON string */
   args?: string;
-  /** Type of event: tool_call, finding, budget_warning, text_response, assemble_output, model_switch */
-  type?: 'tool_call' | 'tool_start' | 'finding' | 'budget_warning' | 'text_response' | 'text_delta' | 'assemble_output' | 'model_switch' | 'verification';
+  /** Type of event: tool_call, finding, budget_warning, text_response, assemble_output, model_switch, finding_progress */
+  type?: 'tool_call' | 'tool_start' | 'finding' | 'finding_progress' | 'budget_warning' | 'text_response' | 'text_delta' | 'assemble_output' | 'model_switch' | 'verification';
   /** Identifies which tool calls ran in the same parallel batch (same assistant turn) */
   batchId?: string;
   /** New budget after extension (only on budget_extended events) */
