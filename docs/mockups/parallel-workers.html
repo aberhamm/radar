@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Radar — Parallel Workers Mockup</title>
+<style>
+  /* ── Design tokens from DESIGN.md ─────────────────────────────── */
+  :root {
+    --color-canvas: #f5f5f7;
+    --color-surface: #ffffff;
+    --color-elevated: #f2f2f7;
+    --color-label: #1d1d1f;
+    --color-secondary-label: #6e6e73;
+    --color-tertiary-label: #86868b;
+    --color-quaternary-label: #aeaeb2;
+    --color-separator: #d1d1d6;
+    --color-tint: #024879;
+    --color-danger: #ff3b30;
+    --color-warning: #ff9500;
+    --color-success: #34c759;
+    --color-info: #5856d6;
+    --color-a11y: #af52de;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-elevated: 0 4px 16px rgba(0,0,0,0.08);
+    --spring: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-canvas: #1c1c1e;
+      --color-surface: #2c2c2e;
+      --color-elevated: #3a3a3c;
+      --color-label: #f5f5f7;
+      --color-secondary-label: #aeaeb2;
+      --color-tertiary-label: #8e8e93;
+      --color-quaternary-label: #636366;
+      --color-separator: #48484a;
+      --color-tint: #0a6abf;
+      --color-danger: #ff453a;
+      --color-warning: #ff9f0a;
+      --color-success: #30d158;
+      --color-info: #6866e0;
+      --color-a11y: #bf5af2;
+      --shadow-card: 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.3);
+      --shadow-elevated: 0 4px 16px rgba(0,0,0,0.3);
+    }
+  }
+
+  /* ── Reset & base ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: var(--color-canvas);
+    color: var(--color-label);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── App shell ────────────────────────────────────────────────── */
+  .app { display: flex; height: 100vh; }
+  .sidebar {
+    width: 240px;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-separator);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    flex-shrink: 0;
+  }
+  .sidebar-brand {
+    font-family: 'Outfit', -apple-system, sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--color-tint);
+    letter-spacing: -0.02em;
+  }
+  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar-item {
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-secondary-label);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sidebar-item:hover { background: var(--color-elevated); color: var(--color-label); }
+  .sidebar-item.active { background: color-mix(in srgb, var(--color-tint) 10%, transparent); color: var(--color-tint); font-weight: 600; }
+
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Phase rail (top bar) ─────────────────────────────────────── */
+  .phase-rail {
+    height: 40px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid var(--color-separator);
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    backdrop-filter: blur(12px);
+    flex-shrink: 0;
+  }
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-tint);
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+  .live-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--color-secondary-label);
+  }
+  .phase-status {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-label);
+  }
+  .phase-timer {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    color: var(--color-tertiary-label);
+  }
+  .phase-workers {
+    font-size: 10px;
+    color: var(--color-tertiary-label);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .phase-workers .count {
+    font-weight: 600;
+    color: var(--color-secondary-label);
+  }
+  .progress-bar-container {
+    flex: 1;
+    height: 4px;
+    border-radius: 4px;
+    background: var(--color-elevated);
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--color-tint), color-mix(in srgb, var(--color-tint) 85%, white));
+    transition: width 1.2s var(--spring);
+    position: relative;
+  }
+  .progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 4px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: progress-shimmer 2s ease-in-out infinite;
+  }
+  .phase-percent {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-weight: 600;
+    color: var(--color-secondary-label);
+    flex-shrink: 0;
+  }
+
+  /* ── Content area ─────────────────────────────────────────────── */
+  .content { flex: 1; display: flex; overflow: hidden; }
+  .center-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Worker strip ─────────────────────────────────────────────── */
+  .worker-strip {
+    display: flex;
+    gap: 6px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--color-separator);
+    background: var(--color-surface);
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+  .worker-strip::-webkit-scrollbar { height: 0; }
+
+  .worker-card {
+    flex: 1;
+    min-width: 140px;
+    max-width: 220px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1.5px solid var(--color-separator);
+    background: var(--color-canvas);
+    cursor: pointer;
+    transition: all 0.2s var(--spring);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+  }
+  .worker-card:hover {
+    border-color: var(--color-tertiary-label);
+    background: var(--color-elevated);
+  }
+  .worker-card.selected {
+    border-color: var(--worker-color, var(--color-tint));
+    background: var(--color-surface);
+    box-shadow: 0 0 0 1px var(--worker-color, var(--color-tint)), var(--shadow-card);
+  }
+  .worker-card.complete {
+    opacity: 0.85;
+  }
+  .worker-card.complete.selected {
+    opacity: 1;
+  }
+
+  .card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-name-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .card-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .card-dot.active {
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+  .card-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-label);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card-counter {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    color: var(--color-tertiary-label);
+    flex-shrink: 0;
+  }
+
+  .card-progress {
+    height: 3px;
+    border-radius: 3px;
+    background: var(--color-elevated);
+    overflow: hidden;
+  }
+  .card-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s var(--spring);
+  }
+
+  .card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-status {
+    font-size: 10px;
+    color: var(--color-quaternary-label);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .card-status .thinking-dots-inline {
+    display: inline-flex;
+    gap: 2px;
+    vertical-align: middle;
+  }
+  .card-status .thinking-dots-inline .dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    animation: pulse-dot 1.2s ease-in-out infinite;
+  }
+  .card-findings-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--color-elevated);
+    color: var(--color-secondary-label);
+  }
+  .card-findings-badge.has-findings {
+    background: color-mix(in srgb, var(--worker-color, var(--color-tint)) 12%, transparent);
+    color: var(--worker-color, var(--color-tint));
+  }
+
+  /* ── Detail pane (selected worker's reasoning) ────────────────── */
+  .detail-pane {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    animation: fadeIn 0.25s var(--spring) both;
+  }
+  .detail-pane::-webkit-scrollbar { width: 6px; }
+  .detail-pane::-webkit-scrollbar-track { background: transparent; }
+  .detail-pane::-webkit-scrollbar-thumb { background: var(--color-separator); border-radius: 3px; }
+
+  .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-separator);
+  }
+  .detail-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .detail-dot.active { animation: pulse-dot 1.5s ease-in-out infinite; }
+  .detail-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-label);
+    letter-spacing: -0.01em;
+  }
+  .detail-subtitle {
+    font-size: 11px;
+    color: var(--color-tertiary-label);
+    margin-left: auto;
+  }
+
+  .turn {
+    padding: 10px 0;
+    animation: fadeIn 0.3s var(--spring) both;
+  }
+  .turn + .turn {
+    border-top: 1px solid color-mix(in srgb, var(--color-separator) 50%, transparent);
+  }
+  .turn-reasoning {
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--color-secondary-label);
+  }
+  .turn-reasoning strong {
+    color: var(--color-label);
+    font-weight: 600;
+  }
+  .turn-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .tool-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    background: var(--color-elevated);
+    color: var(--color-tertiary-label);
+    animation: chip-enter 0.2s var(--spring) both;
+  }
+  .tool-chip .chip-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .finding-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    animation: chip-enter 0.2s var(--spring) both;
+  }
+  .finding-chip.critical { background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger); }
+  .finding-chip.high { background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning); }
+  .finding-chip.medium { background: color-mix(in srgb, var(--color-info) 10%, transparent); color: var(--color-info); }
+  .finding-chip.info { background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success); }
+
+  .thinking {
+    padding: 12px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--color-separator) 50%, transparent);
+  }
+  .thinking-dots {
+    display: flex;
+    gap: 3px;
+  }
+  .thinking-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    animation: pulse-dot 1.2s ease-in-out infinite;
+  }
+  .thinking-label {
+    font-size: 11px;
+    color: var(--color-quaternary-label);
+  }
+
+  /* ── Synthesis bar ────────────────────────────────────────────── */
+  .synthesis {
+    border-top: 1px solid var(--color-separator);
+    background: var(--color-surface);
+    padding: 12px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    animation: slideUp 0.4s var(--spring) both;
+    flex-shrink: 0;
+  }
+  .synthesis-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-warning);
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+  }
+  .synthesis-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .synthesis-text {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--color-secondary-label);
+  }
+  .synthesis-text strong { color: var(--color-label); font-weight: 600; }
+  .synthesis-connection {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    background: var(--color-elevated);
+    color: var(--color-tertiary-label);
+  }
+  .synthesis-connection .arrow { color: var(--color-warning); font-weight: 700; }
+
+  /* ── Right panel ──────────────────────────────────────────────── */
+  .right-panel {
+    width: 280px;
+    border-left: 1px solid var(--color-separator);
+    background: var(--color-surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .panel-section {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-separator);
+  }
+  .panel-section:last-child { border-bottom: none; }
+  .panel-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-tertiary-label);
+    margin-bottom: 8px;
+  }
+  .finding-item {
+    padding: 6px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    animation: fadeIn 0.3s var(--spring) both;
+  }
+  .finding-severity {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+  .finding-meta {
+    flex: 1;
+    min-width: 0;
+  }
+  .finding-title-text {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-label);
+    line-height: 1.4;
+  }
+  .finding-source {
+    font-size: 10px;
+    color: var(--color-quaternary-label);
+    margin-top: 1px;
+  }
+
+  /* ── Complete state (inline in detail pane) ───────────────────── */
+  .detail-complete {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 0;
+    border-top: 1px solid color-mix(in srgb, var(--color-separator) 50%, transparent);
+    animation: fadeIn 0.4s var(--spring) both;
+  }
+  .detail-complete-check {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--color-success) 12%, transparent);
+    animation: check-pop 0.4s var(--spring) both;
+  }
+  .detail-complete-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .detail-complete-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-success);
+  }
+  .detail-complete-count {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    color: var(--color-tertiary-label);
+  }
+
+  /* ── Animations ───────────────────────────────────────────────── */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes chip-enter {
+    from { opacity: 0; transform: translateY(4px) scale(0.92); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes check-pop {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.3); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes progress-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+</style>
+
+<script>
+  function selectWorker(id) {
+    document.querySelectorAll('.worker-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('card-' + id).classList.add('selected');
+    document.querySelectorAll('.detail-content').forEach(d => d.style.display = 'none');
+    document.getElementById('detail-' + id).style.display = 'block';
+  }
+</script>
+</head>
+<body>
+<div class="app">
+  <!-- ── Sidebar ──────────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">radar</div>
+    <div class="sidebar-nav">
+      <div class="sidebar-item active">Live Run</div>
+      <div class="sidebar-item">History</div>
+      <div class="sidebar-item">Compare</div>
+    </div>
+  </nav>
+
+  <!-- ── Main ─────────────────────────────────────────────────── -->
+  <div class="main">
+    <!-- Phase rail -->
+    <div class="phase-rail">
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        <span class="live-label">LIVE</span>
+      </div>
+      <span class="phase-status">Investigating</span>
+      <span class="phase-timer">1:24</span>
+      <div class="phase-workers">
+        <span class="count">6</span> workers
+        <span style="color: var(--color-quaternary-label);">&middot;</span>
+        <span class="count">2</span> complete
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill" style="width: 58%;"></div>
+      </div>
+      <span class="phase-percent">58%</span>
+    </div>
+
+    <!-- Content: center + right panel -->
+    <div class="content">
+      <div class="center-col">
+
+        <!-- ── Worker strip: 6 compact cards ─────────────────── -->
+        <div class="worker-strip">
+
+          <!-- Security + Config (selected, active) -->
+          <div class="worker-card selected" id="card-security" style="--worker-color: var(--color-danger);" onclick="selectWorker('security')">
+            <div class="card-top">
+              <div class="card-name-group">
+                <div class="card-dot active" style="background: var(--color-danger);"></div>
+                <span class="card-name">Security</span>
+              </div>
+              <span class="card-counter">6/8</span>
+            </div>
+            <div class="card-progress">
+              <div class="card-progress-fill" style="width: 75%; background: var(--color-danger);"></div>
+            </div>
+            <div class="card-bottom">
+              <span class="card-status">
+                <span class="thinking-dots-inline">
+                  <span class="dot" style="background: var(--color-danger); animation-delay: 0s;"></span>
+                  <span class="dot" style="background: var(--color-danger); animation-delay: 0.15s;"></span>
+                  <span class="dot" style="background: var(--color-danger); animation-delay: 0.3s;"></span>
+                </span>
+                env usage
+              </span>
+              <span class="card-findings-badge has-findings" style="--worker-color: var(--color-danger);">3</span>
+            </div>
+          </div>
+
+          <!-- Stack + Architecture (active) -->
+          <div class="worker-card" id="card-stack" style="--worker-color: var(--color-tint);" onclick="selectWorker('stack')">
+            <div class="card-top">
+              <div class="card-name-group">
+                <div class="card-dot active" style="background: var(--color-tint);"></div>
+                <span class="card-name">Stack</span>
+              </div>
+              <span class="card-counter">8/10</span>
+            </div>
+            <div class="card-progress">
+              <div class="card-progress-fill" style="width: 80%; background: var(--color-tint);"></div>
+            </div>
+            <div class="card-bottom">
+              <span class="card-status">
+                <span class="thinking-dots-inline">
+                  <span class="dot" style="background: var(--color-tint); animation-delay: 0s;"></span>
+                  <span class="dot" style="background: var(--color-tint); animation-delay: 0.15s;"></span>
+                  <span class="dot" style="background: var(--color-tint); animation-delay: 0.3s;"></span>
+                </span>
+                middleware.ts
+              </span>
+              <span class="card-findings-badge has-findings" style="--worker-color: var(--color-tint);">3</span>
+            </div>
+          </div>
+
+          <!-- CMS + Preview (active) -->
+          <div class="worker-card" id="card-cms" style="--worker-color: var(--color-info);" onclick="selectWorker('cms')">
+            <div class="card-top">
+              <div class="card-name-group">
+                <div class="card-dot active" style="background: var(--color-info);"></div>
+                <span class="card-name">CMS</span>
+              </div>
+              <span class="card-counter">5/8</span>
+            </div>
+            <div class="card-progress">
+              <div class="card-progress-fill" style="width: 62%; background: var(--color-info);"></div>
+            </div>
+            <div class="card-bottom">
+              <span class="card-status">
+                <span class="thinking-dots-inline">
+                  <span class="dot" style="background: var(--color-info); animation-delay: 0s;"></span>
+                  <span class="dot" style="background: var(--color-info); animation-delay: 0.15s;"></span>
+                  <span class="dot" style="background: var(--color-info); animation-delay: 0.3s;"></span>
+                </span>
+                layout service
+              </span>
+              <span class="card-findings-badge has-findings" style="--worker-color: var(--color-info);">2</span>
+            </div>
+          </div>
+
+          <!-- Deps + Deployment (COMPLETE) -->
+          <div class="worker-card complete" id="card-deps" style="--worker-color: var(--color-success);" onclick="selectWorker('deps')">
+            <div class="card-top">
+              <div class="card-name-group">
+                <div class="card-dot" style="background: var(--color-success);"></div>
+                <span class="card-name" style="color: var(--color-success);">Deps</span>
+              </div>
+              <span class="card-counter" style="color: var(--color-success);">6/6 &#10003;</span>
+            </div>
+            <div class="card-progress">
+              <div class="card-progress-fill" style="width: 100%; background: var(--color-success);"></div>
+            </div>
+            <div class="card-bottom">
+              <span class="card-status" style="color: var(--color-success); font-weight: 600;">Complete</span>
+              <span class="card-findings-badge has-findings" style="--worker-color: var(--color-success);">6</span>
+            </div>
+          </div>
+
+          <!-- Next.js (COMPLETE) -->
+          <div class="worker-card complete" id="card-nextjs" style="--worker-color: var(--color-success);" onclick="selectWorker('nextjs')">
+            <div class="card-top">
+              <div class="card-name-group">
+                <div class="card-dot" style="background: var(--color-success);"></div>
+                <span class="card-name" style="color: var(--color-success);">Next.js</span>
+              </div>
+              <span class="card-counter" style="color: var(--color-success);">8/8 &#10003;</span>
+            </div>
+            <div class="card-progress">
+              <div class="card-progress-fill" style="width: 100%; background: var(--color-success);"></div>
+            </div>
+            <div class="card-bottom">
+              <span class="card-status" style="color: var(--color-success); font-weight: 600;">Complete</span>
+              <span class="card-findings-badge has-findings" style="--worker-color: var(--color-success);">5</span>
+            </div>
+          </div>
+
+          <!-- Accessibility (active) -->
+          <div class="worker-card" id="card-a11y" style="--worker-color: var(--color-a11y);" onclick="selectWorker('a11y')">
+            <div class="card-top">
+              <div class="card-name-group">
+                <div class="card-dot active" style="background: var(--color-a11y);"></div>
+                <span class="card-name">A11y</span>
+              </div>
+              <span class="card-counter">4/8</span>
+            </div>
+            <div class="card-progress">
+              <div class="card-progress-fill" style="width: 50%; background: var(--color-a11y);"></div>
+            </div>
+            <div class="card-bottom">
+              <span class="card-status">
+                <span class="thinking-dots-inline">
+                  <span class="dot" style="background: var(--color-a11y); animation-delay: 0s;"></span>
+                  <span class="dot" style="background: var(--color-a11y); animation-delay: 0.15s;"></span>
+                  <span class="dot" style="background: var(--color-a11y); animation-delay: 0.3s;"></span>
+                </span>
+                color contrast
+              </span>
+              <span class="card-findings-badge has-findings" style="--worker-color: var(--color-a11y);">2</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ── Detail pane: reasoning for selected worker ────── -->
+
+        <!-- Security detail (visible by default) -->
+        <div class="detail-content" id="detail-security" style="display: block;">
+          <div class="detail-pane">
+            <div class="detail-header">
+              <div class="detail-dot active" style="background: var(--color-danger);"></div>
+              <span class="detail-title">Security + Config</span>
+              <span class="detail-subtitle">6 of 8 calls &middot; 3 findings</span>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>.gitignore missing .env.local</strong> &mdash; credentials could be committed to version control. Combined with <code>SITECORE_EDITING_SECRET</code> as a plain string default in <code>next.config.js:42</code>. The .gitignore only excludes <code>.env</code> but not <code>.env.local</code>, <code>.env.production</code>, or <code>.env.development</code>.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>check_gitignore</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>read_file</span>
+                <span class="finding-chip critical">critical</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>CSP header uses unsafe-inline for scripts</strong>, which negates most XSS protection. The Content-Security-Policy is set in <code>next.config.js</code> headers config but the <code>script-src</code> directive includes <code>'unsafe-inline'</code>, allowing arbitrary inline script execution. This is common in Sitecore JSS projects due to editing mode requirements, but the CSP should be tightened for production builds.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>grep_pattern</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>read_file</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>CORS configured as wildcard</strong> in API routes. <code>Access-Control-Allow-Origin: *</code> set on 3 API endpoints in <code>/pages/api/</code>. No credential restrictions. Combined with the editing secret exposure, this creates a vector for cross-origin data exfiltration.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>grep_pattern</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>analyze_config_files</span>
+                <span class="finding-chip critical">critical</span>
+              </div>
+            </div>
+
+            <div class="thinking">
+              <div class="thinking-dots">
+                <div class="thinking-dot" style="background: var(--color-danger); animation-delay: 0s;"></div>
+                <div class="thinking-dot" style="background: var(--color-danger); animation-delay: 0.2s;"></div>
+                <div class="thinking-dot" style="background: var(--color-danger); animation-delay: 0.4s;"></div>
+              </div>
+              <span class="thinking-label">analyzing environment variable usage across config files...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stack detail -->
+        <div class="detail-content" id="detail-stack" style="display: none;">
+          <div class="detail-pane">
+            <div class="detail-header">
+              <div class="detail-dot active" style="background: var(--color-tint);"></div>
+              <span class="detail-title">Stack + Architecture</span>
+              <span class="detail-subtitle">8 of 10 calls &middot; 3 findings</span>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Next.js 13.4 with dual router.</strong> Pages Router active (12 files in <code>/pages/</code>) alongside incomplete App Router migration (3 files in <code>/app/</code>). TypeScript strict mode disabled in <code>tsconfig.json</code>. The project uses Pages Router for all actual routes but has an abandoned App Router layout.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>detect_app_roots</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>parse_tsconfig</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Dual-router creates bundle bloat.</strong> Both routers compile their own bundles. The <code>/app</code> directory has a root <code>layout.tsx</code> but <code>pages/</code> still handles all actual routes. Migration was started and abandoned &mdash; the app directory adds ~45KB to the client bundle with zero benefit.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>analyze_route_structure</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Component directives: 87% client-side.</strong> Only 4 of 31 components use server rendering. The <code>"use client"</code> directive is applied at the layout level in <code>Layout.tsx</code>, cascading to all children. This defeats React Server Components entirely.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>analyze_component_directives</span>
+                <span class="finding-chip medium">medium</span>
+              </div>
+            </div>
+
+            <div class="thinking">
+              <div class="thinking-dots">
+                <div class="thinking-dot" style="background: var(--color-tint); animation-delay: 0s;"></div>
+                <div class="thinking-dot" style="background: var(--color-tint); animation-delay: 0.2s;"></div>
+                <div class="thinking-dot" style="background: var(--color-tint); animation-delay: 0.4s;"></div>
+              </div>
+              <span class="thinking-label">reading middleware.ts for routing patterns...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- CMS detail -->
+        <div class="detail-content" id="detail-cms" style="display: none;">
+          <div class="detail-pane">
+            <div class="detail-header">
+              <div class="detail-dot active" style="background: var(--color-info);"></div>
+              <span class="detail-title">CMS + Preview</span>
+              <span class="detail-subtitle">5 of 8 calls &middot; 2 findings</span>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Sitecore JSS SDK 21.6</strong> &mdash; two major versions behind current (22.2). The <code>componentFactory</code> uses the legacy registration pattern (<code>componentFactory.ts</code> with manual imports) instead of the module-based factory introduced in 22.0. This blocks adoption of component-level data fetching.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>parse_package_json</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>grep_pattern</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Preview mode not configured.</strong> No preview API route found. The Sitecore editing integration uses the deprecated <code>/api/editing/render</code> endpoint instead of the middleware-based approach. This means editors cannot preview draft content in the Next.js frontend.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>find_files</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>read_file</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="thinking">
+              <div class="thinking-dots">
+                <div class="thinking-dot" style="background: var(--color-info); animation-delay: 0s;"></div>
+                <div class="thinking-dot" style="background: var(--color-info); animation-delay: 0.2s;"></div>
+                <div class="thinking-dot" style="background: var(--color-info); animation-delay: 0.4s;"></div>
+              </div>
+              <span class="thinking-label">reading layout service configuration...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deps detail (COMPLETE) -->
+        <div class="detail-content" id="detail-deps" style="display: none;">
+          <div class="detail-pane">
+            <div class="detail-header">
+              <div class="detail-dot" style="background: var(--color-success);"></div>
+              <span class="detail-title">Deps + Deployment</span>
+              <span class="detail-subtitle">6 of 6 calls &middot; 6 findings</span>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>14 packages outdated.</strong> 3 major version gaps: <code>next</code> (13.4 &rarr; 15.1), <code>@sitecore-jss/*</code> (21.6 &rarr; 22.2), <code>typescript</code> (4.9 &rarr; 5.7). Lock file is <code>pnpm-lock.yaml</code>, consistent with <code>packageManager</code> field. No renovate or dependabot config found.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>compare_versions</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>parse_package_json</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>No CI pipeline detected.</strong> No <code>.github/workflows</code>, no <code>azure-pipelines.yml</code>, no Jenkinsfile. Vercel config present (<code>vercel.json</code>) but no automated checks, no lint step, no type checking in any pipeline. Deployments appear to be manual via Vercel dashboard.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>find_files</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>list_directory</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="detail-complete">
+              <div class="detail-complete-check">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 8.5L7 11.5L12 5" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="detail-complete-text">
+                <span class="detail-complete-label">Investigation complete</span>
+                <span class="detail-complete-count">6 findings recorded &middot; 0:38 elapsed</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Next.js detail (COMPLETE) -->
+        <div class="detail-content" id="detail-nextjs" style="display: none;">
+          <div class="detail-pane">
+            <div class="detail-header">
+              <div class="detail-dot" style="background: var(--color-success);"></div>
+              <span class="detail-title">Next.js</span>
+              <span class="detail-subtitle">8 of 8 calls &middot; 5 findings</span>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>ISR not configured.</strong> 14 data-fetching pages use <code>getServerSideProps</code> but none set <code>revalidate</code>. Every page request hits the origin server. No on-demand revalidation API route found. This is the single biggest performance issue &mdash; static pages are being dynamically rendered on every request.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>grep_pattern</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>analyze_data_fetching</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Image component misuse.</strong> 8 of 12 images use raw <code>&lt;img&gt;</code> tags instead of <code>next/image</code>. Missing <code>width</code>/<code>height</code> attributes cause cumulative layout shift. No blur placeholders configured. The CMS image URLs are passed directly without optimization.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>grep_pattern</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Middleware runs on every route.</strong> No <code>matcher</code> pattern configured in <code>middleware.ts</code> &mdash; it executes for all requests including static assets, <code>_next/</code> chunks, and API routes. This adds ~15ms latency to every asset request.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>read_file</span>
+                <span class="finding-chip medium">medium</span>
+              </div>
+            </div>
+
+            <div class="detail-complete">
+              <div class="detail-complete-check">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 8.5L7 11.5L12 5" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="detail-complete-text">
+                <span class="detail-complete-label">Investigation complete</span>
+                <span class="detail-complete-count">5 findings recorded &middot; 0:52 elapsed</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- A11y detail -->
+        <div class="detail-content" id="detail-a11y" style="display: none;">
+          <div class="detail-pane">
+            <div class="detail-header">
+              <div class="detail-dot active" style="background: var(--color-a11y);"></div>
+              <span class="detail-title">Accessibility</span>
+              <span class="detail-subtitle">4 of 8 calls &middot; 2 findings</span>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>12 images missing alt text.</strong> All CMS-rendered images in the <code>Hero</code> and <code>Card</code> components use empty <code>alt=""</code> attributes. Screen readers will skip these entirely, treating them as decorative. The Sitecore image field has an <code>alt</code> property but it's not being passed through to the component.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>grep_pattern</span>
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>read_file</span>
+                <span class="finding-chip high">high</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="turn-reasoning">
+                <strong>Form inputs lack labels.</strong> The contact form in <code>ContactForm.tsx</code> uses placeholder text instead of <code>&lt;label&gt;</code> elements. 3 inputs have no programmatic name for assistive technology. Placeholders disappear on focus, leaving no visible label.
+              </div>
+              <div class="turn-tools">
+                <span class="tool-chip"><span class="chip-dot" style="background: var(--color-success);"></span>read_file</span>
+                <span class="finding-chip medium">medium</span>
+              </div>
+            </div>
+
+            <div class="thinking">
+              <div class="thinking-dots">
+                <div class="thinking-dot" style="background: var(--color-a11y); animation-delay: 0s;"></div>
+                <div class="thinking-dot" style="background: var(--color-a11y); animation-delay: 0.2s;"></div>
+                <div class="thinking-dot" style="background: var(--color-a11y); animation-delay: 0.4s;"></div>
+              </div>
+              <span class="thinking-label">checking color contrast ratios in component styles...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Synthesis bar ─────────────────────────────────── -->
+        <div class="synthesis">
+          <div class="synthesis-badge">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2L2 8l6 6M14 2L8 8l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+            </svg>
+            SYNTHESIS
+          </div>
+          <div class="synthesis-content">
+            <div class="synthesis-text">
+              Waiting for <strong>4 workers</strong> to complete before cross-referencing findings...
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+              <span class="synthesis-connection">
+                <span class="arrow">&larr;</span> Deps: outdated JSS SDK
+                <span class="arrow">&rarr;</span> CMS: deprecated editing API
+              </span>
+              <span class="synthesis-connection">
+                <span class="arrow">&larr;</span> Security: missing .env
+                <span class="arrow">&rarr;</span> Stack: no strict mode
+              </span>
+              <span class="synthesis-connection">
+                <span class="arrow">&larr;</span> Next.js: no ISR
+                <span class="arrow">&rarr;</span> Deps: no CI pipeline
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── Right panel ───────────────────────────────────────── -->
+      <div class="right-panel">
+        <div class="panel-section" style="flex: 1; overflow-y: auto;">
+          <div class="panel-title">Findings <span style="font-weight: 400; text-transform: none; letter-spacing: 0;">&#8212; 18 so far</span></div>
+
+          <div class="finding-item">
+            <div class="finding-severity" style="background: var(--color-danger);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">CORS wildcard on API routes</div>
+              <div class="finding-source">Security &middot; critical</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.05s;">
+            <div class="finding-severity" style="background: var(--color-danger);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">.gitignore missing .env.local</div>
+              <div class="finding-source">Security &middot; critical</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.1s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">CSP unsafe-inline for scripts</div>
+              <div class="finding-source">Security &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.15s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">Dual router — abandoned migration</div>
+              <div class="finding-source">Stack &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.2s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">Sitecore JSS 2 majors behind</div>
+              <div class="finding-source">CMS &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.25s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">Preview mode not configured</div>
+              <div class="finding-source">CMS &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.3s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">No CI pipeline detected</div>
+              <div class="finding-source">Deps &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.35s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">14 packages outdated (3 major)</div>
+              <div class="finding-source">Deps &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.4s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">ISR not configured on any page</div>
+              <div class="finding-source">Next.js &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.45s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">8 images bypass next/image</div>
+              <div class="finding-source">Next.js &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.5s;">
+            <div class="finding-severity" style="background: var(--color-warning);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">12 images missing alt text</div>
+              <div class="finding-source">A11y &middot; high</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.55s;">
+            <div class="finding-severity" style="background: var(--color-info);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">87% client-side components</div>
+              <div class="finding-source">Stack &middot; medium</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.6s;">
+            <div class="finding-severity" style="background: var(--color-info);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">Middleware runs on all routes</div>
+              <div class="finding-source">Next.js &middot; medium</div>
+            </div>
+          </div>
+          <div class="finding-item" style="animation-delay: 0.65s;">
+            <div class="finding-severity" style="background: var(--color-info);"></div>
+            <div class="finding-meta">
+              <div class="finding-title-text">Form inputs lack labels</div>
+              <div class="finding-source">A11y &middot; medium</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
