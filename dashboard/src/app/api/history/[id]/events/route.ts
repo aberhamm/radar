@@ -7,6 +7,15 @@ export async function GET(
 ) {
   const { id } = await params;
   const session = getSession();
+
+  // Check current in-progress run first — not yet in history or on disk
+  if (session.currentRun?.id === id) {
+    return NextResponse.json(
+      { events: session.currentRun.events },
+      { headers: { 'Cache-Control': 'no-cache' } },
+    );
+  }
+
   let record = session.history.find(r => r.id === id);
 
   if (!record) {
@@ -18,7 +27,7 @@ export async function GET(
   }
 
   const cacheHeaders: HeadersInit = record.completedAt
-    ? { 'Cache-Control': 'public, max-age=300, immutable' }
+    ? { 'Cache-Control': 'public, max-age=86400, immutable' }
     : { 'Cache-Control': 'no-cache' };
 
   const events = loadRunEvents(record);

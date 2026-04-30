@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
     }>;
 
     const result = await cloneRepo({ url, pull: true });
-    const repoName = url.split('/').pop()?.replace('.git', '') ?? path.basename(result.localPath);
+    const urlPath = url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+    const urlParts = urlPath.split('/');
+    const repoName = urlParts.length >= 2 ? `${urlParts[0]}/${urlParts[1]}` : urlParts[0] ?? path.basename(result.localPath);
 
     return NextResponse.json({
       ok: true,

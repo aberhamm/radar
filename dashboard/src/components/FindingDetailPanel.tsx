@@ -171,7 +171,7 @@ export function FindingDetailPanel({
       data-component="FindingDetailPanel"
       role="complementary"
       aria-label="Finding detail"
-      className="w-1/2 max-w-[680px] min-w-[360px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col overflow-hidden"
+      className="w-1/2 max-w-[680px] min-w-[360px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col overflow-hidden absolute right-0 top-0 z-10"
       style={{
         animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
       }}

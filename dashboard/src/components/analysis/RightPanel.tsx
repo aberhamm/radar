@@ -136,7 +136,7 @@ export function RightPanel({
             {!findingsCollapsed && (
               <div
                 ref={findingsScrollRef}
-                className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5 min-h-0"
+                className="flex-1 overflow-y-auto p-3 space-y-1.5 min-h-0"
                 style={{ animation: 'expand-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) both' }}
               >
                 {findings.length === 0 && (phase !== 'idle' || isLive) && (

@@ -78,7 +78,8 @@ function csvEscape(value: string): string {
 
 export function eventsToCSV(events: StepEvent[]): string {
   const headers = ['Step', 'Type', 'Timestamp', 'Action', 'Args', 'Result', 'Reasoning'];
-  const rows = events.map(e => [
+  const exportable = events.filter(e => e.type !== 'text_delta');
+  const rows = exportable.map(e => [
     String(e.step),
     e.type ?? '',
     e.timestamp ?? '',

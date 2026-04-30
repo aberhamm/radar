@@ -120,7 +120,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Repository is empty: ${resolvedRepoPath}` }, { status: 400 });
   }
 
-  const repoName = path.basename(resolvedRepoPath);
+  const repoName = repoUrl
+    ? repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
+    : path.basename(resolvedRepoPath);
   const runId = crypto.randomUUID();
   const abortController = new AbortController();
   session.result = null;
@@ -140,11 +142,14 @@ export async function POST(req: NextRequest) {
   // Run agent asynchronously — don't await here
   (async () => {
     try {
-      // Startup progress: send status events so the UI knows what's happening
+      // Startup progress: push to run.events (for persistence + SSE replay) and stream
       const emitStatus = (message: string) => {
-        sendStreamEvent(session.currentRun?.streamController ?? null, {
+        const event: StepEvent = {
           type: 'status', step: 0, action: 'startup', result: message, timestamp: new Date().toISOString(),
-        });
+        };
+        const run = session.currentRun;
+        if (run) run.events.push(event);
+        sendStreamEvent(run?.streamController ?? null, event);
       };
 
       emitStatus('Loading agent runner...');
@@ -224,7 +229,7 @@ export async function POST(req: NextRequest) {
         repoSource: (repoSource as 'github' | 'local') ?? 'local',
         ...(repoUrl ? { repoUrl } : {}),
         ...(appRoot ? { appRoot } : {}),
-        goal: goal as 'onboarding' | 'audit' | 'audit-generic' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility',
+        goal: goal as 'onboarding' | 'audit' | 'audit-generic' | 'migration' | 'component-map' | 'ci-check' | 'security-review' | 'nextjs' | 'accessibility' | 'performance',
         ...(requestedBudget ? { toolCallBudget: requestedBudget } : {}),
         outputDir: AGENT_OUTPUT_DIR,
         verbose: true,

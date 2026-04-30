@@ -54,7 +54,7 @@ export function SourceFileViewer({
       {/* Semi-transparent backdrop for click-outside dismissal */}
       {onBackdropClick && (
         <div
-          className="absolute inset-0 z-[9] bg-black/10"
+          className="absolute inset-0 z-[19] bg-black/10"
           onClick={onBackdropClick}
           aria-hidden="true"
         />
@@ -64,7 +64,7 @@ export function SourceFileViewer({
         data-component="SourceFileViewer"
         role="complementary"
         aria-label="Source file viewer"
-        className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col overflow-hidden absolute right-0 top-0 z-10"
+        className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col overflow-hidden absolute right-0 top-0 z-20"
         style={{
           animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
         }}

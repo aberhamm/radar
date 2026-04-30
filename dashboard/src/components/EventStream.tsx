@@ -30,8 +30,8 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
   let current: Turn | null = null;
 
   for (const ev of events) {
-    // Transient streaming events — superseded by text_response / tool_call
-    if (ev.type === 'text_delta' || ev.type === 'tool_start') continue;
+    // Transient streaming events — superseded by text_response / tool_call / finding
+    if (ev.type === 'text_delta' || ev.type === 'tool_start' || ev.type === 'finding_progress') continue;
 
     if (ev.type === 'text_response') {
       if (current) turns.push(current);

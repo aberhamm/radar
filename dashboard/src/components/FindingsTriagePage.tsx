@@ -59,6 +59,14 @@ export interface FindingsTriagePageProps {
   selectedFindingId?: string | null;
 }
 
+function displayRepoName(name?: string, url?: string): string {
+  if (url) {
+    const full = url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+    if (full.includes('/')) return full;
+  }
+  return name ?? '';
+}
+
 type SeverityOrder = Record<string, number>;
 const SEV_ORDER: SeverityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
 
@@ -389,6 +397,7 @@ const GOAL_LABELS: Record<string, string> = {
 
 function RunContextHeader({
   repoName,
+  repoUrl,
   goal,
   startedAt,
   runId,
@@ -396,6 +405,7 @@ function RunContextHeader({
   onRunSwitch,
 }: {
   repoName?: string;
+  repoUrl?: string;
   goal?: string;
   startedAt?: string;
   runId: string;
@@ -422,7 +432,7 @@ function RunContextHeader({
     <div className="flex items-center gap-3 px-6 py-2.5 border-b border-[var(--color-separator)]/50 bg-[var(--color-surface)]">
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-[13px] font-semibold text-[var(--color-label)] truncate">
-          {repoName}
+          {displayRepoName(repoName, repoUrl)}
         </span>
         {goal && (
           <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--color-elevated)] text-[var(--color-secondary-label)] font-medium shrink-0">
@@ -460,7 +470,7 @@ function RunContextHeader({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className={`text-[12px] font-medium truncate ${isActive ? 'text-[var(--color-tint)]' : 'text-[var(--color-label)]'}`}>
-                          {run.repoName}
+                          {displayRepoName(run.repoName, run.repoUrl)}
                         </span>
                         <span className="text-[10px] px-1 py-0.5 rounded bg-[var(--color-elevated)] text-[var(--color-tertiary-label)] font-medium shrink-0">
                           {GOAL_LABELS[run.goal] ?? run.goal}
@@ -847,12 +857,13 @@ export function FindingsTriagePage({
 
   // ─── Render ────────────────────────────────────────────────────
   return (
-    <div data-component="FindingsTriagePage" className="flex-1 flex overflow-hidden animate-slide-up">
+    <div data-component="FindingsTriagePage" className="flex-1 flex overflow-hidden animate-slide-up relative">
       {/* Table section */}
-      <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-250 ${panelOpen ? 'w-1/2' : 'w-full'}`} style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Run context */}
         <RunContextHeader
           repoName={repoName}
+          repoUrl={repoUrl}
           goal={goal}
           startedAt={startedAt}
           runId={runId}
@@ -1074,7 +1085,7 @@ export function FindingsTriagePage({
         const src = sources?.[viewingFile.filePath];
         if (sourcesLoading) {
           return (
-            <div className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex items-center justify-center absolute right-0 top-0 z-10"
+            <div className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex items-center justify-center absolute right-0 top-0 z-20"
               style={{ animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
               <span className="text-[13px] text-[var(--color-tertiary-label)]">Loading source file...</span>
             </div>
@@ -1082,7 +1093,7 @@ export function FindingsTriagePage({
         }
         if (!src) {
           return (
-            <div className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col items-center justify-center gap-3 absolute right-0 top-0 z-10"
+            <div className="w-1/2 max-w-[800px] min-w-[400px] h-full border-l border-[var(--color-separator)] bg-[var(--color-surface)] flex flex-col items-center justify-center gap-3 absolute right-0 top-0 z-20"
               style={{ animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
               <span className="text-[13px] text-[var(--color-tertiary-label)]">Source not available for this run.</span>
               <button type="button" onClick={() => setViewingFile(null)}

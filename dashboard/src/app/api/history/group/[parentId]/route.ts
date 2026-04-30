@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, loadRunEvents, loadRunEnvelope, loadRunFindings } from '@/lib/agentSession';
+import { getSession, loadRunEvents, loadRunEnvelope, loadRunFindings, loadRunData } from '@/lib/agentSession';
 
 /**
  * GET /api/history/group/[parentId]
  *
  * Load all child runs of a multi-goal group by parentRunId.
- * Returns scorecards for all 8 goals + the shared event stream.
+ * Returns scorecards for all goals + pre-computed rundata (not raw events).
  */
 export async function GET(
   _req: NextRequest,
@@ -61,12 +61,51 @@ export async function GET(
   }));
   for (const g of goalResults) { if (g) goals.push(g); }
 
-  // Load events from the first child (all children share the same event stream)
-  const events = loadRunEvents(children[0]);
+  // Pre-computed rundata (small) instead of raw events (1MB+)
+  const rundata = loadRunData(children[0]);
 
-  // Load findings from the last child (accumulated across all passes)
-  const findings = children[children.length - 1].result?.state?.findings
-    ?? loadRunFindings(children[children.length - 1]);
+  // Extract pass summary from events for PassBreakdown component
+  // Only reads pass_boundary + pass_complete events, not full stream
+  const events = loadRunEvents(children[0]);
+  const passSummary: Array<{ name: string; eventCount: number; budget?: number; terminationReason?: string }> = [];
+  const completions = new Map<string, { toolCalls: number; budget: number; terminationReason: string }>();
+  for (const ev of events) {
+    if (ev.action === 'pass_complete' && ev.result) {
+      try {
+        const data = JSON.parse(ev.result as string);
+        completions.set(data.pass, data);
+      } catch { /* ignore */ }
+    }
+  }
+  let currentPass = 'Core';
+  let currentCount = 0;
+  for (const ev of events) {
+    if (ev.action === 'pass_boundary') {
+      const completion = completions.get(currentPass);
+      passSummary.push({
+        name: currentPass,
+        eventCount: completion?.toolCalls ?? currentCount,
+        budget: completion?.budget,
+        terminationReason: completion?.terminationReason,
+      });
+      currentPass = (ev.result as string) ?? 'Next pass';
+      currentCount = 0;
+    } else if (ev.type === 'tool_call') {
+      currentCount++;
+    }
+  }
+  const lastCompletion = completions.get(currentPass);
+  passSummary.push({
+    name: currentPass,
+    eventCount: lastCompletion?.toolCalls ?? currentCount,
+    budget: lastCompletion?.budget,
+    terminationReason: lastCompletion?.terminationReason,
+  });
+  const toolCallCount = events.filter(e => e.type === 'tool_call').length;
+
+  // Reuse last child's findings from goalResults instead of re-loading from disk
+  const lastGoal = goalResults[goalResults.length - 1];
+  const findings = lastGoal?.findings ?? [];
 
   // Aggregate metrics
   const firstChild = children[0];
@@ -82,7 +121,9 @@ export async function GET(
     startedAt,
     completedAt,
     goals,
-    events,
+    rundata,
+    passSummary,
+    toolCallCount,
     findings,
     totalFindings: (findings as unknown[])?.length ?? 0,
   });

@@ -345,6 +345,9 @@
 @utility animate-slide-down {
   animation: slideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+@utility animate-expand-down {
+  animation: expand-down 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 @utility animate-skeleton {
   background: linear-gradient(90deg, var(--color-elevated) 0%, color-mix(in srgb, var(--color-elevated) 60%, var(--color-surface)) 40%, var(--color-elevated) 80%);
   background-size: 400px 100%;

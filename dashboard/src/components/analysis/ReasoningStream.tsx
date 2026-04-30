@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { AnimationPhase } from '@/lib/useAnimationSequence';
 import type { StreamTurn, Finding } from '@/lib/runTransform';
+import type { FindingProgressState } from '@/lib/useLiveAnalysis';
 import { StaggeredSpinner } from '@/components/Skeleton';
 import { TurnItem } from './TurnItem';
 import { SwitchMarker } from './SwitchMarker';
@@ -21,6 +22,7 @@ interface ReasoningStreamProps {
   isInstant: boolean;
   verbose: boolean;
   accentColor: string;
+  findingProgress?: FindingProgressState | null;
 }
 
 export function ReasoningStream({
@@ -34,6 +36,7 @@ export function ReasoningStream({
   isInstant,
   verbose,
   accentColor,
+  findingProgress,
 }: ReasoningStreamProps) {
   const streamRef = useRef<HTMLDivElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
@@ -212,15 +215,42 @@ export function ReasoningStream({
                     <span className="text-[11px] font-mono text-tertiary-label">
                       {findings.length} so far
                     </span>
-                    <span className="flex gap-[3px]">
-                      {[0, 1, 2].map((j) => (
-                        <span
-                          key={j}
-                          className="block w-[3px] h-[3px] rounded-full bg-success"
-                          style={{ animation: `pulse-dot 1.2s ease-in-out ${j * 0.2}s infinite` }}
-                        />
-                      ))}
-                    </span>
+                    {findingProgress ? (
+                      <span className="text-[11px] font-mono text-tertiary-label flex items-center gap-1.5" style={{ animation: 'fadeIn 0.15s ease both' }}>
+                        <span className="text-quaternary-label">|</span>
+                        {findingProgress.phase === 'finding_recorded' ? (
+                          <span className="text-success">{findingProgress.findingId} recorded</span>
+                        ) : findingProgress.phase === 'verifying_evidence' ? (
+                          <>
+                            <span>verifying</span>
+                            <span className="text-secondary-label">{findingProgress.evidenceIndex}/{findingProgress.evidenceTotal}</span>
+                            <span className="truncate max-w-[160px]">{findingProgress.evidenceFile?.split('/').pop()}</span>
+                            <span className="flex gap-[2px]">
+                              {[0, 1, 2].map((j) => (
+                                <span key={j} className="block w-[2px] h-[2px] rounded-full bg-success" style={{ animation: `pulse-dot 0.8s ease-in-out ${j * 0.15}s infinite` }} />
+                              ))}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className={findingProgress.evidenceStatus === 'rejected' ? 'text-warning' : findingProgress.evidenceStatus === 'corrected' ? 'text-warning' : 'text-success'}>
+                              {findingProgress.evidenceStatus}
+                            </span>
+                            <span className="truncate max-w-[160px]">{findingProgress.evidenceFile?.split('/').pop()}</span>
+                          </>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="flex gap-[3px]">
+                        {[0, 1, 2].map((j) => (
+                          <span
+                            key={j}
+                            className="block w-[3px] h-[3px] rounded-full bg-success"
+                            style={{ animation: `pulse-dot 1.2s ease-in-out ${j * 0.2}s infinite` }}
+                          />
+                        ))}
+                      </span>
+                    )}
                   </>
                 ) : pendingActions.length > 0 ? (
                   <span

@@ -30,35 +30,46 @@ export function SingleInvestigationContent({
 
   const resolvedRunData = investigationRunData ?? lazyRunData;
 
+  const buildRunData = useCallback((evts: StepEvent[]) => {
+    return transformRunData(evts, {
+      scorecard,
+      metrics,
+      terminationReason: 'completed',
+      briefMarkdown: '',
+      outputPaths: [],
+      state: { findings: findings ?? [] },
+    });
+  }, [scorecard, metrics, findings]);
+
+  // Use prop events directly when available — avoids unnecessary API call
+  useEffect(() => {
+    if (resolvedRunData) return;
+    if (events && events.length > 0) {
+      setLazyRunData(buildRunData(events));
+    }
+  }, [resolvedRunData, events, buildRunData]);
+
+  // Fallback: fetch pre-computed rundata (fast), then raw events if unavailable
   const fetchEvents = useCallback(() => {
     if (resolvedRunData || eventsLoading || eventsFailed.current || !runId || runId.startsWith('__')) return;
+    if (events && events.length > 0) return;
     setEventsLoading(true);
-    fetch(`/api/history/${encodeURIComponent(runId)}/events`)
+    fetch(`/api/history/${encodeURIComponent(runId)}/rundata`)
       .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then(data => {
-        if (data.events) {
-          const rd = transformRunData(data.events, {
-            scorecard,
-            metrics,
-            terminationReason: 'completed',
-            briefMarkdown: '',
-            outputPaths: [],
-            state: { findings: findings ?? [] },
+        if (r.ok) return r.json().then(data => { setLazyRunData(data as TransformedRunData); return null; });
+        return fetch(`/api/history/${encodeURIComponent(runId)}/events`)
+          .then(r2 => { if (!r2.ok) throw new Error(`HTTP ${r2.status}`); return r2.json(); })
+          .then(data => {
+            if (data.events) setLazyRunData(buildRunData(data.events));
+            else eventsFailed.current = true;
           });
-          setLazyRunData(rd);
-        } else {
-          eventsFailed.current = true;
-        }
       })
       .catch(err => {
         console.warn('[events] Failed to load:', err);
         eventsFailed.current = true;
       })
       .finally(() => setEventsLoading(false));
-  }, [resolvedRunData, eventsLoading, runId, scorecard, metrics, findings]);
+  }, [resolvedRunData, eventsLoading, runId, events, buildRunData]);
 
   useEffect(() => {
     fetchEvents();

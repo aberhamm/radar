@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, loadRunFindings, findRunById } from '@/lib/agentSession';
+import { getSession, loadRunData, findRunById } from '@/lib/agentSession';
 
 export async function GET(
   _req: NextRequest,
@@ -21,12 +21,10 @@ export async function GET(
     ? { 'Cache-Control': 'public, max-age=86400, immutable' }
     : { 'Cache-Control': 'no-cache' };
 
-  // In-memory result has findings directly
-  if (record.result?.state?.findings) {
-    return NextResponse.json({ findings: record.result.state.findings }, { headers: cacheHeaders });
+  const data = loadRunData(record);
+  if (!data) {
+    return NextResponse.json({ error: 'No pre-computed data' }, { status: 404 });
   }
 
-  // Otherwise load from disk
-  const findings = loadRunFindings(record);
-  return NextResponse.json({ findings }, { headers: cacheHeaders });
+  return NextResponse.json(data, { headers: cacheHeaders });
 }

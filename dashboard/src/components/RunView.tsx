@@ -172,9 +172,20 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
     }
   }, [mode, scorecard, metrics]);
 
-  const handleExportEventsCSV = useCallback(() => {
-    const events = mode.kind === 'single' ? mode.data.events : mode.data.events;
+  const handleExportEventsCSV = useCallback(async () => {
     const name = mode.kind === 'single' ? scorecard.repoName : mode.data.repoName;
+    let events = mode.kind === 'single' ? mode.data.events : mode.data.events;
+    if (events.length === 0 && mode.kind === 'multi') {
+      // Lazy-load events for CSV export only
+      try {
+        const firstGoalId = mode.data.goals[0]?.id;
+        if (firstGoalId) {
+          const r = await fetch(`/api/history/${encodeURIComponent(firstGoalId)}/events`);
+          const data = await r.json();
+          if (data.events) events = data.events;
+        }
+      } catch { /* export with empty events */ }
+    }
     exportEventsCSV(events, name);
   }, [mode, scorecard]);
 
@@ -265,7 +276,7 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
           {activeTab === 'overview' && mode.kind === 'multi' && (
             <MultiOverviewContent
               goals={mode.data.goals}
-              events={mode.data.events}
+              passSummary={mode.data.passSummary}
               findings={mode.data.findings}
               mergedScorecard={mode.data.mergedScorecard}
             />

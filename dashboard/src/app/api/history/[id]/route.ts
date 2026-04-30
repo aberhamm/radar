@@ -20,7 +20,7 @@ export async function GET(
   }
 
   const cacheHeaders: HeadersInit = record.completedAt
-    ? { 'Cache-Control': 'public, max-age=300, immutable' }
+    ? { 'Cache-Control': 'public, max-age=86400, immutable' }
     : { 'Cache-Control': 'no-cache' };
 
   // Current/just-completed run: result is still in memory
@@ -45,7 +45,23 @@ export async function GET(
   // Historical run: load from tiered storage (Tier 2 + 3)
   const envelope = loadRunEnvelope(record);
   if (!envelope) {
-    return NextResponse.json({ error: 'Run data not found on disk' }, { status: 404 });
+    // Record exists but envelope not on disk yet (in-progress or HMR wiped memory).
+    // Return metadata so the UI can render; findings/events load via their own routes.
+    return NextResponse.json({
+      id: record.id,
+      goal: record.goal,
+      repoName: record.repoName,
+      repoUrl: record.repoUrl,
+      startedAt: record.startedAt,
+      completedAt: record.completedAt,
+      result: {
+        scorecard: null,
+        metrics: null,
+        terminationReason: null,
+        briefMarkdown: null,
+        state: { findings: slim ? [] : loadRunFindings(record) },
+      },
+    }, { headers: cacheHeaders });
   }
 
   // Skip expensive findings load in slim mode (findings only needed for PDF export)

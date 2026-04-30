@@ -59,12 +59,13 @@ export function AnalysisView({
     phase, turns, typingText, activeTurnIndex,
     examinedFiles, findings,
     progressPercent, pendingActions, statusMessage,
+    findingProgress,
   } =
     isLive && liveState
       ? liveState
       : instantState
-        ? instantState
-        : { ...animState, statusMessage: '' };
+        ? { ...instantState, findingProgress: null }
+        : { ...animState, statusMessage: '', findingProgress: null };
 
   // ─── UI state ──────────────────────────────────────────────────
 
@@ -161,6 +162,7 @@ export function AnalysisView({
           isInstant={isInstant}
           verbose={verbose}
           accentColor={accentColor}
+          findingProgress={findingProgress}
         />
       </div>
 

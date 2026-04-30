@@ -239,10 +239,17 @@ function runFilename(record: { repoName: string; goal: string; startedAt: Date |
 
 // ── Index helpers (Tier 1) ────────────────────────────────────
 
+let _indexCache: RunIndexEntry[] | null = null;
+let _indexMtime: number = 0;
+
 function readIndex(): RunIndexEntry[] {
   try {
     if (!fs.existsSync(INDEX_FILE)) return [];
-    return JSON.parse(fs.readFileSync(INDEX_FILE, 'utf-8'));
+    const mtime = fs.statSync(INDEX_FILE).mtimeMs;
+    if (_indexCache && mtime === _indexMtime) return _indexCache;
+    _indexCache = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf-8'));
+    _indexMtime = mtime;
+    return _indexCache!;
   } catch {
     return [];
   }
@@ -252,6 +259,8 @@ function writeIndex(entries: RunIndexEntry[]): void {
   const tmp = INDEX_FILE + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(entries, null, 2));
   fs.renameSync(tmp, INDEX_FILE);
+  _indexCache = entries;
+  _indexMtime = fs.statSync(INDEX_FILE).mtimeMs;
 }
 
 function appendToIndex(entry: RunIndexEntry): void {
@@ -290,7 +299,8 @@ function writeEnvelope(dirPath: string, record: RunRecord): void {
 }
 
 function writeEventsJsonl(dirPath: string, events: StepEvent[]): void {
-  const lines = events.map(e => JSON.stringify(e)).join('\n');
+  const persistable = events.filter(e => e.type !== 'text_delta');
+  const lines = persistable.map(e => JSON.stringify(e)).join('\n');
   fs.writeFileSync(path.join(dirPath, 'events.jsonl'), lines + (lines.length ? '\n' : ''));
 }
 
@@ -300,6 +310,16 @@ function writeFindings(dirPath: string, findings: unknown[]): void {
 
 function writeSources(dirPath: string, sources: Record<string, SourceFile>): void {
   fs.writeFileSync(path.join(dirPath, 'sources.json'), JSON.stringify(sources, null, 2));
+}
+
+function writeRunData(dirPath: string, events: StepEvent[], result: RunResult): void {
+  try {
+    const { transformRunData } = require('./runTransform') as typeof import('./runTransform');
+    const data = transformRunData(events, result);
+    fs.writeFileSync(path.join(dirPath, 'rundata.json'), JSON.stringify(data));
+  } catch {
+    // Non-critical — client falls back to loading events
+  }
 }
 
 // ── Persist & checkpoint ──────────────────────────────────────
@@ -348,9 +368,12 @@ export function persistRun(record: RunRecord): void {
       writeEnvelope(dirPath, record);
     }
 
-    // Tier 3: events + full findings + source files
+    // Tier 3: events + full findings + source files + pre-computed run data
     writeEventsJsonl(dirPath, record.events);
     writeFindings(dirPath, record.result?.state?.findings ?? []);
+    if (record.result) {
+      writeRunData(dirPath, record.events, record.result);
+    }
     if (record.result?.sources && Object.keys(record.result.sources).length > 0) {
       writeSources(dirPath, record.result.sources);
     }
@@ -560,6 +583,36 @@ export function loadRunFindings(record: RunRecord): unknown[] {
   } catch (err) {
     console.warn(`[loadRunFindings] Failed for run ${record.id}:`, (err as Error).message);
     return [];
+  }
+}
+
+/** Load pre-computed run data (Tier 3). Generates it on-demand for old runs. */
+export function loadRunData(record: RunRecord): unknown | null {
+  const dirPath = record._dirPath;
+  if (!dirPath) return null;
+  const rundataPath = path.join(dirPath, 'rundata.json');
+  try {
+    if (fs.existsSync(rundataPath)) {
+      return JSON.parse(fs.readFileSync(rundataPath, 'utf-8'));
+    }
+    // Backfill: generate from events + envelope for runs persisted before rundata existed
+    const events = loadRunEvents(record);
+    if (events.length === 0) return null;
+    const envelope = loadRunEnvelope(record);
+    if (!envelope) return null;
+    const findings = loadRunFindings(record);
+    const syntheticResult: RunResult = {
+      scorecard: envelope.scorecard as RunResult['scorecard'],
+      metrics: envelope.metrics as RunResult['metrics'],
+      terminationReason: (envelope.terminationReason as string) ?? 'completed',
+      briefMarkdown: (envelope.briefMarkdown as string) ?? '',
+      outputPaths: [],
+      state: { findings },
+    };
+    writeRunData(dirPath, events, syntheticResult);
+    return JSON.parse(fs.readFileSync(rundataPath, 'utf-8'));
+  } catch {
+    return null;
   }
 }
 

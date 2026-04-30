@@ -111,7 +111,14 @@ export function buildUrl(state: UrlView): string {
   }
 }
 
-// ─── Vanilla URL store (bypasses Next.js router) ────────────────
+// ─── Vanilla URL store (bypasses Next.js RSC pipeline) ───────────
+//
+// This app is a single-page catch-all ([[...slug]]). All navigation
+// is client-side state. Next.js App Router patches history.pushState
+// and triggers an RSC fetch on every pathname change — we avoid that
+// by spreading the existing history.state (preserves Next.js internal
+// tree for back/forward) and setting __NA so the patched pushState
+// calls the original directly without triggering applyUrlFromHistory.
 
 let listeners: Array<() => void> = [];
 let currentUrl = typeof window !== 'undefined'
@@ -136,6 +143,10 @@ function getServerSnapshot() {
 function notify() {
   currentUrl = window.location.pathname + window.location.search;
   for (const listener of listeners) listener();
+}
+
+function spaHistoryState() {
+  return { ...window.history.state, __NA: true };
 }
 
 if (typeof window !== 'undefined') {
@@ -168,7 +179,7 @@ export function useUrlState(): UseUrlStateReturn {
   const pushUrl = useCallback((state: UrlView) => {
     const next = buildUrl(state);
     if (next !== prevUrlRef.current) {
-      window.history.pushState(null, '', next);
+      window.history.pushState(spaHistoryState(), '', next);
       prevUrlRef.current = next;
       notify();
     }
@@ -176,7 +187,7 @@ export function useUrlState(): UseUrlStateReturn {
 
   const replaceUrl = useCallback((state: UrlView) => {
     const next = buildUrl(state);
-    window.history.replaceState(null, '', next);
+    window.history.replaceState(spaHistoryState(), '', next);
     prevUrlRef.current = next;
     notify();
   }, []);

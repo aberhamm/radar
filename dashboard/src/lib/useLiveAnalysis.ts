@@ -6,6 +6,18 @@ import type { AnimationPhase } from './useAnimationSequence';
 import type { Activity, Finding, StreamTurn } from './runTransform';
 import { ACTION_CATEGORY_HINTS, cleanReasoning } from './runTransform';
 
+/** Live progress state for the current record_finding execution. */
+export interface FindingProgressState {
+  findingIndex: number;
+  findingTotal: number;
+  findingId: string;
+  phase: 'verifying_evidence' | 'evidence_verified' | 'finding_recorded';
+  evidenceIndex?: number;
+  evidenceTotal?: number;
+  evidenceStatus?: string;
+  evidenceFile?: string;
+}
+
 export interface LiveAnalysisState {
   phase: AnimationPhase;
   turns: StreamTurn[];
@@ -20,6 +32,8 @@ export interface LiveAnalysisState {
   pendingActions: string[];
   /** Startup/status message (loading agent, pre-computation, pass boundaries) */
   statusMessage: string;
+  /** Live sub-progress during record_finding execution */
+  findingProgress: FindingProgressState | null;
 }
 
 /**
@@ -50,6 +64,7 @@ export function useLiveAnalysis(
     let assembleOutputSeen = false;
     let pendingDeltaText = ''; // accumulates text_delta content for live typing
     let statusMessage = '';
+    let findingProgress: FindingProgressState | null = null;
 
     for (const ev of events) {
       // Startup status events (loading agent, starting analysis)
@@ -101,6 +116,22 @@ export function useLiveAnalysis(
           currentPhase = 'write';
           switchSeen = true;
         }
+        continue;
+      }
+
+      // Finding sub-progress (fires during record_finding execution)
+      if (ev.type === 'finding_progress' && ev.details) {
+        const d = ev.details as Record<string, unknown>;
+        findingProgress = {
+          findingIndex: (d.findingIndex as number) ?? 0,
+          findingTotal: (d.findingTotal as number) ?? 0,
+          findingId: (d.findingId as string) ?? '',
+          phase: (d.phase as FindingProgressState['phase']) ?? 'verifying_evidence',
+          evidenceIndex: d.evidenceIndex as number | undefined,
+          evidenceTotal: d.evidenceTotal as number | undefined,
+          evidenceStatus: d.evidenceStatus as string | undefined,
+          evidenceFile: d.evidenceFile as string | undefined,
+        };
         continue;
       }
 
@@ -175,6 +206,7 @@ export function useLiveAnalysis(
         // because 'finding' type never reaches the tool_call handler below).
         const existing = currentActivities.find(a => a.label === 'record_finding');
         if (existing) existing.pending = false;
+        findingProgress = null;
         continue;
       }
 
@@ -352,6 +384,7 @@ export function useLiveAnalysis(
       progressPercent,
       pendingActions,
       statusMessage,
+      findingProgress,
     };
   }, [events, runStatus, toolCalls, budget]);
 }

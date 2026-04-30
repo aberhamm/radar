@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useRef, useCallback, useMemo } from 'react';
-import type { Scorecard, StepEvent, RankedRisk, CategoryScore } from '@/lib/agentSession';
+import type { Scorecard, RankedRisk, CategoryScore } from '@/lib/agentSession';
 import type { Finding } from '@/lib/runTransform';
 import { scoreColor, scoreBg, scoreToGrade } from '@/lib/utils';
-import type { MultiGoalGoal } from '@/lib/runViewAdapters';
+import type { MultiGoalGoal, PassSummary } from '@/lib/runViewAdapters';
 import { FindingCard } from './FindingCard';
 
 // ─── Constants ─────────────────────────────────────────────────
@@ -190,53 +190,11 @@ function TopRisks({ goals }: { goals: MultiGoalGoal[] }) {
 
 // ─── Pass Breakdown ─────────────────────────────────────────────
 
-interface PassInfo {
-  name: string;
-  eventCount: number;
-  budget?: number;
-  terminationReason?: string;
-}
-
-function PassBreakdown({ events }: { events: StepEvent[] }) {
-  const passes: PassInfo[] = [];
-  let currentPass = 'Core';
-  let currentCount = 0;
-
-  const completions = new Map<string, { toolCalls: number; budget: number; terminationReason: string }>();
-  for (const ev of events) {
-    if (ev.action === 'pass_complete' && ev.result) {
-      try {
-        const data = JSON.parse(ev.result as string);
-        completions.set(data.pass, data);
-      } catch { /* ignore parse errors */ }
-    }
-  }
-
-  for (const ev of events) {
-    if (ev.action === 'pass_boundary') {
-      const completion = completions.get(currentPass);
-      passes.push({
-        name: currentPass,
-        eventCount: completion?.toolCalls ?? currentCount,
-        budget: completion?.budget,
-        terminationReason: completion?.terminationReason,
-      });
-      currentPass = (ev.result as string) ?? 'Next pass';
-      currentCount = 0;
-    } else if (ev.type === 'tool_call') {
-      currentCount++;
-    }
-  }
-  const lastCompletion = completions.get(currentPass);
-  passes.push({
-    name: currentPass,
-    eventCount: lastCompletion?.toolCalls ?? currentCount,
-    budget: lastCompletion?.budget,
-    terminationReason: lastCompletion?.terminationReason,
-  });
-
-  const totalCalls = passes.reduce((sum, p) => sum + p.eventCount, 0);
+function PassBreakdown({ passSummary }: { passSummary?: PassSummary[] }) {
+  if (!passSummary || passSummary.length === 0) return null;
+  const totalCalls = passSummary.reduce((sum, p) => sum + p.eventCount, 0);
   if (totalCalls === 0) return null;
+  const passes = passSummary;
 
   return (
     <div className="border-t border-separator pt-6">
@@ -475,12 +433,12 @@ function GoalAccordionSection({
 
 interface MultiOverviewContentProps {
   goals: MultiGoalGoal[];
-  events: StepEvent[];
+  passSummary?: PassSummary[];
   findings: Finding[];
   mergedScorecard: Scorecard;
 }
 
-export function MultiOverviewContent({ goals, events, findings }: MultiOverviewContentProps) {
+export function MultiOverviewContent({ goals, passSummary, findings }: MultiOverviewContentProps) {
   const sorted = useMemo(() => sortGoalsWorstFirst(goals), [goals]);
 
   const goalFindingsMap = useMemo(() => {
@@ -588,7 +546,7 @@ export function MultiOverviewContent({ goals, events, findings }: MultiOverviewC
       </div>
 
       {/* Level 4: Investigation Passes */}
-      <PassBreakdown events={events} />
+      <PassBreakdown passSummary={passSummary} />
     </div>
   );
 }

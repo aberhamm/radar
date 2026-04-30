@@ -228,13 +228,11 @@ export function EventsLoadingSkeleton() {
 
 export function CachedReposLoadingSkeleton() {
   return (
-    <div data-component="CachedReposLoadingSkeleton" className="px-6 pb-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
-      <Bar width="115px" height="12px" className="mb-3" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+    <div data-component="CachedReposLoadingSkeleton" className="px-6 pb-4 animate-slide-up" style={{ animationDelay: '100ms' }}>
+      <Bar width="115px" height="12px" className="mb-2" />
+      <div className="flex flex-wrap gap-1.5">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} style={{ animation: `fadeIn 0.3s ease ${i * 0.06}s both` }}>
-            <HistoryRunCardSkeleton />
-          </div>
+          <Bar key={i} width={`${80 + i * 20}px`} height="28px" className="rounded-md" />
         ))}
       </div>
     </div>
@@ -244,11 +242,14 @@ export function CachedReposLoadingSkeleton() {
 export function HistoryLoadingSkeleton() {
   return (
     <div data-component="HistoryLoadingSkeleton" className="px-6 pb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
-      <Bar width="90px" height="12px" className="mb-3" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} style={{ animation: `fadeIn 0.3s ease ${i * 0.06}s both` }}>
-            <HistoryRunCardSkeleton />
+      <Bar width="90px" height="12px" className="mb-2" />
+      <div className="flex flex-col gap-0.5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 h-10 px-3 rounded-lg" style={{ animation: `fadeIn 0.3s ease ${i * 0.04}s both` }}>
+            <Bar width="8px" height="8px" className="rounded-full shrink-0" />
+            <Bar width={`${40 + (i % 3) * 15}%`} height="13px" className="flex-1" />
+            <Bar width="50px" height="10px" className="shrink-0" />
+            <Bar width="40px" height="10px" className="shrink-0" />
           </div>
         ))}
       </div>

@@ -124,6 +124,8 @@ export default function DashboardPage() {
   } | null>(null);
   const [findingsLoading, setFindingsLoading] = useState(false);
   const findingsLoadingRef = useRef(false);
+  const findingsRunIdRef = useRef<string | undefined>(undefined);
+  findingsRunIdRef.current = findingsData?.runId;
   const { mode: themeMode, cycle: cycleTheme, setMode: setThemeMode } = useTheme();
   const { urlView, pushUrl, replaceUrl } = useUrlState();
   const activeSection = deriveActiveSection(urlView);
@@ -267,7 +269,7 @@ export default function DashboardPage() {
 
     // When URL changes externally (back/forward), sync internal state
     if (urlView.view === 'findings') {
-      setStatus('findings');
+      if (status !== 'findings') setStatus('findings');
       if (urlView.runId && urlView.runId !== findingsData?.runId) {
         setFindingsData(null);
       }
@@ -392,13 +394,22 @@ export default function DashboardPage() {
   }, []);
 
   const handleBudgetDecision = useCallback((extend: boolean) => {
-    if (extend) {
-      setStatus('running');
-      setCurrentRun((prev) => (prev ? { ...prev, budget: prev.budget + 50 } : prev));
-    } else {
-      setStatus('running');
-    }
     setBudgetPausedData(null);
+    setStatus('running');
+    if (extend) {
+      setCurrentRun((prev) => {
+        if (!prev) return prev;
+        const newBudget = prev.budget + 50;
+        const syntheticEvent: StepEvent = {
+          step: prev.toolCalls,
+          action: 'budget_extended',
+          type: 'status',
+          result: 'Resuming analysis...',
+          newBudget,
+        };
+        return { ...prev, budget: newBudget, events: [...prev.events, syntheticEvent] };
+      });
+    }
   }, []);
 
   /** Budget decision from ContextBar — calls the API then updates UI */
@@ -485,9 +496,12 @@ export default function DashboardPage() {
         pushUrl({ view: 'runs' });
         break;
       case 'findings':
-        setStatus('findings');
-        setFindingsData(null);
-        pushUrl({ view: 'findings', runId: findingsRunOptions[0]?.id });
+        if (status === 'findings' && findingsRunIdRef.current) {
+          pushUrl({ view: 'findings', runId: findingsRunIdRef.current });
+        } else {
+          setStatus('findings');
+          pushUrl({ view: 'findings' });
+        }
         break;
       case 'reports':
         setStatus('reports');
@@ -564,9 +578,13 @@ export default function DashboardPage() {
       if (children && children.length > 0) {
         const allFindings: Finding[] = [];
         const goalMap: Record<string, string> = {};
-        for (const child of children) {
-          const res = await fetch(`/api/history/${encodeURIComponent(child.id)}/findings`);
-          const data = await res.json();
+        const results = await Promise.all(
+          children.map(async (child) => {
+            const res = await fetch(`/api/history/${encodeURIComponent(child.id)}/findings`);
+            return { child, data: await res.json() };
+          })
+        );
+        for (const { child, data } of results) {
           if (data.findings) {
             const normalized = normalizeFindings(data.findings);
             for (const f of normalized) {
@@ -654,11 +672,11 @@ export default function DashboardPage() {
   const handleFindingSelect = useCallback((findingId: string | null) => {
     const currentRunId = findingsData?.runId;
     if (findingId) {
-      pushUrl({ view: 'findings', runId: currentRunId, findingId });
+      replaceUrl({ view: 'findings', runId: currentRunId, findingId });
     } else {
-      pushUrl({ view: 'findings', runId: currentRunId });
+      replaceUrl({ view: 'findings', runId: currentRunId });
     }
-  }, [pushUrl, findingsData?.runId]);
+  }, [replaceUrl, findingsData?.runId]);
 
 
   const handleToggleCompareMode = useCallback(() => {
@@ -1012,7 +1030,7 @@ export default function DashboardPage() {
           </span>
 
           <div className="ml-auto flex gap-2 items-center">
-            {!isRunningOrPaused && (
+            {!isRunningOrPaused && status !== 'idle' && (
               <button
                 onClick={handleNewRun}
                 className="flex items-center gap-1.5 h-7 rounded-md bg-tint text-white px-3 text-[12px] font-semibold cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all"

@@ -23,6 +23,13 @@ export interface MultiGoalDataGoal {
   findings: unknown[];
 }
 
+export interface PassSummary {
+  name: string;
+  eventCount: number;
+  budget?: number;
+  terminationReason?: string;
+}
+
 export interface MultiGoalData {
   parentId: string;
   repoName: string;
@@ -30,7 +37,10 @@ export interface MultiGoalData {
   startedAt: string;
   completedAt?: string;
   goals: MultiGoalDataGoal[];
-  events: StepEvent[];
+  events?: StepEvent[];
+  rundata?: TransformedRunData;
+  passSummary?: PassSummary[];
+  toolCallCount?: number;
   findings: unknown[];
   totalFindings: number;
 }
@@ -55,6 +65,7 @@ export interface MultiRunData {
   repoUrl?: string;
   goals: MultiGoalGoal[];
   events: StepEvent[];
+  passSummary?: PassSummary[];
   findings: Finding[];
   totalFindings: number;
   metrics: RunMetrics;
@@ -72,7 +83,7 @@ export type RunViewMode =
 const SCORE_ORDER: Record<string, number> = { red: 3, yellow: 2, green: 1 };
 const SEV_ORDER: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
-export function aggregateMetrics(goals: MultiGoalGoal[], events: StepEvent[], startedAt: string, completedAt?: string): RunMetrics {
+export function aggregateMetrics(goals: MultiGoalGoal[], toolCallCount: number, startedAt: string, completedAt?: string): RunMetrics {
   const allMetrics = goals.map(g => g.metrics).filter(Boolean);
   if (allMetrics.length === 0) {
     return { startedAt: '', completedAt: '', durationMs: 0, toolCalls: 0, models: {}, totalEstimatedCostUsd: 0 };
@@ -89,7 +100,7 @@ export function aggregateMetrics(goals: MultiGoalGoal[], events: StepEvent[], st
       ...first,
       startedAt,
       completedAt: completedAt ?? '',
-      toolCalls: events.filter(e => e.type === 'tool_call').length,
+      toolCalls: toolCallCount,
     };
   }
 
@@ -112,7 +123,7 @@ export function aggregateMetrics(goals: MultiGoalGoal[], events: StepEvent[], st
     startedAt,
     completedAt: completedAt ?? '',
     durationMs: allMetrics.reduce((sum, m) => sum + m.durationMs, 0),
-    toolCalls: events.filter(e => e.type === 'tool_call').length,
+    toolCalls: toolCallCount,
     models: mergedModels,
     totalEstimatedCostUsd: allMetrics.reduce((sum, m) => sum + m.totalEstimatedCostUsd, 0),
   };
@@ -173,28 +184,34 @@ export function toMultiRunData(data: MultiGoalData): MultiRunData {
     findings: g.findings?.length > 0 ? normalizeFindings(g.findings) : [],
   }));
 
+  const events = data.events ?? [];
+  const toolCallCount = data.toolCallCount ?? events.filter(e => e.type === 'tool_call').length;
   const worstScore = computeWorstScore(goalsWithFindings);
-  const metrics = aggregateMetrics(goalsWithFindings, data.events, data.startedAt, data.completedAt);
+  const metrics = aggregateMetrics(goalsWithFindings, toolCallCount, data.startedAt, data.completedAt);
   const mergedScorecard = buildMergedScorecard(goalsWithFindings, data.repoName, data.startedAt, worstScore);
   const findings = data.findings?.length > 0 ? normalizeFindings(data.findings) : [];
 
-  const runData = data.events.length > 0
-    ? transformRunData(data.events, {
-        scorecard: data.goals[0]?.scorecard,
-        metrics: data.goals[0]?.metrics,
-        terminationReason: 'completed',
-        briefMarkdown: '',
-        outputPaths: [],
-        state: { findings: data.findings },
-      })
-    : undefined;
+  // Prefer pre-computed rundata; fall back to transforming raw events
+  const runData = data.rundata
+    ? data.rundata
+    : events.length > 0
+      ? transformRunData(events, {
+          scorecard: data.goals[0]?.scorecard,
+          metrics: data.goals[0]?.metrics,
+          terminationReason: 'completed',
+          briefMarkdown: '',
+          outputPaths: [],
+          state: { findings: data.findings },
+        })
+      : undefined;
 
   return {
     parentId: data.parentId,
     repoName: data.repoName,
     repoUrl: data.repoUrl,
     goals: goalsWithFindings,
-    events: data.events,
+    events,
+    passSummary: data.passSummary,
     findings,
     totalFindings: data.totalFindings,
     metrics,
