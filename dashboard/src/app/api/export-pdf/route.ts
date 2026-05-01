@@ -1,6 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { renderPdfToBuffer } from '@agent/output/pdfExport';
-import type { PdfExportOptions } from '@agent/output/pdfExport';
+import path from 'node:path';
+
+interface PdfExportOptions {
+  scorecard: Record<string, unknown>;
+  findings: unknown[];
+  metrics: Record<string, unknown>;
+}
+
+async function loadPdfExport() {
+  const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
+  const fs = await import(/* webpackIgnore: true */ 'node:fs');
+
+  const distPath = path.resolve(process.cwd(), '..', 'dist', 'output', 'pdfExport.js');
+  if (fs.existsSync(distPath)) {
+    const mod = await import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
+    return mod.renderPdfToBuffer as (opts: PdfExportOptions) => Promise<Buffer>;
+  }
+
+  const { register } = await import(/* webpackIgnore: true */ 'node:module');
+  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered */ }
+  const srcPath = path.resolve(process.cwd(), '..', 'src', 'output', 'pdfExport.ts');
+  const mod = await import(/* webpackIgnore: true */ pathToFileURL(srcPath).href);
+  return mod.renderPdfToBuffer as (opts: PdfExportOptions) => Promise<Buffer>;
+}
 
 /**
  * POST /api/export-pdf
@@ -22,21 +44,22 @@ export async function POST(req: NextRequest) {
 
     const safeMetrics = {
       ...metrics,
-      durationMs: metrics.durationMs ?? 0,
-      toolCalls: metrics.toolCalls ?? 0,
-      totalEstimatedCostUsd: metrics.totalEstimatedCostUsd ?? 0,
-      models: metrics.models ?? {},
-      startedAt: metrics.startedAt ?? '',
-      completedAt: metrics.completedAt ?? '',
+      durationMs: (metrics as any).durationMs ?? 0,
+      toolCalls: (metrics as any).toolCalls ?? 0,
+      totalEstimatedCostUsd: (metrics as any).totalEstimatedCostUsd ?? 0,
+      models: (metrics as any).models ?? {},
+      startedAt: (metrics as any).startedAt ?? '',
+      completedAt: (metrics as any).completedAt ?? '',
     };
 
+    const renderPdfToBuffer = await loadPdfExport();
     const pdfBuffer = await renderPdfToBuffer({
       scorecard,
       findings: findings ?? [],
       metrics: safeMetrics,
     });
 
-    const slug = (scorecard.repoName ?? 'report').replace(/[^a-zA-Z0-9-]/g, '-');
+    const slug = String(scorecard.repoName ?? 'report').replace(/[^a-zA-Z0-9-]/g, '-');
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,

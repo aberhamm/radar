@@ -18,6 +18,9 @@ interface PhaseRailProps {
   onRun: () => void;
   onReset: () => void;
   accentColor: string;
+  isParallel?: boolean;
+  workerCount?: number;
+  workerCompleteCount?: number;
 }
 
 export function PhaseRail({
@@ -36,6 +39,9 @@ export function PhaseRail({
   onRun,
   onReset,
   accentColor,
+  isParallel,
+  workerCount,
+  workerCompleteCount,
 }: PhaseRailProps) {
   const isWriting = phase === 'recording' || phase === 'assembling';
   const fillColor =
@@ -125,6 +131,15 @@ export function PhaseRail({
           </span>
         )}
       </div>
+
+      {/* Parallel worker count */}
+      {isParallel && isLive && workerCount != null && workerCount > 0 && (
+        <div className="flex items-center gap-1 text-[10px] text-tertiary-label shrink-0">
+          <span className="font-semibold text-secondary-label">{workerCount}</span> workers
+          <span style={{ color: 'var(--color-quaternary-label)' }}>&middot;</span>
+          <span className="font-semibold text-secondary-label">{workerCompleteCount ?? 0}</span> done
+        </div>
+      )}
 
       {/* Progress bar */}
       <div

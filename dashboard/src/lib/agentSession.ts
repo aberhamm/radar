@@ -92,6 +92,7 @@ export interface StepEvent {
   thinking?: string;
   model?: string;
   durationMs?: number;
+  workerId?: string;
 }
 
 export interface SourceFile {

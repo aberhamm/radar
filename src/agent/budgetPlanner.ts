@@ -45,6 +45,84 @@ export interface RebalanceResult {
   adjustmentReasons: string[];
 }
 
+// ─── Cluster types (parallel mode) ──────────────────────────────────
+
+export interface ClusterDefinition {
+  id: string;
+  name: string;
+  categories: FindingCategory[];
+  color: string;
+  skipCondition?: (signals: BudgetSignals) => boolean;
+  budgetWeight: number;
+}
+
+export interface ClusterAllocation {
+  clusterId: string;
+  name: string;
+  categories: FindingCategory[];
+  budget: number;
+  fraction: number;
+  skip: boolean;
+  skipReason?: string;
+  color: string;
+}
+
+export interface ClusterBudgetPlan {
+  totalBudget: number;
+  clusters: ClusterAllocation[];
+  signals: BudgetSignals;
+  synthesisBudget: number;
+}
+
+const CLUSTER_DEFINITIONS: ClusterDefinition[] = [
+  {
+    id: 'security-config',
+    name: 'Security & Config',
+    categories: ['security', 'configuration', 'secrets', 'auth', 'input-validation', 'data-exposure'],
+    color: '#ef4444',
+    budgetWeight: 1.5,
+  },
+  {
+    id: 'stack-arch',
+    name: 'Stack & Architecture',
+    categories: ['stack', 'architecture', 'testing', 'dx'],
+    color: '#3b82f6',
+    budgetWeight: 1.5,
+  },
+  {
+    id: 'cms-preview',
+    name: 'CMS & Preview',
+    categories: ['cms-integration', 'preview-editing'],
+    color: '#8b5cf6',
+    budgetWeight: 1.0,
+  },
+  {
+    id: 'deps-deploy',
+    name: 'Deps & Deployment',
+    categories: ['dependencies', 'deployment'],
+    color: '#f59e0b',
+    budgetWeight: 1.0,
+  },
+  {
+    id: 'nextjs',
+    name: 'Next.js',
+    categories: ['nextjs', 'routing', 'data-fetching', 'rendering', 'performance', 'bundle', 'caching', 'media'],
+    color: '#10b981',
+    skipCondition: (s) => !s.hasNextjsRoot,
+    budgetWeight: 1.2,
+  },
+  {
+    id: 'a11y',
+    name: 'Accessibility',
+    categories: ['accessibility', 'aria', 'forms', 'media-alt', 'semantic-html', 'keyboard-focus', 'color-contrast'],
+    color: '#ec4899',
+    skipCondition: (s) => !s.hasUiFramework,
+    budgetWeight: 1.0,
+  },
+];
+
+export { CLUSTER_DEFINITIONS };
+
 // ─── Constants ───────────────────────────────────────────────────────
 
 const UI_FRAMEWORK_TYPES = new Set([
@@ -343,4 +421,114 @@ function sumCategories(counts: Map<FindingCategory, number>, categories: Readonl
 
 function pct(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
+}
+
+// ─── planClusterBudget (parallel mode) ──────────────────────────────
+
+export function planClusterBudget(totalBudget: number, preCompute: PreComputeResult): ClusterBudgetPlan {
+  const roots = preCompute.appRoots?.roots?.filter(r => !r.path.startsWith('...')) ?? [];
+  const frameworkTypes = [...new Set(roots.map(r => r.type))];
+
+  const signals: BudgetSignals = {
+    hasNextjsRoot: roots.some(r => r.type === 'nextjs'),
+    hasUiFramework: roots.some(r => UI_FRAMEWORK_TYPES.has(r.type)),
+    isMonorepo: preCompute.appRoots?.isMonorepo ?? false,
+    rootCount: roots.length,
+    frameworkTypes,
+  };
+
+  // Reserve synthesis budget (10%, min 5 calls)
+  const synthesisBudget = Math.max(5, Math.floor(totalBudget * 0.10));
+  const workerBudgetPool = totalBudget - synthesisBudget;
+
+  // Evaluate skip conditions and compute total weight
+  const active: Array<{ def: ClusterDefinition; skip: boolean; skipReason?: string }> = [];
+  let totalWeight = 0;
+  for (const def of CLUSTER_DEFINITIONS) {
+    const skip = def.skipCondition ? def.skipCondition(signals) : false;
+    const skipReason = skip
+      ? def.id === 'nextjs' ? 'No Next.js app root detected'
+      : def.id === 'a11y' ? 'No UI framework detected'
+      : 'Skip condition met'
+      : undefined;
+    active.push({ def, skip, skipReason });
+    if (!skip) totalWeight += def.budgetWeight;
+  }
+
+  // Proportional allocation
+  const clusters: ClusterAllocation[] = active.map(({ def, skip, skipReason }) => {
+    if (skip) {
+      return {
+        clusterId: def.id,
+        name: def.name,
+        categories: def.categories,
+        budget: 0,
+        fraction: 0,
+        skip: true,
+        skipReason,
+        color: def.color,
+      };
+    }
+    const raw = Math.floor(workerBudgetPool * (def.budgetWeight / totalWeight));
+    return {
+      clusterId: def.id,
+      name: def.name,
+      categories: def.categories,
+      budget: raw,
+      fraction: raw / totalBudget,
+      skip: false,
+      color: def.color,
+    };
+  });
+
+  // Floor enforcement: clusters below minimum get skipped, budget redistributed
+  let reclaimed = 0;
+  for (const c of clusters) {
+    if (!c.skip && c.budget < MIN_SPECIALIST_BUDGET) {
+      c.skip = true;
+      c.skipReason = `Budget ${c.budget} below minimum ${MIN_SPECIALIST_BUDGET}`;
+      reclaimed += c.budget;
+      c.budget = 0;
+      c.fraction = 0;
+    }
+  }
+
+  // Redistribute reclaimed budget proportionally to remaining active clusters
+  if (reclaimed > 0) {
+    const remaining = clusters.filter(c => !c.skip);
+    if (remaining.length > 0) {
+      const remWeight = remaining.reduce((s, c) => s + (CLUSTER_DEFINITIONS.find(d => d.id === c.clusterId)?.budgetWeight ?? 1), 0);
+      for (const c of remaining) {
+        const w = CLUSTER_DEFINITIONS.find(d => d.id === c.clusterId)?.budgetWeight ?? 1;
+        c.budget += Math.floor(reclaimed * (w / remWeight));
+        c.fraction = c.budget / totalBudget;
+      }
+    } else {
+      // All clusters below floor — budget too small to split. Un-skip the top 2 by
+      // weight and give them the entire worker pool so we still produce results.
+      const byWeight = clusters
+        .filter(c => !c.skip || c.skipReason?.includes('below minimum'))
+        .sort((a, b) => {
+          const wa = CLUSTER_DEFINITIONS.find(d => d.id === a.clusterId)?.budgetWeight ?? 0;
+          const wb = CLUSTER_DEFINITIONS.find(d => d.id === b.clusterId)?.budgetWeight ?? 0;
+          return wb - wa;
+        });
+      const toRevive = byWeight.slice(0, Math.min(2, byWeight.length));
+      const totalReviveWeight = toRevive.reduce((s, c) => s + (CLUSTER_DEFINITIONS.find(d => d.id === c.clusterId)?.budgetWeight ?? 1), 0);
+      for (const c of toRevive) {
+        c.skip = false;
+        c.skipReason = undefined;
+        const w = CLUSTER_DEFINITIONS.find(d => d.id === c.clusterId)?.budgetWeight ?? 1;
+        c.budget = Math.floor(workerBudgetPool * (w / totalReviveWeight));
+        c.fraction = c.budget / totalBudget;
+      }
+    }
+  }
+
+  return {
+    totalBudget,
+    clusters,
+    signals,
+    synthesisBudget,
+  };
 }

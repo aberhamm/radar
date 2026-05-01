@@ -9,9 +9,39 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type { StepEvent, RunResult, RunMetrics } from './agentSession';
 import { persistRun, type RunRecord } from './agentSession';
-import { planBudget, rebalanceBudget, type BudgetPlan } from '@agent/agent/budgetPlanner';
-import type { PreComputeResult } from '@agent/agent/runner';
-import { ALL_GOALS } from '@agent/types/state';
+import { ALL_GOALS } from './goals';
+
+/** Opaque pass-through — dashboard never inspects this, just forwards to runAgent. */
+type PreComputeResult = Record<string, unknown>;
+
+async function loadAgentModule(moduleName: string) {
+  const { pathToFileURL } = await import(/* webpackIgnore: true */ 'node:url');
+  const fs = await import(/* webpackIgnore: true */ 'node:fs');
+
+  const distPath = path.resolve(process.cwd(), '..', 'dist', 'agent', `${moduleName}.js`);
+  if (fs.existsSync(distPath)) {
+    return import(/* webpackIgnore: true */ pathToFileURL(distPath).href);
+  }
+
+  const { register } = await import(/* webpackIgnore: true */ 'node:module');
+  try { register('tsx/esm', pathToFileURL('./')); } catch { /* already registered */ }
+  const srcPath = path.resolve(process.cwd(), '..', 'src', 'agent', `${moduleName}.ts`);
+  return import(/* webpackIgnore: true */ pathToFileURL(srcPath).href);
+}
+
+async function loadBudgetPlanner() {
+  const mod = await loadAgentModule('budgetPlanner');
+  return {
+    planBudget: mod.planBudget as (totalBudget: number, preCompute: PreComputeResult) => { passes: Array<{ goal: string; budget: number; skip: boolean; name: string; reason?: string }>; signals: Record<string, unknown> },
+    rebalanceBudget: mod.rebalanceBudget as (plan: unknown, coreResult: unknown) => { adjustedPasses: Array<{ budget: number; skip: boolean; name: string; reason?: string }>; coreUtilization: number; adjustmentReasons: string[] },
+    planClusterBudget: mod.planClusterBudget as (totalBudget: number, preCompute: PreComputeResult) => { totalBudget: number; clusters: Array<{ clusterId: string; name: string; categories: string[]; budget: number; fraction: number; skip: boolean; skipReason?: string; color: string }>; signals: Record<string, unknown>; synthesisBudget: number },
+  };
+}
+
+async function loadSynthesisRunner() {
+  const mod = await loadAgentModule('synthesisRunner');
+  return mod.runSynthesis as (config: Record<string, unknown>) => Promise<{ crossCuttingFindings: Array<{ id: string }> }>;
+}
 
 export interface MultiGoalRunOptions {
   repoPath: string;
@@ -26,6 +56,7 @@ export interface MultiGoalRunOptions {
   onStep: (event: StepEvent) => void;
   onBudgetExhausted?: (state: { findings: number; toolCalls: number; budget: number }) => Promise<boolean>;
   abortSignal?: AbortSignal;
+  parallel?: boolean;
 }
 
 export interface MultiGoalRunResult {
@@ -59,7 +90,8 @@ export async function dashboardAnalyzeAll(
   let lastResult: RunResult | undefined;
 
   // Budget planning — deterministic allocation based on repo signals
-  const plan: BudgetPlan = opts.preCompute
+  const { planBudget, rebalanceBudget } = await loadBudgetPlanner();
+  const plan = opts.preCompute
     ? planBudget(totalBudget, opts.preCompute)
     : planBudget(totalBudget, {});
 
@@ -72,6 +104,11 @@ export async function dashboardAnalyzeAll(
   };
   allEvents.push(planEvent);
   opts.onStep(planEvent);
+
+  // ─── Parallel dispatch ─────────────────────────────────────────────
+  if (opts.parallel && opts.preCompute) {
+    return dashboardParallelDispatch(runAgent, computeScorecard, opts, allEvents);
+  }
 
   let nextjsBudget = plan.passes[1].budget;
   let a11yBudget = plan.passes[2].budget;
@@ -353,4 +390,200 @@ export async function dashboardAnalyzeAll(
     totalToolCalls,
     totalDurationMs,
   };
+}
+
+// ─── Parallel dispatch (dashboard) ──────────────────────────────────
+
+async function dashboardParallelDispatch(
+  runAgent: (opts: Record<string, unknown>) => Promise<RunResult>,
+  computeScorecard: (repoName: string, goal: string, findings: unknown[]) => unknown,
+  opts: MultiGoalRunOptions,
+  allEvents: StepEvent[],
+): Promise<MultiGoalRunResult> {
+  const parentRunId = crypto.randomUUID();
+  const totalBudget = opts.budget ?? 100;
+  const startTime = Date.now();
+
+  const { planClusterBudget } = await loadBudgetPlanner();
+  const clusterPlan = planClusterBudget(totalBudget, opts.preCompute!);
+  const activeClusters = clusterPlan.clusters.filter(c => !c.skip);
+
+  const clusterEvent: StepEvent = {
+    step: -1,
+    action: 'cluster_plan',
+    result: JSON.stringify({ clusters: clusterPlan.clusters, signals: clusterPlan.signals, synthesisBudget: clusterPlan.synthesisBudget }),
+    timestamp: new Date().toISOString(),
+  };
+  allEvents.push(clusterEvent);
+  opts.onStep(clusterEvent);
+
+  // Dispatch workers in parallel
+  const workerResults = await Promise.allSettled(
+    activeClusters.map(async (cluster) => {
+      if (opts.abortSignal?.aborted) throw new Error('Aborted');
+      let result: RunResult;
+      try {
+        result = await runAgent({
+          repoPath: opts.repoPath,
+          repoName: opts.repoName,
+          repoSource: opts.repoSource,
+          ...(opts.repoUrl ? { repoUrl: opts.repoUrl } : {}),
+          ...(opts.appRoot ? { appRoot: opts.appRoot } : {}),
+          ...(opts.outputDir ? { outputDir: opts.outputDir } : {}),
+          goal: 'audit-generic',
+          toolCallBudget: cluster.budget,
+          verbose: true,
+          preCompute: opts.preCompute,
+          mode: 'worker',
+          workerId: cluster.clusterId,
+          allowedCategories: cluster.categories,
+          onStep: (event: StepEvent) => {
+            allEvents.push(event);
+            opts.onStep(event);
+          },
+        });
+      } catch (workerErr) {
+        const msg = workerErr instanceof Error ? workerErr.stack ?? workerErr.message : String(workerErr);
+        console.error(`[parallel] Worker ${cluster.clusterId} (${cluster.name}) failed:`, msg);
+        throw workerErr;
+      }
+      const completeEvent: StepEvent = {
+        step: -1,
+        action: 'worker_complete',
+        workerId: cluster.clusterId,
+        result: JSON.stringify({
+          worker: cluster.name,
+          toolCalls: (result.metrics as unknown as Record<string, unknown>)?.toolCalls ?? 0,
+          findings: ((result.state as Record<string, unknown>)?.findings as unknown[] ?? []).length,
+        }),
+        timestamp: new Date().toISOString(),
+      };
+      allEvents.push(completeEvent);
+      opts.onStep(completeEvent);
+      return { cluster, result };
+    }),
+  );
+
+  // Merge findings from all successful workers
+  const seenIds = new Set<string>();
+  const mergedFindings: unknown[] = [];
+  let lastResult: RunResult | undefined;
+
+  const workerErrors: string[] = [];
+  for (const settled of workerResults) {
+    if (settled.status === 'rejected') {
+      const reason = settled.reason;
+      const detail = reason instanceof Error
+        ? (reason.stack ?? reason.message)
+        : (typeof reason === 'string' ? reason : JSON.stringify(reason));
+      console.error(`[parallel] Worker rejected:`, detail);
+      workerErrors.push(detail);
+      continue;
+    }
+    const { result } = settled.value;
+    lastResult = result;
+    const findings = (result.state as Record<string, unknown>)?.findings as Array<{ id: string }> ?? [];
+    for (const f of findings) {
+      if (!seenIds.has(f.id)) {
+        seenIds.add(f.id);
+        mergedFindings.push(f);
+      }
+    }
+  }
+
+  if (!lastResult) {
+    const details = workerErrors.length > 0
+      ? `Worker errors: ${workerErrors.join('; ')}`
+      : 'All workers rejected with no error details';
+    throw new Error(`No workers completed successfully. ${details}`);
+  }
+
+  // Synthesis pass
+  if (clusterPlan.synthesisBudget > 0 && mergedFindings.length > 0) {
+    try {
+      const synthStart: StepEvent = {
+        step: -1, action: 'synthesis_start', workerId: 'synthesis',
+        result: `Synthesizing ${mergedFindings.length} findings...`,
+        timestamp: new Date().toISOString(),
+      };
+      allEvents.push(synthStart);
+      opts.onStep(synthStart);
+
+      const runSynthesis = await loadSynthesisRunner();
+      const synthResult = await runSynthesis({
+        repoPath: opts.repoPath,
+        repoName: opts.repoName,
+        goal: 'audit-generic' as any,
+        findings: mergedFindings as any,
+        toolCallBudget: clusterPlan.synthesisBudget,
+        outputDir: opts.outputDir,
+        onStep: (event: StepEvent) => {
+          allEvents.push(event);
+          opts.onStep(event);
+        },
+      });
+
+      if (synthResult.crossCuttingFindings.length > 0) {
+        for (const f of synthResult.crossCuttingFindings) {
+          if (!seenIds.has(f.id)) {
+            seenIds.add(f.id);
+            mergedFindings.push(f);
+          }
+        }
+      }
+
+      const synthComplete: StepEvent = {
+        step: -1, action: 'synthesis_complete', workerId: 'synthesis',
+        result: JSON.stringify({ crossCutting: synthResult.crossCuttingFindings.length }),
+        timestamp: new Date().toISOString(),
+      };
+      allEvents.push(synthComplete);
+      opts.onStep(synthComplete);
+    } catch {
+      // Synthesis is best-effort
+    }
+  }
+
+  const totalDurationMs = Date.now() - startTime;
+  const totalToolCalls = allEvents.filter(e => e.type === 'tool_call').length;
+  const selectedGoals = opts.goals ?? ALL_GOALS;
+  const goals: MultiGoalRunResult['goals'] = [];
+
+  for (const goal of selectedGoals) {
+    const runId = crypto.randomUUID();
+    const scorecard = computeScorecard(opts.repoName, goal, mergedFindings) as {
+      overallScore: string;
+      categories: unknown[];
+      topRisks: unknown[];
+    };
+
+    const record: RunRecord = {
+      id: runId,
+      goal,
+      repoName: opts.repoName,
+      startedAt: new Date(lastResult.metrics.startedAt),
+      completedAt: new Date(),
+      overallScore: scorecard.overallScore as 'red' | 'yellow' | 'green',
+      findingsCount: mergedFindings.length,
+      result: {
+        scorecard: scorecard as RunResult['scorecard'],
+        metrics: lastResult.metrics,
+        terminationReason: lastResult.terminationReason,
+        briefMarkdown: '',
+        outputPaths: [],
+        state: { findings: mergedFindings },
+        ...(lastResult.sources ? { sources: lastResult.sources } : {}),
+      },
+      events: [...allEvents],
+      repoPath: opts.repoPath,
+      repoSource: opts.repoSource,
+      repoUrl: opts.repoUrl,
+      parentRunId,
+    };
+    persistRun(record);
+
+    goals.push({ goal, runId, scorecard, metrics: lastResult.metrics });
+  }
+
+  return { parentRunId, goals, totalToolCalls, totalDurationMs };
 }

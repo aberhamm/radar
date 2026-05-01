@@ -319,7 +319,7 @@ export default function DashboardPage() {
     }
   }, [selectedRunId, multiRunData, replaceUrl]);
 
-  const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string, budget?: number) => {
+  const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string, budget?: number, _goals?: string[], _parallel?: boolean) => {
     const resolvedName = repoName ?? (repoPath.split(/[/\\]/).pop() || repoPath);
     setLastRepoPath(repoPath);
     setCurrentRun({

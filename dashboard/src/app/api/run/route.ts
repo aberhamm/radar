@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, persistRun, checkpointRun, sendStreamEvent, loadPersistedRuns } from '@/lib/agentSession';
 import type { StepEvent, RunResult } from '@/lib/agentSession';
 import { dashboardAnalyzeAll } from '@/lib/dashboardAnalyzeAll';
-import { ALL_GOALS } from '@agent/types/state';
+import { ALL_GOALS } from '@/lib/goals';
 import path from 'node:path';
 
 export const runtime = 'nodejs';
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
   // Claim session immediately (before any await) to close the TOCTOU race window
   session.status = 'running';
 
-  let body: { repoPath?: string; goal?: string; goals?: string[]; repoSource?: string; repoUrl?: string; appRoot?: string; budget?: number };
+  let body: { repoPath?: string; goal?: string; goals?: string[]; repoSource?: string; repoUrl?: string; appRoot?: string; budget?: number; parallel?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { repoPath, goal = 'onboarding', goals: goalsArray, repoSource, repoUrl, appRoot } = body;
+  const { repoPath, goal = 'onboarding', goals: goalsArray, repoSource, repoUrl, appRoot, parallel } = body;
   const requestedBudget = body.budget;
 
   if (!repoPath) {
@@ -165,7 +165,9 @@ export async function POST(req: NextRequest) {
         emitStatus('Pre-computing repo signals...');
         const preCompute = await runPreCompute(resolvedRepoPath, appRoot);
 
-        emitStatus(`Starting universal analysis (3 passes, ${selectedGoals.length} goals)...`);
+        emitStatus(parallel
+          ? `Starting parallel analysis (${selectedGoals.length} goals)...`
+          : `Starting universal analysis (3 passes, ${selectedGoals.length} goals)...`);
 
         const multiResult = await dashboardAnalyzeAll(
           runAgent as unknown as (opts: Record<string, unknown>) => Promise<RunResult>,
@@ -179,7 +181,8 @@ export async function POST(req: NextRequest) {
             budget: requestedBudget ?? 30,
             goals: selectedGoals,
             outputDir: AGENT_OUTPUT_DIR,
-            preCompute,
+            preCompute: preCompute as Record<string, unknown>,
+            parallel: parallel ?? false,
             onStep: (event: StepEvent) => {
               const run = session.currentRun;
               if (!run) return;

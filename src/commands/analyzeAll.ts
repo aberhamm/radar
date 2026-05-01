@@ -8,7 +8,9 @@ import fs from 'node:fs';
 import readline from 'node:readline';
 import crypto from 'node:crypto';
 import { runAgent, runPreCompute, writeOutputFiles, type RunResult } from '../agent/runner.js';
-import { planBudget, rebalanceBudget } from '../agent/budgetPlanner.js';
+import { planBudget, rebalanceBudget, planClusterBudget, type ClusterAllocation } from '../agent/budgetPlanner.js';
+import { buildClusterPrompt } from '../agent/goalPrompts.js';
+import { runSynthesis } from '../agent/synthesisRunner.js';
 import { cloneRepo } from '../tools/repo/cloneRepo.js';
 import { queryNpmVersions, TRACKED_PACKAGES } from '../tools/dependency/queryNpmVersions.js';
 import { formatVerboseStep } from '../output/verboseFormatter.js';
@@ -44,6 +46,7 @@ export async function handleAnalyzeAll(opts: {
   verbose?: boolean;
   json?: boolean;
   export?: boolean;
+  parallel?: boolean;
 }): Promise<number> {
   const repoInput = opts.repo;
   if (!repoInput) {
@@ -107,6 +110,16 @@ export async function handleAnalyzeAll(opts: {
   console.log('Pre-computing repo signals...');
   const preCompute = await runPreCompute(repoPath);
 
+  // ─── Parallel dispatch (opt-in via --parallel) ─────────────────────
+  if (opts.parallel) {
+    return handleParallelDispatch(opts, {
+      repoPath, repoName, repoSource, repoUrl,
+      totalBudget, selectedGoals, platform, outputDir, verbose,
+      preCompute,
+    });
+  }
+
+  // ─── Sequential dispatch (default: core → nextjs → a11y) ──────────
   // Budget allocation — deterministic plan based on detected repo signals
   const plan = planBudget(totalBudget, preCompute);
   const coreBudget = plan.passes[0].budget;
@@ -567,6 +580,310 @@ export async function handleAnalyzeAll(opts: {
 
   const hasRed = selectedGoals.some((g) => scorecards.get(g)?.overallScore === 'red');
   return hasRed ? 1 : 0;
+}
+
+// ─── Parallel dispatch implementation ───────────────────────────────
+
+interface ParallelContext {
+  repoPath: string;
+  repoName: string;
+  repoSource: 'github' | 'local';
+  repoUrl?: string;
+  totalBudget: number;
+  selectedGoals: GoalType[];
+  platform: string;
+  outputDir: string;
+  verbose: boolean;
+  preCompute: Awaited<ReturnType<typeof runPreCompute>>;
+}
+
+async function handleParallelDispatch(
+  opts: Parameters<typeof handleAnalyzeAll>[0],
+  ctx: ParallelContext,
+): Promise<number> {
+  const { repoPath, repoName, repoSource, repoUrl, totalBudget, selectedGoals, platform, outputDir, verbose, preCompute } = ctx;
+
+  const clusterPlan = planClusterBudget(totalBudget, preCompute);
+  const activeClusters = clusterPlan.clusters.filter(c => !c.skip);
+
+  console.log(`\nCluster plan (parallel): ${activeClusters.length} workers, synthesis budget: ${clusterPlan.synthesisBudget}`);
+  for (const c of clusterPlan.clusters) {
+    console.log(`  ${c.name}: ${c.skip ? `skip (${c.skipReason})` : `${c.budget} calls`}`);
+  }
+  console.log('');
+
+  const parentRunId = crypto.randomUUID();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allEvents: Array<Record<string, any>> = [];
+  const allInvestigationLogs: AgentState['investigationLog'] = [];
+
+  // Emit cluster plan event
+  allEvents.push({
+    step: -1,
+    action: 'cluster_plan',
+    result: JSON.stringify({ clusters: clusterPlan.clusters, signals: clusterPlan.signals, synthesisBudget: clusterPlan.synthesisBudget }),
+    timestamp: new Date().toISOString(),
+  });
+
+  // Dispatch all workers in parallel
+  const workerResults = await Promise.allSettled(
+    activeClusters.map(async (cluster) => {
+      const start = Date.now();
+      console.log(`[${cluster.name}] Starting worker (budget: ${cluster.budget})...`);
+      try {
+        const result = await runAgent({
+          repoPath,
+          repoName,
+          repoSource,
+          repoUrl,
+          goal: 'audit-generic' as GoalType,
+          platform: platform !== 'unknown' ? platform : undefined,
+          toolCallBudget: cluster.budget,
+          outputDir,
+          verbose,
+          preCompute,
+          mode: 'worker',
+          workerId: cluster.clusterId,
+          allowedCategories: cluster.categories,
+          onStep: (step) => {
+            allEvents.push(step);
+            if (verbose) formatVerboseStep(step, `[${cluster.name}]`);
+            else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') {
+              console.log(`  [${cluster.name}] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+            }
+          },
+        });
+        const durationMs = Date.now() - start;
+        allInvestigationLogs.push(...result.state.investigationLog);
+        allEvents.push({
+          step: -1,
+          action: 'worker_complete',
+          workerId: cluster.clusterId,
+          result: JSON.stringify({
+            worker: cluster.name,
+            toolCalls: result.metrics.toolCalls,
+            budget: cluster.budget,
+            findings: result.state.findings.length,
+            terminationReason: result.terminationReason,
+          }),
+          timestamp: new Date().toISOString(),
+        });
+        console.log(`[${cluster.name}] Done: ${result.state.findings.length} findings, ${result.metrics.toolCalls}/${cluster.budget} calls, ${(durationMs / 1000).toFixed(1)}s`);
+        return { cluster, result, durationMs };
+      } catch (err) {
+        const durationMs = Date.now() - start;
+        console.warn(`[${cluster.name}] Worker failed: ${(err as Error).message}`);
+        return { cluster, error: (err as Error).message, durationMs };
+      }
+    }),
+  );
+
+  // Collect findings from all successful workers, dedup by ID then semantically
+  const seenIds = new Set<string>();
+  const mergedFindings = [];
+  let lastSuccessfulResult: RunResult | undefined;
+
+  for (const settled of workerResults) {
+    if (settled.status === 'rejected') continue;
+    const wr = settled.value;
+    if ('error' in wr && !('result' in wr)) continue;
+    if (!wr.result) continue;
+    lastSuccessfulResult = wr.result;
+    for (const f of wr.result.state.findings) {
+      if (!seenIds.has(f.id)) {
+        seenIds.add(f.id);
+        mergedFindings.push(f);
+      }
+    }
+  }
+
+  if (!lastSuccessfulResult) {
+    console.error('No workers completed successfully.');
+    return 2;
+  }
+
+  // Semantic dedup
+  const dedupResult = deduplicateFindings(mergedFindings);
+  if (dedupResult.mergedCount > 0) {
+    console.log(`  Deduplication: merged ${dedupResult.mergedCount} duplicate(s). ${dedupResult.findings.length} retained.`);
+    mergedFindings.length = 0;
+    mergedFindings.push(...dedupResult.findings);
+  }
+
+  console.log(`\nAll workers complete. ${mergedFindings.length} merged findings.`);
+
+  // --- Synthesis pass ---
+  if (clusterPlan.synthesisBudget > 0 && mergedFindings.length > 0) {
+    console.log(`\n[Synthesis] Starting (budget: ${clusterPlan.synthesisBudget}, findings: ${mergedFindings.length})...`);
+    try {
+      const synthResult = await runSynthesis({
+        repoPath,
+        repoName,
+        goal: 'audit-generic' as GoalType,
+        findings: mergedFindings,
+        toolCallBudget: clusterPlan.synthesisBudget,
+        outputDir,
+        onStep: (step) => {
+          allEvents.push(step);
+          if (verbose) formatVerboseStep(step, '[Synthesis]');
+          else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') {
+            console.log(`  [Synthesis] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+          }
+        },
+      });
+      if (synthResult.crossCuttingFindings.length > 0) {
+        for (const f of synthResult.crossCuttingFindings) {
+          if (!seenIds.has(f.id)) {
+            seenIds.add(f.id);
+            mergedFindings.push(f);
+          }
+        }
+        console.log(`[Synthesis] Added ${synthResult.crossCuttingFindings.length} cross-cutting finding(s). Total: ${mergedFindings.length}`);
+      } else {
+        console.log(`[Synthesis] Done (no cross-cutting findings added).`);
+      }
+      allEvents.push({
+        step: -1,
+        action: 'synthesis_complete',
+        workerId: 'synthesis',
+        result: JSON.stringify({ crossCutting: synthResult.crossCuttingFindings.length, terminationReason: synthResult.terminationReason }),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn(`[Synthesis] Failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
+  // --- Scoring & output (same as sequential path) ---
+  console.log(`\nScoring ${selectedGoals.length} goals from ${mergedFindings.length} findings...`);
+  const scorecards = new Map<GoalType, Scorecard>();
+  const multiGoalResults: MultiGoalResult[] = [];
+
+  for (const goal of selectedGoals) {
+    const scorecard = computeScorecard(repoName, goal, mergedFindings);
+    scorecards.set(goal, scorecard);
+    multiGoalResults.push({ goal, scorecard });
+    console.log(`  ${goal}: ${scorecard.overallScore.toUpperCase()} (${scorecard.categories.length} categories)`);
+  }
+
+  console.log('\nWriting per-goal briefs...');
+  const briefResults = await writeAllBriefs(selectedGoals, mergedFindings, scorecards);
+  for (const br of briefResults) {
+    if (br.error) console.warn(`  ${br.goal}: brief failed — ${br.error}`);
+    else console.log(`  ${br.goal}: ${Object.keys(br.sections).length} sections`);
+  }
+
+  fs.mkdirSync(outputDir, { recursive: true });
+  const allOutputPaths: string[] = [];
+
+  for (const goal of selectedGoals) {
+    const goalDir = path.join(outputDir, goal);
+    fs.mkdirSync(goalDir, { recursive: true });
+
+    const scorecard = scorecards.get(goal)!;
+    const briefResult = briefResults.find((b) => b.goal === goal);
+    const sections = briefResult?.sections ?? {};
+
+    const briefMarkdown = renderBrief(
+      scorecard, sections, allInvestigationLogs,
+      lastSuccessfulResult.state.fetchedDocs,
+      workerResults.reduce((sum, s) => sum + (s.status === 'fulfilled' && s.value.result ? s.value.result.metrics.toolCalls : 0), 0),
+      totalBudget, lastSuccessfulResult.metrics,
+    );
+
+    const mgResult = multiGoalResults.find((r) => r.goal === goal);
+    if (mgResult) mgResult.briefPath = `./${goal}/brief.md`;
+
+    const goalState: AgentState = {
+      ...lastSuccessfulResult.state,
+      goal,
+      findings: mergedFindings,
+      investigationLog: allInvestigationLogs,
+    };
+
+    const fullExport = buildFullExport(
+      goalState, scorecard, sections,
+      lastSuccessfulResult.metrics,
+      lastSuccessfulResult.terminationReason,
+      totalBudget,
+    );
+
+    fs.writeFileSync(path.join(goalDir, 'scorecard.json'), JSON.stringify(scorecard, null, 2), 'utf-8');
+    allOutputPaths.push(path.join(goalDir, 'scorecard.json'));
+    fs.writeFileSync(path.join(goalDir, 'brief.md'), briefMarkdown, 'utf-8');
+    allOutputPaths.push(path.join(goalDir, 'brief.md'));
+    fs.writeFileSync(path.join(goalDir, 'export.json'), serializeExport(fullExport), 'utf-8');
+    allOutputPaths.push(path.join(goalDir, 'export.json'));
+  }
+
+  // Persist to tiered storage
+  const runsDir = path.join(path.dirname(outputDir), 'runs');
+  for (const goal of selectedGoals) {
+    const scorecard = scorecards.get(goal)!;
+    const briefResult = briefResults.find((b) => b.goal === goal);
+    const sections = briefResult?.sections ?? {};
+    const briefMarkdown = renderBrief(
+      scorecard, sections, allInvestigationLogs,
+      lastSuccessfulResult.state.fetchedDocs,
+      workerResults.reduce((sum, s) => sum + (s.status === 'fulfilled' && s.value.result ? s.value.result.metrics.toolCalls : 0), 0),
+      totalBudget, lastSuccessfulResult.metrics,
+    );
+    persistRunToTieredStorage(runsDir, {
+      id: crypto.randomUUID(),
+      goal, repoName,
+      startedAt: lastSuccessfulResult.metrics.startedAt,
+      completedAt: new Date().toISOString(),
+      scorecard, metrics: lastSuccessfulResult.metrics,
+      briefMarkdown,
+      terminationReason: lastSuccessfulResult.terminationReason,
+      findings: mergedFindings,
+      parentRunId, repoPath, repoSource, repoUrl,
+    }, allEvents);
+  }
+  console.log(`  Persisted ${selectedGoals.length} runs to tiered storage (parentRunId: ${parentRunId.slice(0, 8)}...)`);
+
+  const findingsPath = path.join(outputDir, 'findings.json');
+  fs.writeFileSync(findingsPath, JSON.stringify(mergedFindings, null, 2), 'utf-8');
+  allOutputPaths.push(findingsPath);
+
+  const totalToolCalls = workerResults.reduce((sum, s) => sum + (s.status === 'fulfilled' && s.value.result ? s.value.result.metrics.toolCalls : 0), 0);
+  const totalDuration = workerResults.reduce((sum, s) => sum + (s.status === 'fulfilled' ? s.value.durationMs : 0), 0);
+  const totalCost = workerResults.reduce((sum, s) => sum + (s.status === 'fulfilled' && s.value.result ? (s.value.result.metrics.totalEstimatedCostUsd ?? 0) : 0), 0);
+
+  if (opts.json) {
+    const summary = {
+      status: 'completed',
+      mode: 'parallel',
+      workers: activeClusters.length,
+      findings: mergedFindings.length,
+      toolCalls: totalToolCalls,
+      durationMs: totalDuration,
+      estimatedCostUsd: totalCost,
+      goals: selectedGoals.map((goal) => {
+        const sc = scorecards.get(goal)!;
+        return { goal, score: sc.overallScore, categories: sc.categories.map(c => ({ name: c.category, score: c.score, findings: c.findings.length })) };
+      }),
+    };
+    console.log(JSON.stringify(summary, null, 2));
+    return selectedGoals.some(g => scorecards.get(g)?.overallScore === 'red') ? 1 : 0;
+  }
+
+  console.log(`\n--- Analysis complete (parallel, ${selectedGoals.length} goals) ---\n`);
+  console.log(`  Workers:    ${activeClusters.length}`);
+  console.log(`  Tool calls: ${totalToolCalls}/${totalBudget}`);
+  console.log(`  Findings:   ${mergedFindings.length}`);
+  console.log(`  Wall time:  ${(totalDuration / 1000).toFixed(1)}s`);
+  console.log(`  Est. cost:  $${totalCost.toFixed(4)}`);
+  console.log('');
+  console.log('  Scores:');
+  for (const goal of selectedGoals) {
+    const sc = scorecards.get(goal)!;
+    const emoji = sc.overallScore === 'red' ? '🔴' : sc.overallScore === 'yellow' ? '🟡' : '🟢';
+    console.log(`    ${emoji} ${goal}: ${sc.overallScore.toUpperCase()}`);
+  }
+  console.log('');
+
+  return selectedGoals.some(g => scorecards.get(g)?.overallScore === 'red') ? 1 : 0;
 }
 
 function askYesNo(prompt: string): Promise<boolean> {

@@ -54,6 +54,7 @@ program
   .option('--export-pdf', 'Generate client-ready PDF report')
   .option('--resume <path>', 'Resume from a checkpoint file (path to .jsonl)')
   .option('--checkpoint-interval <n>', 'Save checkpoint every N tool calls (0 to disable)', '5')
+  .option('--parallel', 'Use parallel cluster workers instead of sequential passes (--goal all only)')
   .action(async (opts) => {
     try {
       const goals = parseGoals(opts.goal);

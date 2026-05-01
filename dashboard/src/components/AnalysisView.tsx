@@ -10,6 +10,8 @@ import { BudgetPausedView } from '@/components/BudgetPausedView';
 import { PhaseRail } from '@/components/analysis/PhaseRail';
 import { ReasoningStream } from '@/components/analysis/ReasoningStream';
 import { RightPanel } from '@/components/analysis/RightPanel';
+import { WorkerLaneGrid } from '@/components/analysis/WorkerLaneGrid';
+import { SynthesisBar } from '@/components/analysis/SynthesisBar';
 
 // ─── Props ──────────────────────────────────────────────────────
 
@@ -36,6 +38,9 @@ export function AnalysisView({
   budgetPausedData,
   onBudgetDecision,
 }: AnalysisViewProps) {
+  // ─── Parallel worker selection ─────────────────────────────────
+  const [selectedParallelWorker, setSelectedParallelWorker] = useState<string | null>(null);
+
   // ─── State source routing ──────────────────────────────────────
 
   const [internalReplay, setInternalReplay] = useState(false);
@@ -128,6 +133,14 @@ export function AnalysisView({
         ? 'var(--color-warning)'
         : 'var(--color-tint)';
 
+  // Parallel mode state
+  const isParallel = isLive && liveState?.isParallel;
+  const workers = liveState?.workers ?? null;
+  const synthesisStatus = liveState?.synthesisStatus ?? null;
+  const effectiveSelectedWorker = selectedParallelWorker ?? liveState?.selectedWorkerId ?? null;
+  const workerCount = workers ? workers.size : 0;
+  const completeCount = workers ? [...workers.values()].filter(w => w.status === 'complete').length : 0;
+
   // ─── Render ────────────────────────────────────────────────────
 
   return (
@@ -150,7 +163,20 @@ export function AnalysisView({
           onRun={handleRun}
           onReset={handleReset}
           accentColor={accentColor}
+          isParallel={!!isParallel}
+          workerCount={workerCount}
+          workerCompleteCount={completeCount}
         />
+
+        {/* Parallel mode: worker lane grid */}
+        {isParallel && workers && (
+          <WorkerLaneGrid
+            workers={workers}
+            selectedWorkerId={effectiveSelectedWorker}
+            onSelectWorker={setSelectedParallelWorker}
+          />
+        )}
+
         <ReasoningStream
           phase={phase}
           turns={turns}
@@ -164,6 +190,15 @@ export function AnalysisView({
           accentColor={accentColor}
           findingProgress={findingProgress}
         />
+
+        {/* Parallel mode: synthesis bar */}
+        {isParallel && synthesisStatus && (
+          <SynthesisBar
+            status={synthesisStatus}
+            workerCount={workerCount}
+            completeCount={completeCount}
+          />
+        )}
       </div>
 
       {/* Right sidebar */}

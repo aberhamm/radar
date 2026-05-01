@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { StaggeredSpinner, HistoryLoadingSkeleton, CachedReposLoadingSkeleton } from '@/components/Skeleton';
-import { ALL_GOALS } from '@agent/types/state';
+import { ALL_GOALS } from '@/lib/goals';
 import {
   Select,
   SelectContent,
@@ -56,7 +56,7 @@ interface AppRoot {
 
 interface IdleViewProps {
   initialRepoPath?: string;
-  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string, budget?: number, goals?: string[]) => void;
+  onStart: (repoPath: string, goal: string, repoName?: string, appRoot?: string, runId?: string, budget?: number, goals?: string[], parallel?: boolean) => void;
   history?: HistoryRunItem[];
   historyReady?: boolean;
   compact?: boolean;
@@ -72,7 +72,18 @@ interface CachedRepo {
 
 function isGitHubUrl(value: string): boolean {
   const trimmed = value.trim();
-  return trimmed.startsWith('http://') || trimmed.startsWith('https://');
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true;
+  // owner/repo shorthand (e.g. "aberhamm/xmcloud-starter-js")
+  return /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(trimmed);
+}
+
+function expandRepoInput(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(trimmed)) {
+    return `https://github.com/${trimmed}`;
+  }
+  return trimmed;
 }
 
 function relativeTime(dateStr: string): string {
@@ -100,6 +111,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
   const [repoPath, setRepoPath] = useState(initialRepoPath);
   const [selectedGoals, setSelectedGoals] = useState<Set<string>>(new Set(ALL_GOALS));
   const [budget, setBudget] = useState<number | null>(null);
+  const [parallel, setParallel] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -266,11 +278,12 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
     if (!repoPath.trim()) return;
     setError('');
     setCloneStatus('cloning');
+    const cloneUrl = expandRepoInput(repoPath);
     try {
       const res = await fetch('/api/clone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: repoPath.trim() }),
+        body: JSON.stringify({ url: cloneUrl }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -335,6 +348,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
           ...(isCloned ? { repoSource: 'github', repoUrl: repoPath.trim() } : {}),
           ...(effectiveRoot ? { appRoot: effectiveRoot } : {}),
           ...(budget != null ? { budget } : {}),
+          ...(parallel && goalsList.length > 1 ? { parallel: true } : {}),
         }),
       });
       const data = await res.json();
@@ -343,7 +357,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
         setLoading(false);
         return;
       }
-      onStart(targetPath, effectiveGoal, isCloned ? clonedRepoName : undefined, effectiveRoot || undefined, data.runId, data.budget, goalsList.length > 1 ? goalsList : undefined);
+      onStart(targetPath, effectiveGoal, isCloned ? clonedRepoName : undefined, effectiveRoot || undefined, data.runId, data.budget, goalsList.length > 1 ? goalsList : undefined, parallel && goalsList.length > 1 ? true : undefined);
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
@@ -693,6 +707,29 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
       {goalPickerContent}
 
       {budgetPickerContent}
+
+      {/* Parallel workers toggle — only visible for multi-goal */}
+      {isMultiGoal && (
+        <label
+          className={`flex items-center gap-2.5 px-1 select-none min-h-[44px] ${
+            loading || isCloning || rerunPulling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={parallel}
+            onChange={() => setParallel(v => !v)}
+            disabled={loading || isCloning || rerunPulling}
+            className="accent-[var(--color-tint)] w-3.5 h-3.5 rounded cursor-pointer"
+          />
+          <span className="text-[12px] text-secondary-label">
+            Parallel workers
+          </span>
+          <span className="text-[11px] text-quaternary-label">
+            Run cluster workers concurrently instead of 3 sequential passes
+          </span>
+        </label>
+      )}
 
       {error && (
         <p className="text-xs text-danger">{error}</p>

@@ -103,9 +103,9 @@ export async function GET(
   });
   const toolCallCount = events.filter(e => e.type === 'tool_call').length;
 
-  // Reuse last child's findings from goalResults instead of re-loading from disk
-  const lastGoal = goalResults[goalResults.length - 1];
-  const findings = lastGoal?.findings ?? [];
+  // Deduplicate findings across all child goals (each child stores the full set
+  // from the pass that generated it, so any non-null child has the complete list)
+  const findings = goalResults.find(g => g && (g.findings as unknown[])?.length > 0)?.findings ?? [];
 
   // Aggregate metrics
   const firstChild = children[0];

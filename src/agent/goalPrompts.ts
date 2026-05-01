@@ -1,4 +1,5 @@
 import type { GoalType } from '../types/state.js';
+import type { FindingCategory } from '../types/findings.js';
 
 /**
  * Goal prompt templates — the initial user message given to the agent
@@ -284,4 +285,52 @@ Fetch documentation EARLY in investigation when you identify the CMS platform or
 outdated dependencies. Don't wait until the end — fetched docs should inform your findings.`;
 
   return preamble;
+}
+
+/**
+ * Build a focused prompt for a parallel cluster worker.
+ * Scopes the worker to its category set with cluster-specific guidance.
+ */
+export function buildClusterPrompt(
+  clusterId: string,
+  categories: FindingCategory[],
+  localPath: string,
+  budget: number,
+  webSearchBudget: number,
+): string {
+  const catList = categories.join(', ');
+
+  const CLUSTER_GUIDANCE: Record<string, string> = {
+    'security-config': `Focus on secrets exposure (.env, hardcoded credentials), auth middleware, security headers, CSRF/XSS patterns, input validation, and configuration completeness. Check .gitignore for sensitive files. Look for exposed API keys and NEXT_PUBLIC_ leaks.`,
+    'stack-arch': `Focus on technology stack identification, architectural patterns (monorepo structure, module boundaries, shared code), testing infrastructure, and developer experience (TypeScript strictness, linting, build tooling).`,
+    'cms-preview': `Focus on CMS SDK integration patterns, content fetching, preview/editing mode implementation, layout service configuration, and content model mapping.`,
+    'deps-deploy': `Focus on dependency currency (use query_npm_versions + compare_versions), known vulnerabilities, deployment configuration (Docker, CI/CD, hosting), and build pipeline health.`,
+    'nextjs': `Focus on Next.js router architecture (App vs Pages), rendering strategy (SSR/SSG/ISR), data fetching patterns, image optimization, middleware usage, bundle size, and framework-specific configuration.`,
+    'a11y': `Focus on WCAG 2.1 AA compliance: images & alt text, semantic HTML structure, keyboard navigation & focus management, form accessibility, color contrast patterns, and ARIA usage.`,
+  };
+
+  const guidance = CLUSTER_GUIDANCE[clusterId] ?? `Investigate the following categories thoroughly: ${catList}.`;
+
+  return `You have access to a repository at ${localPath}.
+You are a focused investigation worker. Your ONLY job is to investigate these specific categories and record findings:
+  ${catList}
+
+${guidance}
+
+RULES:
+- You have a hard budget of ${budget} tool calls. There are no extensions.
+- Do NOT call assemble_output or switch_to_fast_model — they are not available to you.
+- Investigate, then call record_finding for each observation. That is your entire workflow.
+- Record findings continuously — after every 2-3 tool calls, record what you found.
+- You must record at least ${Math.max(2, Math.floor(categories.length * 1.5))} findings across your assigned categories.
+- Even if a category is healthy, record an info-level finding documenting what you verified.
+- Stay within your assigned categories: ${catList}. Do not investigate outside your scope.
+
+TOOL PATH ARGUMENTS:
+- Always pass RELATIVE paths from the repo root (e.g. "src/components", "package.json").
+- Use "." to refer to the repo root itself.
+
+Start by calling detect_app_roots and get_specialist_prompts to understand the stack.
+Then investigate your assigned categories systematically.
+Your web search budget is ${webSearchBudget} searches.`;
 }

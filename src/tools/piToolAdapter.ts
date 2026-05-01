@@ -326,6 +326,7 @@ function err(name: string, error: Error): AgentToolResult<unknown> {
 export function buildPiTools(
   state: AgentState,
   onFindingProgress?: (event: FindingProgressEvent) => void,
+  options?: { mode?: 'full' | 'worker' },
 ): { tools: AgentTool[]; assembledRef: AssembledSections; cleanup: () => void; mutex: StatefulToolMutex } {
   // Per-run spill context — each buildPiTools() call gets an isolated spill dir
   // so parallel runs (e.g. `radar compare`) don't race on cleanup.
@@ -836,11 +837,13 @@ export function buildPiTools(
     ),
   ];
 
-  // Stateful tools get Pi's native per-tool executionMode: 'sequential' so Pi
-  // serializes them at the framework level. The mutex stays as defense-in-depth
-  // since our drain() call at run end depends on it.
+  const WORKER_EXCLUDED_TOOLS = new Set(['assemble_output', 'switch_to_fast_model']);
+  const filteredTools = options?.mode === 'worker'
+    ? tools.filter((t) => !WORKER_EXCLUDED_TOOLS.has(t.name))
+    : tools;
+
   const mutex = new StatefulToolMutex();
-  for (const tool of tools) {
+  for (const tool of filteredTools) {
     if (isStateful(tool.name)) {
       tool.executionMode = 'sequential';
       const original = tool.execute;
@@ -849,13 +852,11 @@ export function buildPiTools(
     }
   }
 
-  // Enforce that every tool is classified as either read-only or stateful.
-  // A new tool added without updating concurrency.ts would be silently unprotected.
-  for (const tool of tools) {
+  for (const tool of filteredTools) {
     if (!isReadOnly(tool.name) && !isStateful(tool.name)) {
       console.warn(`[concurrency] Tool "${tool.name}" is not classified as read-only or stateful — update concurrency.ts`);
     }
   }
 
-  return { tools, assembledRef, cleanup: spill.cleanup, mutex };
+  return { tools: filteredTools, assembledRef, cleanup: spill.cleanup, mutex };
 }

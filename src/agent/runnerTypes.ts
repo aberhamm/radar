@@ -64,6 +64,12 @@ export interface RunnerConfig {
   /** Pre-computed repo signals (app roots, package.json, file tree).
    *  When provided, runAgent skips its own runPreCompute() call. */
   preCompute?: PreComputeResult;
+  /** Run mode: 'full' for complete investigation + assembly, 'worker' for scoped finding-only. */
+  mode?: 'full' | 'worker';
+  /** Worker identity for event tagging and dashboard demux. */
+  workerId?: string;
+  /** Categories this worker investigates. Worker mode only. */
+  allowedCategories?: string[];
 }
 
 /**
@@ -97,6 +103,8 @@ export interface StepEvent {
   model?: string;
   /** Duration of tool execution in milliseconds */
   durationMs?: number;
+  /** Worker ID for parallel dispatch — used by dashboard to demux events. */
+  workerId?: string;
 }
 
 /** Everything produced by a single runAgent() call — scorecard, brief, metrics, and raw state. */

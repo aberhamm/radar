@@ -23,6 +23,7 @@ import { CreateIssuesModal } from './CreateIssuesModal';
 import { SingleOverviewContent } from './SingleOverviewContent';
 import { SingleInvestigationContent } from './SingleInvestigationContent';
 import { MultiOverviewContent, PerGoalSummaryTable } from './MultiOverviewContent';
+import { MultiInvestigationContent } from './MultiInvestigationContent';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -294,13 +295,9 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
             />
           )}
           {activeTab === 'investigation' && mode.kind === 'multi' && (
-            mode.data.runData ? (
-              <AnalysisView runData={mode.data.runData} />
-            ) : (
-              <div className="flex-1 flex items-center justify-center p-8">
-                <p className="text-sm text-tertiary-label">No investigation events available.</p>
-              </div>
-            )
+            <MultiInvestigationContent
+              combinedRunData={mode.data.runData}
+            />
           )}
 
           {/* Cost */}

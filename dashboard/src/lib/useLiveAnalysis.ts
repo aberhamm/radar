@@ -18,6 +18,17 @@ export interface FindingProgressState {
   evidenceFile?: string;
 }
 
+export interface WorkerState {
+  clusterId: string;
+  name: string;
+  color: string;
+  status: 'pending' | 'running' | 'complete' | 'error';
+  budget: number;
+  toolCalls: number;
+  findingsCount: number;
+  currentActivity: string;
+}
+
 export interface LiveAnalysisState {
   phase: AnimationPhase;
   turns: StreamTurn[];
@@ -34,6 +45,14 @@ export interface LiveAnalysisState {
   statusMessage: string;
   /** Live sub-progress during record_finding execution */
   findingProgress: FindingProgressState | null;
+  /** Parallel mode: worker states keyed by clusterId */
+  workers: Map<string, WorkerState> | null;
+  /** Parallel mode: currently selected worker for detail view */
+  selectedWorkerId: string | null;
+  /** Parallel mode: synthesis pass status */
+  synthesisStatus: 'pending' | 'running' | 'complete' | null;
+  /** Whether this run is using parallel dispatch */
+  isParallel: boolean;
 }
 
 /**
@@ -65,6 +84,10 @@ export function useLiveAnalysis(
     let pendingDeltaText = ''; // accumulates text_delta content for live typing
     let statusMessage = '';
     let findingProgress: FindingProgressState | null = null;
+    let workers: Map<string, WorkerState> | null = null;
+    let selectedWorkerId: string | null = null;
+    let synthesisStatus: 'pending' | 'running' | 'complete' | null = null;
+    let isParallel = false;
 
     for (const ev of events) {
       // Startup status events (loading agent, starting analysis)
@@ -73,14 +96,83 @@ export function useLiveAnalysis(
         continue;
       }
 
-      // Budget plan (multi-goal: before first pass)
+      // Budget plan (multi-goal sequential: before first pass)
       if (ev.action === 'budget_plan' && ev.result) {
         turns.push({ reasoning: 'Budget plan computed from repo signals', activities: [{ label: 'budget_plan', files: [], detail: ev.result }], phase: 'analyze' });
         statusMessage = 'Budget allocated — starting Core pass...';
         continue;
       }
 
-      // Budget rebalance (multi-goal: after core, before specialists)
+      // Cluster plan (parallel mode: initializes worker states)
+      if (ev.action === 'cluster_plan' && ev.result) {
+        isParallel = true;
+        workers = new Map();
+        try {
+          const plan = JSON.parse(ev.result as string);
+          for (const c of (plan.clusters ?? [])) {
+            workers.set(c.clusterId, {
+              clusterId: c.clusterId,
+              name: c.name,
+              color: c.color,
+              status: c.skip ? 'complete' : 'pending',
+              budget: c.budget,
+              toolCalls: 0,
+              findingsCount: 0,
+              currentActivity: c.skip ? `Skipped: ${c.skipReason ?? ''}` : '',
+            });
+            if (!selectedWorkerId && !c.skip) selectedWorkerId = c.clusterId;
+          }
+          synthesisStatus = 'pending';
+        } catch { /* parse error */ }
+        turns.push({ reasoning: 'Cluster budget plan computed — dispatching parallel workers', activities: [{ label: 'cluster_plan', files: [], detail: ev.result as string }], phase: 'analyze' });
+        statusMessage = `Dispatching ${workers?.size ?? 0} parallel workers...`;
+        continue;
+      }
+
+      // Worker complete (parallel mode)
+      if (ev.action === 'worker_complete' && ev.workerId && workers) {
+        const w = workers.get(ev.workerId);
+        if (w) {
+          try {
+            const data = JSON.parse(ev.result as string);
+            w.status = 'complete';
+            w.toolCalls = data.toolCalls ?? w.toolCalls;
+            w.findingsCount = data.findings ?? w.findingsCount;
+            w.currentActivity = 'Complete';
+          } catch { w.status = 'complete'; }
+        }
+        const total = workers.size;
+        const done = [...workers.values()].filter(w => w.status === 'complete').length;
+        statusMessage = `${done}/${total} workers complete`;
+        continue;
+      }
+
+      // Synthesis events (parallel mode)
+      if (ev.action === 'synthesis_start') {
+        synthesisStatus = 'running';
+        statusMessage = 'Synthesis: cross-referencing findings...';
+        continue;
+      }
+      if (ev.action === 'synthesis_complete') {
+        synthesisStatus = 'complete';
+        statusMessage = 'Synthesis complete';
+        continue;
+      }
+
+      // Track worker activity from worker-tagged events
+      if (ev.workerId && workers && ev.workerId !== 'synthesis') {
+        const w = workers.get(ev.workerId);
+        if (w) {
+          if (w.status === 'pending') w.status = 'running';
+          if (ev.type === 'tool_call') w.toolCalls++;
+          if (ev.action === 'record_finding') w.findingsCount++;
+          if (ev.type === 'tool_start' && ev.action) {
+            w.currentActivity = ev.action;
+          }
+        }
+      }
+
+      // Budget rebalance (multi-goal sequential: after core, before specialists)
       if (ev.action === 'budget_rebalance' && ev.result) {
         turns.push({ reasoning: 'Specialist budgets adjusted based on core findings', activities: [{ label: 'budget_rebalance', files: [], detail: ev.result }], phase: 'analyze' });
         statusMessage = 'Budgets rebalanced — starting specialist passes...';
@@ -385,6 +477,10 @@ export function useLiveAnalysis(
       pendingActions,
       statusMessage,
       findingProgress,
+      workers,
+      selectedWorkerId,
+      synthesisStatus,
+      isParallel,
     };
   }, [events, runStatus, toolCalls, budget]);
 }
