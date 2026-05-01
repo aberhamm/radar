@@ -55,8 +55,9 @@ export function SingleInvestigationContent({
     if (events && events.length > 0) return;
     setEventsLoading(true);
     fetch(`/api/history/${encodeURIComponent(runId)}/rundata`)
-      .then(r => {
-        if (r.ok) return r.json().then(data => { setLazyRunData(data as TransformedRunData); return null; });
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d && d.data !== null) { setLazyRunData(d as TransformedRunData); return; }
         return fetch(`/api/history/${encodeURIComponent(runId)}/events`)
           .then(r2 => { if (!r2.ok) throw new Error(`HTTP ${r2.status}`); return r2.json(); })
           .then(data => {

@@ -64,6 +64,7 @@ export class AgentLoopContext {
   progressSummarySent = false;
   budgetExhaustedFired = false;
   extensionGateFired = false;
+  finishDecisionReceived = false;
 
   // ─── Model state ──────────────────────────────────────────────────
   modelSwitched = false;
@@ -175,6 +176,12 @@ export class AgentLoopContext {
     }
 
     const WRITING_TOOLS = new Set(['record_finding', 'switch_to_fast_model', 'assemble_output']);
+
+    // User already chose "Finish" at a prior gate — block non-writing tools immediately
+    // without re-prompting. Prevents parallel tool execution from re-triggering the modal.
+    if (this.finishDecisionReceived && !WRITING_TOOLS.has(toolName)) {
+      return { block: true, reason: `Budget finished by user. Call record_finding or assemble_output.` };
+    }
     // Recording enforcement gate — full mode only (workers have fixed budgets)
     if (
       !this.isWorker &&
@@ -203,6 +210,7 @@ export class AgentLoopContext {
           });
           return undefined;
         }
+        this.finishDecisionReceived = true;
       }
       if (!this.modelSwitched && this.canSwitchModel) {
         this.modelSwitched = true;
@@ -252,6 +260,7 @@ export class AgentLoopContext {
         });
         return undefined;
       }
+      this.finishDecisionReceived = true;
     }
 
     if (this.state.toolCallCount >= this.currentBudget) {
@@ -262,7 +271,7 @@ export class AgentLoopContext {
         return undefined;
       }
 
-      if (!this.isWorker && !this.budgetExhaustedFired && this.config.onBudgetExhausted) {
+      if (!this.isWorker && !this.budgetExhaustedFired && !this.finishDecisionReceived && this.config.onBudgetExhausted) {
         this.budgetExhaustedFired = true;
         const shouldExtend = await this.config.onBudgetExhausted({
           findings: this.state.findings.length,
@@ -282,6 +291,7 @@ export class AgentLoopContext {
           });
           return undefined;
         }
+        this.finishDecisionReceived = true;
       }
 
       if (this.checkpointInterval > 0) {

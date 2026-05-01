@@ -23,7 +23,7 @@ export async function GET(
 
   const data = loadRunData(record);
   if (!data) {
-    return NextResponse.json({ error: 'No pre-computed data' }, { status: 404 });
+    return NextResponse.json({ data: null });
   }
 
   return NextResponse.json(data, { headers: cacheHeaders });
