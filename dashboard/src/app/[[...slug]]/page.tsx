@@ -109,6 +109,7 @@ export default function DashboardPage() {
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [multiRunData, setMultiRunData] = useState<RunViewMode | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [selectedParallelWorker, setSelectedParallelWorker] = useState<string | null>(null);
   const [sampleInvestigation, setSampleInvestigation] = useState<TransformedRunData | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [activeInfoPage, setActiveInfoPage] = useState<InfoPage | undefined>(undefined);
@@ -338,6 +339,7 @@ export default function DashboardPage() {
     setSelectedRunId(runId ?? null);
     setMultiRunData(null);
     setActiveTab('overview');
+    setSelectedParallelWorker(null);
 
     // Push URL with runId so refresh reconnects
     if (runId) {
@@ -349,11 +351,11 @@ export default function DashboardPage() {
     setCurrentRun((prev) => {
       if (!prev) return prev;
 
-      // text_delta: replace previous delta (high-frequency, only latest matters)
+      // text_delta: replace previous delta from the SAME worker only
       if (event.type === 'text_delta') {
         const events = prev.events;
         const last = events[events.length - 1];
-        if (last?.type === 'text_delta') {
+        if (last?.type === 'text_delta' && last.workerId === event.workerId) {
           const updated = [...events];
           updated[updated.length - 1] = event;
           return { ...prev, events: updated };
@@ -366,10 +368,12 @@ export default function DashboardPage() {
         return { ...prev, events: [...prev.events, event] };
       }
 
-      // Regular events: strip trailing text_delta (superseded by text_response/tool_call)
+      // Regular events: strip trailing text_delta from the SAME worker
       const events = prev.events;
       const last = events[events.length - 1];
-      const base = last?.type === 'text_delta' ? events.slice(0, -1) : events;
+      const base = last?.type === 'text_delta' && last.workerId === event.workerId
+        ? events.slice(0, -1)
+        : events;
 
       return {
         ...prev,
@@ -940,6 +944,7 @@ export default function DashboardPage() {
     status,
     currentRun?.toolCalls ?? 0,
     currentRun?.budget ?? 45,
+    selectedParallelWorker,
   );
 
   const commands = useMemo(() => {
@@ -1112,6 +1117,7 @@ export default function DashboardPage() {
                 budgetPaused={status === 'budget_paused'}
                 budgetPausedData={budgetPausedData}
                 onBudgetDecision={handleBudgetDecisionWithApi}
+                onSelectWorker={setSelectedParallelWorker}
               />
             </div>
           )}

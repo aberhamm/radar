@@ -24,6 +24,7 @@ interface AnalysisViewProps {
   budgetPaused?: boolean;
   budgetPausedData?: { findings: number; toolCalls: number; budget: number } | null;
   onBudgetDecision?: (extend: boolean) => void;
+  onSelectWorker?: (id: string) => void;
 }
 
 // ─── Analysis View ───────────────────────────────────────────────
@@ -37,9 +38,8 @@ export function AnalysisView({
   budgetPaused,
   budgetPausedData,
   onBudgetDecision,
+  onSelectWorker,
 }: AnalysisViewProps) {
-  // ─── Parallel worker selection ─────────────────────────────────
-  const [selectedParallelWorker, setSelectedParallelWorker] = useState<string | null>(null);
 
   // ─── State source routing ──────────────────────────────────────
 
@@ -137,7 +137,7 @@ export function AnalysisView({
   const isParallel = isLive && liveState?.isParallel;
   const workers = liveState?.workers ?? null;
   const synthesisStatus = liveState?.synthesisStatus ?? null;
-  const effectiveSelectedWorker = selectedParallelWorker ?? liveState?.selectedWorkerId ?? null;
+  const effectiveSelectedWorker = liveState?.selectedWorkerId ?? null;
   const workerCount = workers ? workers.size : 0;
   const completeCount = workers ? [...workers.values()].filter(w => w.status === 'complete').length : 0;
 
@@ -173,7 +173,7 @@ export function AnalysisView({
           <WorkerLaneGrid
             workers={workers}
             selectedWorkerId={effectiveSelectedWorker}
-            onSelectWorker={setSelectedParallelWorker}
+            onSelectWorker={onSelectWorker ?? (() => {})}
           />
         )}
 

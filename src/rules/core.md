@@ -67,6 +67,13 @@ These are areas a senior consultant checks regardless of platform:
 - Some specialized tools (web_search, fetch_url, compare_versions) have abbreviated descriptions to keep context lean. Call `tool_search` with a keyword to get their full descriptions and parameter lists before using them.
 - For web research and version comparison, call tool_search first to discover available tools and their capabilities.
 
+## Using reference knowledge
+
+- Call `list_references` early in your investigation to see what curated knowledge is available for the detected stack.
+- Load relevant references with `load_reference` (e.g. "nextjs/caching-strategies", "sitecore/jss-nextjs-compatibility") before assessing patterns you're unsure about. References are free — they cost no budget and provide curated best practices, compatibility matrices, and anti-pattern guides.
+- Prefer reference files over web search for topics they cover — they're faster, cheaper, and tailored to consulting assessments.
+- Reference keys follow the format "platform/topic". Use list_references to see all available keys.
+
 ## Using web search and documentation
 
 - When you find a significantly outdated core dependency (1+ major versions behind), search for the official migration guide or changelog for the versions between installed and latest. Use this to identify specific breaking changes relevant to this codebase.
@@ -75,7 +82,7 @@ These are areas a senior consultant checks regardless of platform:
 - Prefer approved documentation domains over generic search results.
 - Fetch documentation early in the investigation so it can inform subsequent tool calls. Don't wait until the end.
 - Summarize what you learn from documentation in your findings — don't just link to it.
-- Do not use web search for things you already know or that are covered by the static reference files.
+- Do not use web search for things you already know or that are covered by the reference files. Call `load_reference` first.
 
 ## When to stop
 

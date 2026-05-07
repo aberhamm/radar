@@ -175,6 +175,19 @@ export const VALIDATORS: Record<string, ToolValidator> = {
     return null;
   },
 
+  // --- Knowledge tools ---
+  list_references: () => null,
+
+  load_reference: (p) => {
+    const keyErr = requireString(p, 'key');
+    if (keyErr) return keyErr;
+    const key = p.key as string;
+    if (key.includes('..') || key.startsWith('/') || key.startsWith('\\')) {
+      return 'key must not contain path traversal characters';
+    }
+    return null;
+  },
+
   // --- Meta tools ---
   switch_to_fast_model: () => null,
 

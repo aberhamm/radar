@@ -133,6 +133,9 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
   // Pulling state for rerun (auto-pull git repos)
   const [rerunPulling, setRerunPulling] = useState(false);
 
+  // Track which specific history run is selected (by id) to avoid highlighting duplicates
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+
   // Monorepo root detection
   const [detectedRoots, setDetectedRoots] = useState<AppRoot[]>([]);
   const [isMonorepo, setIsMonorepo] = useState(false);
@@ -219,6 +222,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
 
   const handleSelectHistoryRun = useCallback(async (run: HistoryRunItem) => {
     setError('');
+    setSelectedHistoryId(run.parentRunId ?? run.id);
 
     if (run.goal === 'all') {
       setSelectedGoals(new Set(ALL_GOALS));
@@ -771,8 +775,7 @@ export function IdleView({ initialRepoPath = '', onStart, history = [], historyR
       : run.repoName;
     const goalLabel = run.goal === 'all' ? 'Full audit' : run.goal;
     const when = run.completedAt ? relativeTime(run.completedAt) : relativeTime(run.startedAt);
-    const runRepoId = run.repoSource === 'github' && run.repoUrl ? run.repoUrl : run.repoPath ?? '';
-    const isSelected = repoPath === runRepoId;
+    const isSelected = selectedHistoryId === (run.parentRunId ?? run.id);
 
     return (
       <button

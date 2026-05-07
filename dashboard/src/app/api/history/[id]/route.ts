@@ -25,6 +25,19 @@ export async function GET(
 
   // Current/just-completed run: result is still in memory
   if (record.result) {
+    const fullFindings = record.result.state?.findings ?? [];
+    // Slim mode: return lightweight finding stubs (enough for counts/display)
+    // instead of empty array. Full evidence bodies load via /findings endpoint.
+    const slimFindings = slim
+      ? (fullFindings as Array<Record<string, unknown>>).map(f => ({
+          id: f.id ?? '',
+          severity: f.severity ?? 'info',
+          category: f.category ?? '',
+          title: f.title ?? '',
+          evidenceFiles: ((f.evidence as Array<{ filePath?: string }>) ?? []).map(e => e.filePath ?? ''),
+          tags: (f.tags as string[]) ?? [],
+        }))
+      : fullFindings;
     return NextResponse.json({
       id: record.id,
       goal: record.goal,
@@ -37,7 +50,7 @@ export async function GET(
         metrics: record.result.metrics,
         terminationReason: record.result.terminationReason,
         briefMarkdown: record.result.briefMarkdown,
-        state: { findings: slim ? [] : (record.result.state?.findings ?? []) },
+        state: { findings: slimFindings },
       },
     }, { headers: cacheHeaders });
   }
@@ -64,8 +77,8 @@ export async function GET(
     }, { headers: cacheHeaders });
   }
 
-  // Skip expensive findings load in slim mode (findings only needed for PDF export)
-  const findings = slim ? [] : loadRunFindings(record);
+  // Slim mode: use findingsSummary from envelope (always available, no disk read)
+  const findings = slim ? (envelope.findingsSummary ?? []) : loadRunFindings(record);
 
   return NextResponse.json({
     id: record.id,

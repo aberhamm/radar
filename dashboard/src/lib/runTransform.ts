@@ -58,6 +58,7 @@ export interface StreamTurn {
   isSwitch?: boolean;
   isPassBoundary?: boolean;
   passName?: string;
+  workerId?: string;
 }
 
 export interface AnalysisTurn {

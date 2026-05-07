@@ -45,6 +45,8 @@ const READ_ONLY_TOOLS = new Set([
   'web_search',
   'fetch_url',
   'tool_search',
+  'list_references',
+  'load_reference',
 ]);
 
 /** Tools that mutate shared state and must not run concurrently. */

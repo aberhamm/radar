@@ -23,7 +23,7 @@ The project uses two packages from the pi-mono monorepo:
 
 ### What Pi Agent gives us (that we didn't have to build)
 
-**The agent loop.** Pi's `Agent` class handles the observe → reason → act cycle. We give it a system prompt (our consulting rules), tools (our 40+ deterministic functions), and a goal prompt. Pi calls the LLM, parses tool call requests from the response, executes the tools in parallel, feeds results back, and repeats. We don't manage the conversation, parse JSON, or handle streaming — Pi does all of that.
+**The agent loop.** Pi's `Agent` class handles the observe → reason → act cycle. We give it a system prompt (our consulting rules), tools (our 29 deterministic functions), and a goal prompt. Pi calls the LLM, parses tool call requests from the response, executes the tools in parallel, feeds results back, and repeats. We don't manage the conversation, parse JSON, or handle streaming — Pi does all of that.
 
 **Parallel tool execution.** When the LLM requests multiple tools in one turn (e.g., "read these 3 files"), Pi fires them all concurrently. This is significant for performance — the agent regularly calls 3–5 tools in a single batch.
 
@@ -47,7 +47,7 @@ Pi gives us the loop. We built the domain layer:
 
 | What | Where | Why Pi doesn't do this |
 |------|-------|----------------------|
-| 40+ consulting tools | `src/tools/` | Domain-specific — file reading, config parsing, code analysis, evidence recording |
+| 29 consulting tools | `src/tools/` | Domain-specific — file reading, config parsing, code analysis, evidence recording |
 | Consulting rules (markdown) | `src/rules/` | Domain knowledge — investigation standards, platform patterns, goal playbooks |
 | Budget enforcement logic | `src/agent/runner.ts` (hooks) | Business logic — budget warnings, steering messages, budget extension |
 | Dual-model cost optimization | `src/agent/runner.ts` (model switch) | Our innovation — agent-initiated switch from Sonnet to Haiku mid-run |
@@ -77,7 +77,7 @@ Pi-mono contains 7 packages. We use 2 of them. The others are available if we wa
 
 ### How to explain it in the demo
 
-> "The agent loop — the part that decides what tool to call next and manages the conversation with the LLM — that's Pi Agent, an open-source runtime. What we built on top is the domain layer: 40+ tools that know how to read and analyze codebases, consulting rules written in plain markdown, evidence verification, cost optimization, and the CI/CD integration. Pi handles the plumbing. We handle the expertise."
+> "The agent loop — the part that decides what tool to call next and manages the conversation with the LLM — that's Pi Agent, an open-source runtime. What we built on top is the domain layer: 29 tools that know how to read and analyze codebases, consulting rules written in plain markdown, evidence verification, cost optimization, and the CI/CD integration. Pi handles the plumbing. We handle the expertise."
 
 ### Why Pi and not LangChain / CrewAI / Writer / etc.
 
@@ -97,7 +97,7 @@ There are two ways to start a run — CLI and dashboard. Both end up calling the
 
 ### CLI Path
 
-**`src/index.ts`** — Commander.js CLI with 6 commands. The one that matters is `analyze`, which calls `handleAnalyze()` in `src/commands/analyze.ts`.
+**`src/index.ts`** — Commander.js CLI with 7 commands. The one that matters is `analyze`, which calls `handleAnalyze()` in `src/commands/analyze.ts`.
 
 `handleAnalyze()` is a thin orchestration layer:
 
@@ -122,31 +122,32 @@ Same `runAgent()`, different I/O layer.
 2. **Next.js Specialist** — runs if pre-compute detected Next.js roots (or core discovered them via rebalancing). Receives shared state from core so it doesn't re-read files.
 3. **Accessibility Specialist** — runs if any UI framework was detected.
 
-After all passes complete, the accumulated findings are scored against all 9 goal scorecards and persisted as 9 child run envelopes under a single parent run ID. The dashboard renders these as a unified multi-goal view.
+After all passes complete, the accumulated findings are scored against all 10 goal scorecards and persisted as 10 child run envelopes under a single parent run ID. The dashboard renders these as a unified multi-goal view.
 
 ---
 
 ## 2. The Agent Runner — Modular Architecture
 
-The runner subsystem is the core of the system — it orchestrates a single investigation run from state initialization through post-processing. It's split across 8 focused modules:
+The runner subsystem is the core of the system — it orchestrates a single investigation run from state initialization through post-processing. It's split across 9 focused modules:
 
 | Module | Lines | Responsibility |
 |--------|-------|---------------|
-| `runner.ts` | ~860 | Orchestration: wires all pieces together, houses Pi hooks |
-| `runnerTypes.ts` | ~108 | Public type contracts (RunnerConfig, RunResult, StepEvent, pricing) |
+| `runner.ts` | ~550 | Orchestration: wires all pieces together, creates agent, runs the loop |
+| `agentLoopContext.ts` | ~606 | Mutable loop state + hook methods (beforeToolCall, afterToolCall, handleAgentEvent) |
+| `runnerTypes.ts` | ~124 | Public type contracts (RunnerConfig, RunResult, StepEvent, pricing) |
 | `preCompute.ts` | ~117 | Pre-computation: deterministic tools before the agent loop |
 | `stateMerge.ts` | ~56 | State carry-over for tiered investigation and checkpoint resume |
 | `contextCompression.ts` | ~212 | Evidence pinning, stale-read collapsing, observation eviction |
 | `usageTracking.ts` | ~94 | Model pricing loader, per-model usage accumulator, cost estimation |
-| `outputWriter.ts` | ~94 | Writes 6 output artifacts to disk |
+| `outputWriter.ts` | ~102 | Writes 6 output artifacts to disk |
 | `autoAssemble.ts` | ~59 | Fallback brief assembly when LLM doesn't call assemble_output |
-| `budgetPlanner.ts` | ~347 | Budget allocation and rebalancing for multi-goal runs |
+| `budgetPlanner.ts` | ~534 | Budget allocation and rebalancing for multi-goal runs |
 
-All consumers still import from `runner.ts` — it re-exports the public API from the extracted modules.
+All consumers still import from `runner.ts` — it re-exports the public API from the extracted modules. The `AgentLoopContext` class encapsulates the mutable budget/model/termination state and hook implementations — this separation enables parallel workers while keeping identical behavior.
 
 Here's what happens inside `runAgent()`, step by step.
 
-### Phase 1: Setup (~lines 82–208)
+### Phase 1: Setup
 
 **State initialization.** Creates the `AgentState` object — a mutable bag that tracks everything during the run:
 
@@ -178,19 +179,19 @@ Plus a boundary instruction for prompt injection defense.
 
 **Goal prompt.** `buildGoalPrompt()` in `goalPrompts.ts` returns the initial user message — what to do, budget instructions, model switch instructions, confidence calibration, category coverage requirements, and documentation URLs.
 
-**Tools.** `buildPiTools()` in `piToolAdapter.ts` wraps all 40+ tool implementations as Pi `AgentTool[]` objects with TypeBox schemas.
+**Tools.** `buildPiTools()` in `piToolAdapter.ts` wraps all 29 tool implementations as Pi `AgentTool[]` objects with TypeBox schemas.
 
 **Models.** `buildPiModel()` in `piModel.ts` reads env vars (`AGENT_MODEL`, `FAST_MODEL`, `PORTKEY_*`) and builds two Pi Model objects. Both are `Model<'openai-completions'>`. The agent model has `reasoning: true` (extended thinking); the fast model has `reasoning: false`.
 
-### Phase 2: Budget & Model Switch State (~lines 224–275)
+### Phase 2: AgentLoopContext — Budget & Hook State
 
-15+ mutable closure variables shared across the hooks — budget counters, warning flags, model switch state, termination reason. These stay as closure variables because `beforeToolCall` and `afterToolCall` need direct access to all of them.
+The `AgentLoopContext` class (in `agentLoopContext.ts`) encapsulates 15+ mutable state variables shared across the hooks — budget counters, warning flags, model switch state, termination reason. These are class fields because `beforeToolCall` and `afterToolCall` need direct access to all of them.
 
 **Context compression setup.** The runner creates a `compressionState` object (shared mutable reference) and passes it to `createTransformContext()` from `contextCompression.ts`. Changes to `compressionState.findings` and `compressionState.snipBoundaryActive` are visible to the compression callback because it holds a reference to the same object.
 
 **`switchModelInPlace()`** — mutates the original model object's properties so Pi's running loop sees the change immediately (see "The Model Switch Trick" below).
 
-### Phase 3: Pi Agent Hooks (~lines 277–547)
+### Phase 3: Pi Agent Hooks (in `agentLoopContext.ts`)
 
 **`beforeToolCall`** — gates tool execution:
 - Blocks all tools after output assembly is complete (except `record_finding`)
@@ -209,7 +210,7 @@ Plus a boundary instruction for prompt injection defense.
 8. Wraps tool output in boundary delimiters and applies secret redaction
 9. Sends budget warnings at 40% (0 findings), 50%, 70% (progress checkpoint), and 5 calls remaining
 
-### Phase 4: Agent Creation (~lines 549–642)
+### Phase 4: Agent Creation
 
 ```typescript
 const agent = new Agent({
@@ -237,7 +238,7 @@ const agent = new Agent({
 
 **Event subscription.** The runner subscribes to Pi Agent events for: per-model usage tracking via `trackUsage()` from `usageTracking.ts`, text streaming to the dashboard, and batchId rotation for grouping parallel tool calls.
 
-### Phase 5: Agent Execution (~lines 644–725)
+### Phase 5: Agent Execution
 
 ```typescript
 await withRetry(() => agent.prompt(goalPrompt), { ... });
@@ -247,7 +248,7 @@ await withRetry(() => agent.prompt(goalPrompt), { ... });
 
 **Post-loop nudging.** If the agent finished without calling `assemble_output`, the runner nudges it up to 2 times. If nudging fails, `autoAssembleFromFindings()` in `autoAssemble.ts` builds minimal sections from recorded findings without any LLM call — groups findings by category and formats them as markdown with severity and evidence references.
 
-### Phase 6: Post-Processing (~lines 727–863)
+### Phase 6: Post-Processing
 
 All deterministic — no LLM calls.
 
@@ -273,7 +274,7 @@ This is architecturally interesting and worth understanding.
 
 Pi's `_runLoop()` captures `const model = this._state.model` once at loop start. If you call `agent.setModel(newModel)`, it replaces the `_state` reference — but the loop still holds the old object. It won't see the change.
 
-Solution: `switchModelInPlace()` (~line 254 in runner.ts) does:
+Solution: `switchModelInPlace()` (in `agentLoopContext.ts`) does:
 
 ```typescript
 Object.assign(piModel, {
@@ -369,7 +370,7 @@ The recent window is 12 messages normally, shrinking to 8 after the model switch
 
 ## 6. The Tools Layer — `src/tools/`
 
-40+ tools, all deterministic. They never call an LLM. They read code and return structured data.
+29 tools, all deterministic. They never call an LLM. They read code and return structured data.
 
 Each tool is a standalone TypeScript function in its own file:
 - Takes `(repoPath: string, input: TypedInput)` as arguments
@@ -387,7 +388,7 @@ Each tool is a standalone TypeScript function in its own file:
 
 ## 7. The Rules Layer — `src/rules/`
 
-17 markdown files loaded at runtime. The agent sees these as its system prompt.
+20 markdown files loaded at runtime. The agent sees these as its system prompt.
 
 **`core.md`** — always loaded. Defines:
 - Starting points: "Always begin by reading package.json"
@@ -408,7 +409,7 @@ Adding a new audit type = writing a markdown file. No code changes.
 
 ## 8. CI/CD Integration — `src/ci/`
 
-7 files handling post-analysis automation.
+9 files handling post-analysis automation.
 
 **`adapter.ts`** — defines the `CiPlatformAdapter` interface and `detectCiPlatform()` factory. Checks env vars: `GITHUB_ACTIONS` → GitHub adapter, `SYSTEM_TEAMFOUNDATIONCOLLECTIONURI` → Azure DevOps adapter, otherwise → generic fallback.
 
@@ -472,7 +473,7 @@ Per Microsoft Research's Spotlighting paper, wrapping untrusted content in expli
 
 **Wired in at two points:**
 - System prompt: `src/agent/runner.ts:191` and `src/agent/synthesisRunner.ts:133` — `BOUNDARY_SYSTEM_INSTRUCTION` is concatenated onto every system prompt
-- Tool results: `src/agent/agentLoopContext.ts:431-433` — the `afterToolCall` hook runs every tool result through `sanitizeToolOutput()` then `wrapInBoundary()` before it enters LLM context
+- Tool results: `src/agent/agentLoopContext.ts:441-442` — the `afterToolCall` hook runs every tool result through `sanitizeToolOutput()` then `wrapInBoundary()` before it enters LLM context
 
 ### Layer 2: Pattern-Based Sanitization (12 Regex Patterns)
 
@@ -493,13 +494,13 @@ Per Microsoft Research's Spotlighting paper, wrapping untrusted content in expli
 | 11 | `<<<\s*system` | Delimiter injection — fake system block |
 | 12 | `TOOL_OUTPUT_DATA` | Boundary escape — spoofing the close marker |
 
-**`sanitizeToolOutput()`** — `src/agent/contextBoundary.ts:66-72`. Replaces every match with `[FLAGGED_CONTENT: <original>]` so the LLM sees the content was flagged but doesn't act on it. Called in `afterToolCall` (`agentLoopContext.ts:431`) on every tool result, before boundary wrapping.
+**`sanitizeToolOutput()`** — `src/agent/contextBoundary.ts:66-72`. Replaces every match with `[FLAGGED_CONTENT: <original>]` so the LLM sees the content was flagged but doesn't act on it. Called in `afterToolCall` (`agentLoopContext.ts:441`) on every tool result, before boundary wrapping.
 
 ### Layer 3: Finding-Level Validation
 
 Even if something gets through the first two layers, every output is checked before it's recorded. This layer has two sub-checks:
 
-**3a. Content injection check** — `src/agent/contextBoundary.ts:57-59`. `validateFindingContent()` runs the same 12 regex patterns against finding titles and descriptions. Called in `afterToolCall` (`agentLoopContext.ts:413-422`) when the tool is `record_finding`. If suspicious content is detected, an `injection_warning` event is emitted for manual review.
+**3a. Content injection check** — `src/agent/contextBoundary.ts:57-59`. `validateFindingContent()` runs the same 12 regex patterns against finding titles and descriptions. Called in `afterToolCall` (`agentLoopContext.ts:425`) when the tool is `record_finding`. If suspicious content is detected, an `injection_warning` event is emitted for manual review.
 
 **3b. Evidence verification** — `src/tools/analysis/recordFinding.ts:285-426` and `src/tools/analysis/verifyEvidence.ts:169-257`. Every evidence item is verified against the actual file on disk before the finding is accepted:
 
@@ -512,17 +513,17 @@ All operations are deterministic — no LLM calls. Three outcomes per evidence i
 
 ### Also: Secret Redaction (Defense-in-Depth)
 
-`src/agent/redaction.ts` — `redactSecrets()` strips API keys, AWS credentials (`AKIA*`), PEM private keys, connection strings, and bearer tokens from tool output *before* it reaches the sanitization and boundary layers. Called at `agentLoopContext.ts:430`, upstream of sanitize + wrap. This prevents secrets from leaking into LLM context even if the target repo has credentials checked in.
+`src/agent/redaction.ts` — `redactSecrets()` strips API keys, AWS credentials (`AKIA*`), PEM private keys, connection strings, and bearer tokens from tool output *before* it reaches the sanitization and boundary layers. Called at `agentLoopContext.ts:346`, upstream of sanitize + wrap. This prevents secrets from leaking into LLM context even if the target repo has credentials checked in.
 
 ### Processing Order
 
-Every tool result passes through these layers in sequence inside the `afterToolCall` hook (`agentLoopContext.ts:430-433`):
+Every tool result passes through these layers in sequence inside the `afterToolCall` hook (`agentLoopContext.ts:346,441-442`):
 
 ```
 tool result → redactSecrets() → sanitizeToolOutput() → wrapInBoundary() → LLM context
 ```
 
-For `record_finding` specifically, `validateFindingContent()` also runs on the finding title/description at `agentLoopContext.ts:413-422`, and the full evidence verification pipeline runs inside the tool's own `execute()` before the result is returned.
+For `record_finding` specifically, `validateFindingContent()` also runs on the finding title/description at `agentLoopContext.ts:425`, and the full evidence verification pipeline runs inside the tool's own `execute()` before the result is returned.
 
 This defends against naive injection. Sophisticated attacks (encoded payloads, content split across files) are explicitly out of scope — the doc comment in `contextBoundary.ts:8-10` says so.
 

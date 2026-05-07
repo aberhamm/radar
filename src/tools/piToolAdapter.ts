@@ -42,6 +42,7 @@ import { analyzeMiddleware } from './analysis/analyzeMiddleware.js';
 import { recordFinding, type FindingProgressEvent } from './analysis/recordFinding.js';
 import { webSearch } from './web/webSearch.js';
 import { fetchUrl } from './web/fetchUrl.js';
+import { loadReference, listReferences } from './knowledge/loadReference.js';
 import { detectAppRoots } from './analysis/detectAppRoots.js';
 import { detectScopeDrift } from './analysis/detectScopeDrift.js';
 import { getSpecialistPrompts } from './analysis/getSpecialistPrompts.js';
@@ -707,6 +708,27 @@ export function buildPiTools(
       async (_id, params) => {
         try { return ok('get_specialist_prompts', await getSpecialistPrompts(norm(params))); }
         catch (e) { return err('get_specialist_prompts', e as Error); }
+      },
+    ),
+
+    // --- Knowledge tools ---
+    makeTool('list_references', 'List References',
+      'List all available reference knowledge files. Returns keys that can be passed to load_reference.',
+      Type.Object({}),
+      async () => {
+        try { return ok('list_references', await listReferences()); }
+        catch (e) { return err('list_references', e as Error); }
+      },
+    ),
+
+    makeTool('load_reference', 'Load Reference',
+      'Load a reference knowledge file by key (e.g. "nextjs/caching-strategies", "sitecore/jss-nextjs-compatibility"). Contains curated best practices, compatibility matrices, and architectural guidance.',
+      Type.Object({
+        key: Type.String({ description: 'Reference key — use list_references to see available keys. Format: "platform/topic" (e.g. "nextjs/caching-strategies")' }),
+      }),
+      async (_id, params) => {
+        try { return ok('load_reference', await loadReference(norm(params))); }
+        catch (e) { return err('load_reference', e as Error); }
       },
     ),
 

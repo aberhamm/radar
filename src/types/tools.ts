@@ -289,6 +289,23 @@ export interface AnalyzeMiddlewareOutput {
   imports: string[];
 }
 
+// --- Knowledge tools ---
+
+export interface LoadReferenceInput {
+  key: string;
+}
+
+export interface LoadReferenceOutput {
+  key: string;
+  content: string;
+  charCount: number;
+}
+
+export interface ListReferencesOutput {
+  references: { key: string; platform: string; filename: string }[];
+  total: number;
+}
+
 // --- Web tools ---
 
 export interface WebSearchInput {

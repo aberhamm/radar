@@ -94,10 +94,10 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
     const normalized = findings && findings.length > 0 ? normalizeFindings(findings) : [];
     if (normalized.length === 0 && !findingsLoading && !lazyFindings && runId) {
       setFindingsLoading(true);
-      fetch(`/api/history/${encodeURIComponent(runId)}`)
+      fetch(`/api/history/${encodeURIComponent(runId)}/findings`)
         .then(r => r.json())
         .then(data => {
-          const raw = data.result?.state?.findings;
+          const raw = data.findings;
           setLazyFindings(raw && raw.length > 0 ? normalizeFindings(raw) : []);
         })
         .catch(err => {

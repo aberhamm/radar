@@ -70,24 +70,48 @@ export function useLiveAnalysis(
   runStatus: string,
   toolCalls: number,
   budget: number,
+  selectedWorkerOverride?: string | null,
 ): LiveAnalysisState {
   return useMemo(() => {
     const turns: StreamTurn[] = [];
     let currentReasoning = '';
     let currentActivities: Activity[] = [];
     let currentPhase: 'analyze' | 'write' = 'analyze';
+    let currentWorkerId: string | undefined = undefined;
     const coveredTopics = new Set<string>();
     const examinedFilesSet = new Set<string>();
     const findings: Finding[] = [];
     let switchSeen = false;
     let assembleOutputSeen = false;
     let pendingDeltaText = ''; // accumulates text_delta content for live typing
+    let pendingDeltaWorkerId: string | undefined = undefined;
     let statusMessage = '';
     let findingProgress: FindingProgressState | null = null;
     let workers: Map<string, WorkerState> | null = null;
     let selectedWorkerId: string | null = null;
     let synthesisStatus: 'pending' | 'running' | 'complete' | null = null;
     let isParallel = false;
+
+    // Per-worker accumulators — only used in parallel mode.
+    // Each worker gets its own reasoning/activities/delta state so interleaved
+    // events from different workers never stomp each other.
+    interface WorkerAccum {
+      turns: StreamTurn[];
+      currentReasoning: string;
+      currentActivities: Activity[];
+      currentPhase: 'analyze' | 'write';
+      pendingDeltaText: string;
+      switchSeen: boolean;
+    }
+    const workerAccum = new Map<string, WorkerAccum>();
+    function getAccum(wid: string): WorkerAccum {
+      let a = workerAccum.get(wid);
+      if (!a) {
+        a = { turns: [], currentReasoning: '', currentActivities: [], currentPhase: 'analyze', pendingDeltaText: '', switchSeen: false };
+        workerAccum.set(wid, a);
+      }
+      return a;
+    }
 
     for (const ev of events) {
       // Startup status events (loading agent, starting analysis)
@@ -141,6 +165,15 @@ export function useLiveAnalysis(
             w.currentActivity = 'Complete';
           } catch { w.status = 'complete'; }
         }
+        // Flush any remaining state in this worker's accumulator
+        if (isParallel) {
+          const acc = workerAccum.get(ev.workerId);
+          if (acc && acc.currentReasoning) {
+            acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: acc.currentPhase, workerId: ev.workerId });
+            acc.currentReasoning = '';
+            acc.currentActivities = [];
+          }
+        }
         const total = workers.size;
         const done = [...workers.values()].filter(w => w.status === 'complete').length;
         statusMessage = `${done}/${total} workers complete`;
@@ -172,6 +205,213 @@ export function useLiveAnalysis(
         }
       }
 
+      // ── Parallel mode: route event into per-worker accumulator ──
+      if (isParallel && ev.workerId && ev.workerId !== 'synthesis') {
+        const wid = ev.workerId;
+        const acc = getAccum(wid);
+
+        // Model switch
+        if (ev.action === 'switch_to_fast_model' || ev.type === 'model_switch') {
+          if (!acc.switchSeen) {
+            if (acc.currentReasoning) {
+              acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: acc.currentPhase, workerId: wid });
+            }
+            acc.turns.push({ reasoning: '', activities: [], phase: 'analyze', isSwitch: true, workerId: wid });
+            acc.currentReasoning = '';
+            acc.currentActivities = [];
+            acc.currentPhase = 'write';
+            acc.switchSeen = true;
+          }
+          switchSeen = true;
+          continue;
+        }
+
+        // Finding sub-progress
+        if (ev.type === 'finding_progress' && ev.details) {
+          const d = ev.details as Record<string, unknown>;
+          findingProgress = {
+            findingIndex: (d.findingIndex as number) ?? 0,
+            findingTotal: (d.findingTotal as number) ?? 0,
+            findingId: (d.findingId as string) ?? '',
+            phase: (d.phase as FindingProgressState['phase']) ?? 'verifying_evidence',
+            evidenceIndex: d.evidenceIndex as number | undefined,
+            evidenceTotal: d.evidenceTotal as number | undefined,
+            evidenceStatus: d.evidenceStatus as string | undefined,
+            evidenceFile: d.evidenceFile as string | undefined,
+          };
+          continue;
+        }
+
+        // Findings (shared across all workers — not per-worker)
+        if (ev.type === 'finding' || ev.action === 'record_finding') {
+          try {
+            const args = ev.args ? JSON.parse(ev.args) : {};
+            let f = args.finding ?? args;
+            if (typeof f === 'string') f = JSON.parse(f);
+            if (!f || typeof f !== 'object' || !f.title) continue;
+            const incoming: Finding = {
+              id: f.id ?? `f-${findings.length}`,
+              severity: f.severity ?? 'info',
+              category: f.category ?? '',
+              title: f.title ?? ev.action,
+              evidenceFiles: (f.evidence ?? []).map((e: { filePath: string }) => e.filePath),
+              evidence: (f.evidence ?? []).map((e: { filePath: string; lineNumber?: number; snippet?: string; description?: string; verificationStatus?: string; sourceContext?: string; originalSnippet?: string }) => ({
+                filePath: e.filePath,
+                lineNumber: e.lineNumber,
+                snippet: e.snippet ?? '',
+                description: e.description ?? '',
+                verificationStatus: e.verificationStatus,
+                sourceContext: e.sourceContext,
+                originalSnippet: e.originalSnippet,
+              })),
+              note: f.investigationNote ?? f.description ?? '',
+              tags: f.tags ?? [],
+            };
+            const incomingPaths = new Set(incoming.evidenceFiles);
+            const dupIdx = findings.findIndex((existing) => {
+              if (existing.category !== incoming.category) return false;
+              const existPaths = new Set(existing.evidenceFiles);
+              if (incomingPaths.size === 0 && existPaths.size === 0) return false;
+              let inter = 0;
+              for (const p of incomingPaths) if (existPaths.has(p)) inter++;
+              const union = new Set([...incomingPaths, ...existPaths]).size;
+              return union > 0 && inter / union >= 0.5;
+            });
+            if (dupIdx !== -1) {
+              const existing = findings[dupIdx];
+              const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+              const keepSeverity = (SEV_RANK[existing.severity] ?? 0) >= (SEV_RANK[incoming.severity] ?? 0)
+                ? existing.severity : incoming.severity;
+              const seenEvPaths = new Set(existing.evidenceFiles.map((f, i) => `${f}:${existing.evidence[i]?.lineNumber ?? 'none'}`));
+              const mergedEvidence = [...existing.evidence];
+              const mergedEvFiles = [...existing.evidenceFiles];
+              for (let ei = 0; ei < incoming.evidence.length; ei++) {
+                const key = `${incoming.evidenceFiles[ei]}:${incoming.evidence[ei]?.lineNumber ?? 'none'}`;
+                if (!seenEvPaths.has(key)) {
+                  seenEvPaths.add(key);
+                  mergedEvidence.push(incoming.evidence[ei]);
+                  mergedEvFiles.push(incoming.evidenceFiles[ei]);
+                }
+              }
+              findings[dupIdx] = {
+                ...existing,
+                severity: keepSeverity,
+                note: existing.note.length >= incoming.note.length ? existing.note : incoming.note,
+                evidence: mergedEvidence,
+                evidenceFiles: mergedEvFiles,
+                tags: [...new Set([...existing.tags, ...incoming.tags])],
+              };
+            } else {
+              findings.push(incoming);
+            }
+          } catch { /* parse error */ }
+          const existing = acc.currentActivities.find(a => a.label === 'record_finding');
+          if (existing) existing.pending = false;
+          findingProgress = null;
+          continue;
+        }
+
+        // Assemble output
+        if (ev.type === 'assemble_output' || ev.action === 'assemble_output') {
+          assembleOutputSeen = true;
+        }
+
+        // Verification
+        if (ev.type === 'verification' && ev.result) {
+          if (acc.currentReasoning && acc.currentActivities.length > 0) {
+            acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: acc.currentPhase, workerId: wid });
+            acc.currentReasoning = '';
+            acc.currentActivities = [];
+          }
+          acc.turns.push({
+            reasoning: String(ev.result),
+            activities: [{ label: ev.action ?? 'post_process', files: [], detail: '' }],
+            phase: 'write',
+            workerId: wid,
+          });
+          continue;
+        }
+
+        // Text delta — per-worker
+        if (ev.type === 'text_delta' && ev.reasoning) {
+          if (!acc.switchSeen) acc.pendingDeltaText = ev.reasoning;
+          continue;
+        }
+
+        // Clear status once real investigation events arrive
+        if (statusMessage && (ev.type === 'text_response' || ev.type === 'tool_call')) {
+          statusMessage = '';
+        }
+
+        // Text response — per-worker turn boundary
+        const reasoning = ev.fullReasoning ?? ev.reasoning;
+        if (ev.type === 'text_response' && reasoning) {
+          if (acc.switchSeen) continue;
+          if (acc.currentReasoning) {
+            acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: acc.currentPhase, workerId: wid });
+          }
+          acc.currentReasoning = reasoning;
+          acc.currentActivities = [];
+          acc.pendingDeltaText = '';
+          continue;
+        }
+
+        // Tool start — per-worker
+        if (ev.type === 'tool_start' && ev.action) {
+          if (acc.pendingDeltaText || acc.currentReasoning) {
+            const text = acc.pendingDeltaText || acc.currentReasoning;
+            if (text && acc.currentActivities.length === 0) {
+              acc.currentReasoning = text;
+              acc.pendingDeltaText = '';
+            }
+          }
+          const DIR_TOOLS = new Set(['list_directory', 'grep_pattern', 'find_files', 'analyze_route_structure', 'analyze_component_directives', 'analyze_middleware', 'analyze_env_usage']);
+          let files: string[] = [];
+          let detail = '';
+          try {
+            const args = ev.args ? JSON.parse(ev.args) : {};
+            if (args.path && !DIR_TOOLS.has(ev.action)) files = [args.path];
+            if (args.paths) files = args.paths;
+            if (args.filePath) files = [args.filePath];
+            if (args.pattern) detail = args.pattern;
+          } catch { /* parse error */ }
+          files = files.filter(f => f && f !== '.');
+          const existing = acc.currentActivities.find(a => a.label === ev.action);
+          if (existing) { existing.files.push(...files); }
+          else { acc.currentActivities.push({ label: ev.action, files, detail, pending: true }); }
+          files.filter(f => f && f !== '.').forEach(f => examinedFilesSet.add(f));
+          const hints = ACTION_CATEGORY_HINTS[ev.action];
+          if (hints) hints.forEach(c => coveredTopics.add(c));
+          continue;
+        }
+
+        // Tool call — per-worker
+        if (ev.type === 'tool_call' && ev.action) {
+          const DIR_TOOLS = new Set(['list_directory', 'grep_pattern', 'find_files', 'analyze_route_structure', 'analyze_component_directives', 'analyze_middleware', 'analyze_env_usage']);
+          let files: string[] = [];
+          let detail = '';
+          try {
+            const args = ev.args ? JSON.parse(ev.args) : {};
+            if (args.path && !DIR_TOOLS.has(ev.action)) files = [args.path];
+            if (args.paths) files = args.paths;
+            if (args.filePath) files = [args.filePath];
+            if (args.pattern) detail = args.pattern;
+            if (args.packages) detail = Object.keys(args.packages).join(', ');
+          } catch { /* parse error */ }
+          files = files.filter(f => f && f !== '.');
+          const existing = acc.currentActivities.find(a => a.label === ev.action);
+          if (existing) { existing.files.push(...files); existing.pending = false; }
+          else { acc.currentActivities.push({ label: ev.action, files, detail }); }
+          files.filter(f => f && f !== '.').forEach(f => examinedFilesSet.add(f));
+          const hints = ACTION_CATEGORY_HINTS[ev.action];
+          if (hints) hints.forEach(c => coveredTopics.add(c));
+        }
+
+        continue; // All worker events handled above
+      }
+
+      // ── Non-parallel (single-worker) event processing ──
+
       // Budget rebalance (multi-goal sequential: after core, before specialists)
       if (ev.action === 'budget_rebalance' && ev.result) {
         turns.push({ reasoning: 'Specialist budgets adjusted based on core findings', activities: [{ label: 'budget_rebalance', files: [], detail: ev.result }], phase: 'analyze' });
@@ -182,11 +422,12 @@ export function useLiveAnalysis(
       // Pass boundary (multi-goal: between investigation passes)
       if (ev.action === 'pass_boundary' && ev.result) {
         if (currentReasoning) {
-          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase, workerId: currentWorkerId });
         }
         turns.push({ reasoning: `Starting ${ev.result} pass`, activities: [], phase: 'analyze' });
         currentReasoning = '';
         currentActivities = [];
+        currentWorkerId = undefined;
         statusMessage = `Running ${ev.result} pass...`;
         continue;
       }
@@ -200,11 +441,12 @@ export function useLiveAnalysis(
       if (ev.action === 'switch_to_fast_model' || ev.type === 'model_switch') {
         if (!switchSeen) {
           if (currentReasoning) {
-            turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+            turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase, workerId: currentWorkerId });
           }
-          turns.push({ reasoning: '', activities: [], phase: 'analyze', isSwitch: true });
+          turns.push({ reasoning: '', activities: [], phase: 'analyze', isSwitch: true, workerId: ev.workerId });
           currentReasoning = '';
           currentActivities = [];
+          currentWorkerId = undefined;
           currentPhase = 'write';
           switchSeen = true;
         }
@@ -311,21 +553,26 @@ export function useLiveAnalysis(
       if (ev.type === 'verification' && ev.result) {
         // Commit any pending reasoning first
         if (currentReasoning && currentActivities.length > 0) {
-          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase, workerId: currentWorkerId });
           currentReasoning = '';
           currentActivities = [];
+          currentWorkerId = undefined;
         }
         turns.push({
           reasoning: String(ev.result),
           activities: [{ label: ev.action ?? 'post_process', files: [], detail: '' }],
           phase: 'write',
+          workerId: ev.workerId,
         });
         continue;
       }
 
       // Streaming text delta — update live typing text as LLM generates
       if (ev.type === 'text_delta' && ev.reasoning) {
-        if (!switchSeen) pendingDeltaText = ev.reasoning;
+        if (!switchSeen) {
+          pendingDeltaText = ev.reasoning;
+          pendingDeltaWorkerId = ev.workerId;
+        }
         continue;
       }
 
@@ -335,11 +582,13 @@ export function useLiveAnalysis(
       if (ev.type === 'text_response' && reasoning) {
         if (switchSeen) continue;
         if (currentReasoning) {
-          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
+          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase, workerId: currentWorkerId });
         }
         currentReasoning = reasoning;
+        currentWorkerId = ev.workerId;
         currentActivities = [];
         pendingDeltaText = ''; // clear — text_response supersedes deltas
+        pendingDeltaWorkerId = undefined;
         continue;
       }
 
@@ -351,7 +600,9 @@ export function useLiveAnalysis(
           if (text && currentActivities.length === 0) {
             // First tool_start after reasoning — start accumulating under this reasoning
             currentReasoning = text;
+            currentWorkerId = currentWorkerId ?? ev.workerId;
             pendingDeltaText = '';
+            pendingDeltaWorkerId = undefined;
           }
         }
         const DIR_TOOLS = new Set(['list_directory', 'grep_pattern', 'find_files', 'analyze_route_structure', 'analyze_component_directives', 'analyze_middleware', 'analyze_env_usage']);
@@ -412,25 +663,73 @@ export function useLiveAnalysis(
       }
     }
 
-    // Remaining events: commit as turn or show as typing
-    let typingText = '';
-    if (currentReasoning) {
-      if (currentActivities.length > 0) {
-        turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase });
-      } else {
-        typingText = currentReasoning;
-      }
-    }
-    // Streaming text (text_delta) takes priority — shows live LLM output
-    if (pendingDeltaText) {
-      typingText = pendingDeltaText;
-    }
+    // ── Resolve final state ──
+    // In parallel mode, merge per-worker accumulators into the output and
+    // select only the effective worker's state for turns/typing/pending.
+    const effectiveWorker = selectedWorkerOverride ?? selectedWorkerId;
 
-    // Clean reasoning in all turns and typing text
-    for (const turn of turns) {
-      turn.reasoning = cleanReasoning(turn.reasoning);
+    let filteredTurns: StreamTurn[];
+    let filteredTypingText: string;
+    let filteredPendingActions: string[];
+    let filteredFindingProgress: FindingProgressState | null = findingProgress;
+
+    if (isParallel && effectiveWorker) {
+      // Resolve the selected worker's accumulator
+      const acc = workerAccum.get(effectiveWorker);
+      if (acc) {
+        // Finalize: commit remaining reasoning or surface as typing text
+        let wTyping = '';
+        if (acc.currentReasoning) {
+          if (acc.currentActivities.length > 0) {
+            acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: acc.currentPhase, workerId: effectiveWorker });
+          } else {
+            wTyping = acc.currentReasoning;
+          }
+        }
+        if (acc.pendingDeltaText) wTyping = acc.pendingDeltaText;
+
+        // Include shared (non-worker) turns first, then this worker's turns
+        const sharedTurns = turns.filter(t => !t.workerId);
+        filteredTurns = [...sharedTurns, ...acc.turns];
+        filteredTypingText = cleanReasoning(wTyping);
+        filteredPendingActions = acc.currentActivities.filter(a => a.pending).map(a => a.label);
+        // Only show finding progress if this worker is running
+        if (findingProgress) {
+          const w = workers?.get(effectiveWorker);
+          if (w && w.status !== 'running') filteredFindingProgress = null;
+        }
+      } else {
+        // Worker not started yet — show shared turns only
+        filteredTurns = turns.filter(t => !t.workerId);
+        filteredTypingText = '';
+        filteredPendingActions = [];
+      }
+
+      // Clean reasoning in filtered turns
+      for (const turn of filteredTurns) {
+        turn.reasoning = cleanReasoning(turn.reasoning);
+      }
+    } else {
+      // Non-parallel: use the single-track accumulators (original behavior)
+      let typingText = '';
+      if (currentReasoning) {
+        if (currentActivities.length > 0) {
+          turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase, workerId: currentWorkerId });
+        } else {
+          typingText = currentReasoning;
+        }
+      }
+      if (pendingDeltaText) typingText = pendingDeltaText;
+
+      for (const turn of turns) {
+        turn.reasoning = cleanReasoning(turn.reasoning);
+      }
+      typingText = cleanReasoning(typingText);
+
+      filteredTurns = turns;
+      filteredTypingText = typingText;
+      filteredPendingActions = currentActivities.filter(a => a.pending).map(a => a.label);
     }
-    typingText = cleanReasoning(typingText);
 
     // Derive phase
     let phase: AnimationPhase;
@@ -453,34 +752,29 @@ export function useLiveAnalysis(
     }
 
     // Last committed turn is "active" while waiting for next reasoning
-    const activeTurnIndex = typingText === '' && turns.length > 0 && phase !== 'done'
-      ? turns.length - 1
+    const activeTurnIndex = filteredTypingText === '' && filteredTurns.length > 0 && phase !== 'done'
+      ? filteredTurns.length - 1
       : null;
 
     const scoreVisible = phase === 'done' && findings.length > 0;
 
-    // Collect currently-executing tool names (pending = tool_start without tool_call yet)
-    const pendingActions = currentActivities
-      .filter(a => a.pending)
-      .map(a => a.label);
-
     return {
       phase,
-      turns,
-      typingText,
+      turns: filteredTurns,
+      typingText: filteredTypingText,
       activeTurnIndex,
       coveredTopics,
       examinedFiles: [...examinedFilesSet],
       findings,
       scoreVisible,
       progressPercent,
-      pendingActions,
+      pendingActions: filteredPendingActions,
       statusMessage,
-      findingProgress,
+      findingProgress: filteredFindingProgress,
       workers,
-      selectedWorkerId,
+      selectedWorkerId: effectiveWorker,
       synthesisStatus,
       isParallel,
     };
-  }, [events, runStatus, toolCalls, budget]);
+  }, [events, runStatus, toolCalls, budget, selectedWorkerOverride]);
 }

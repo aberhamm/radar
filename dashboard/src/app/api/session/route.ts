@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
       metrics: session.result.metrics,
       terminationReason: session.result.terminationReason,
       briefMarkdown: session.result.briefMarkdown,
+      state: session.result.state ? { findings: session.result.state.findings } : undefined,
     } : null,
   });
 }

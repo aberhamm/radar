@@ -29,16 +29,18 @@ function makeState(): AgentState {
 }
 
 describe('buildPiTools', () => {
-  it('returns 26 tools (21 + web_search + switch_to_fast_model + assemble_output + tool_search + clone_repo)', () => {
+  it('returns 28 tools (21 + web_search + switch_to_fast_model + assemble_output + tool_search + clone_repo + list_references + load_reference)', () => {
     const state = makeState();
     const { tools } = buildPiTools(state);
-    expect(tools.length).toBe(26);
+    expect(tools.length).toBe(28);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_directory');
     expect(names).toContain('record_finding');
     expect(names).toContain('assemble_output');
     expect(names).toContain('web_search');
     expect(names).toContain('tool_search');
+    expect(names).toContain('list_references');
+    expect(names).toContain('load_reference');
   });
 
   it('all tools have name, label, description, parameters, execute', () => {

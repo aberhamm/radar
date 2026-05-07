@@ -264,7 +264,10 @@ export class AgentLoopContext {
     }
 
     if (this.state.toolCallCount >= this.currentBudget) {
-      if (!this.isWorker && toolName === 'assemble_output') {
+      if (toolName === 'assemble_output' && !this.isWorker) {
+        return undefined;
+      }
+      if (toolName === 'record_finding') {
         return undefined;
       }
       if (!this.isWorker && WRITING_TOOLS.has(toolName)) {
@@ -443,9 +446,36 @@ export class AgentLoopContext {
       return { content: [{ type: 'text', text: wrapped }] };
     }
 
-    // Steering messages — full mode only (workers have hard budgets, no steering)
-    if (!this.isWorker) {
-      const remaining = this.currentBudget - this.state.toolCallCount;
+    // Steering messages
+    const remaining = this.currentBudget - this.state.toolCallCount;
+
+    if (this.isWorker) {
+      // Worker steering: lightweight nudges to record findings before budget runs out
+      if (
+        !this.budgetWarningRecordingSent &&
+        this.state.findings.length === 0 &&
+        this.state.toolCallCount >= Math.floor(this.currentBudget * 0.5) &&
+        remaining > 0
+      ) {
+        this.budgetWarningRecordingSent = true;
+        this.agent.steer({
+          role: 'user',
+          content: `BUDGET WARNING: ${this.state.toolCallCount}/${this.currentBudget} tool calls used, ${remaining} remaining, 0 findings recorded. Call record_finding NOW for observations so far. You can continue investigating after recording, but do not defer all recording to the end — budget is hard-capped.`,
+          timestamp: Date.now(),
+        });
+      } else if (
+        !this.budgetWarning5Sent &&
+        remaining <= 3 &&
+        remaining > 0
+      ) {
+        this.budgetWarning5Sent = true;
+        this.agent.steer({
+          role: 'user',
+          content: `CRITICAL: Only ${remaining} tool calls left. Stop investigating. Call record_finding immediately for every observation you have. Budget is hard — unrecorded observations will be lost.`,
+          timestamp: Date.now(),
+        });
+      }
+    } else {
       if (
         !this.progressSummarySent &&
         this.assembledRef.sections === null &&

@@ -62,7 +62,7 @@ Verified in Chunk 0 spike:
 
 ## Goal types
 
-Nine analysis goals (defined in `src/types/state.ts`), each with its own rules file and prompt:
+Ten analysis goals (defined in `src/types/state.ts`), each with its own rules file and prompt:
 
 | Goal | Rule file | Use case | Output |
 |------|-----------|----------|--------|
@@ -75,6 +75,7 @@ Nine analysis goals (defined in `src/types/state.ts`), each with its own rules f
 | `security-review` | `goal-security-review.md` | Security audit | 6-category security scorecard |
 | `nextjs` | `goal-nextjs.md` | Next.js framework health | 7-category framework scorecard |
 | `accessibility` | `goal-accessibility.md` | WCAG 2.1 AA compliance | 6-category a11y scorecard |
+| `performance` | `goal-performance.md` | Web performance / Core Web Vitals | Performance scorecard + findings |
 
 `ci-check` is designed for CI pipelines: 15 tool calls max, 3 categories (deps/security/config), compact output via `renderCiComment()` for PR comments.
 
