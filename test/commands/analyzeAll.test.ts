@@ -118,6 +118,7 @@ function makeRunResult(overrides: Record<string, unknown> = {}): RunResult {
       fetchedDocs: [],
       investigationLog: [{ step: 1, action: 'test', reasoning: '', result: '' }],
       toolCallCount: 30,
+      totalToolCallsExecuted: 30,
       toolCallBudget: 70,
       webSearchCount: 0,
       webSearchBudget: 5,

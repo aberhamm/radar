@@ -65,7 +65,9 @@ function groupEventsIntoTurns(events: StepEvent[]): Turn[] {
                || ev.action === 'budget_plan' || ev.action === 'budget_rebalance') {
       current.special.push(ev);
     } else if (ev.action === 'detect_app_roots' || ev.action === 'detect_scope_drift' || ev.action === 'get_specialist_prompts') {
-      // Infrastructure tools — skip entirely, not visible to users
+      // Infrastructure tools — skip from turns (rendered in PreComputeHeader instead)
+    } else if (ev.action === 'pre_compute') {
+      // Rendered as PreComputeHeader, not as a turn
     } else {
       current.toolCalls.push(ev);
     }
@@ -313,6 +315,93 @@ function SpecialEvent({ event }: { event: StepEvent }) {
   );
 }
 
+// ─── Pre-compute header ──────────────────────────────────────────
+
+interface PreComputeRoot {
+  path: string;
+  type: string;
+  framework?: string;
+  frameworkVersion?: string;
+  plugins?: string[];
+}
+
+interface PreComputeDetails {
+  roots?: PreComputeRoot[];
+  specialists?: { name: string; relevance: string }[];
+  monorepoTool?: string;
+  packageName?: string;
+}
+
+function PreComputeHeader({ event }: { event: StepEvent }) {
+  const details = event.details as PreComputeDetails | undefined;
+  if (!details?.roots?.length && !details?.specialists?.length) return null;
+
+  return (
+    <div className="bg-surface rounded-xl border border-separator shadow-sm p-4 mb-2 animate-in fade-in-0 slide-in-from-top-2 duration-300">
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-tertiary-label">Detected Stack</span>
+        {details.monorepoTool && (
+          <span className="text-[10px] font-mono rounded-md px-2 py-0.5 bg-elevated text-secondary-label">
+            {details.monorepoTool}
+          </span>
+        )}
+      </div>
+
+      {details.roots && details.roots.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {details.roots.map((root) => (
+            <span
+              key={root.path}
+              className="inline-flex items-center gap-1.5 text-[11px] font-mono bg-elevated rounded-md px-2.5 py-1 border border-transparent"
+            >
+              <span className="font-semibold text-label">{root.framework ?? root.type}</span>
+              {root.frameworkVersion && (
+                <span className="text-tertiary-label">{root.frameworkVersion}</span>
+              )}
+              {root.path !== '.' && (
+                <span className="text-quaternary-label">{root.path}</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {details.roots?.some(r => r.plugins?.length) && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {[...new Set(details.roots.flatMap(r => r.plugins ?? []))].map((plugin) => (
+            <span
+              key={plugin}
+              className="text-[10px] font-mono rounded px-2 py-0.5 bg-canvas text-tertiary-label"
+            >
+              {plugin}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {details.specialists && details.specialists.length > 0 && (
+        <div className="flex items-center gap-2 pt-2 border-t border-separator">
+          <span className="text-[10px] text-tertiary-label">Specialists:</span>
+          <div className="flex flex-wrap gap-1">
+            {details.specialists.map((s) => (
+              <span
+                key={s.name}
+                className="text-[10px] font-medium rounded-md px-2 py-0.5"
+                style={{
+                  color: s.relevance === 'high' ? 'var(--color-tint)' : 'var(--color-secondary-label)',
+                  background: s.relevance === 'high' ? 'color-mix(in srgb, var(--color-tint) 8%, transparent)' : 'var(--color-elevated)',
+                }}
+              >
+                {s.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Turn card ────────────────────────────────────────────────────
 
 type TurnStatus = 'active' | 'complete';
@@ -483,6 +572,7 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
 
   const turns = useMemo(() => groupEventsIntoTurns(events), [events]);
   const fileOriginMap = useMemo(() => buildFileOriginMap(events), [events]);
+  const preComputeEvent = useMemo(() => events.find(e => e.action === 'pre_compute'), [events]);
 
   useEffect(() => {
     if (!autoScroll || !scrollRef.current) return;
@@ -549,6 +639,9 @@ export function EventStream({ events, onNewEvent, onBudgetPaused, onRunComplete,
       )}
 
       <div className="relative mx-4">
+        {/* Pre-compute header */}
+        {preComputeEvent && <PreComputeHeader event={preComputeEvent} />}
+
         {/* Timeline connector */}
         {turns.length > 1 && (
           <div className="absolute left-6 top-6 bottom-6 w-px bg-separator" />

@@ -7,7 +7,7 @@ interface UseEventSourceCallbacks {
   onEvent: (event: StepEvent) => void;
   onBudgetPaused: (data: { findings: number; toolCalls: number; budget: number }) => void;
   onBudgetResumed?: () => void;
-  onRunComplete: (data: { scorecard: unknown; metrics: unknown; terminationReason: string }) => void;
+  onRunComplete: (data: { scorecard: unknown; metrics: unknown; terminationReason: string; multiGoal?: boolean; parentRunId?: string }) => void;
   onRunError: (error: string) => void;
 }
 
@@ -40,7 +40,7 @@ export function useEventSource(enabled: boolean, callbacks: UseEventSourceCallba
         } else if (data.type === 'heartbeat') {
           // Keep-alive during budget pause — no action needed, lastEventAt already updated
         } else if (data.type === 'run_complete') {
-          cbRef.current.onRunComplete(data.result);
+          cbRef.current.onRunComplete({ ...data.result, multiGoal: data.multiGoal, parentRunId: data.parentRunId });
           es.close();
         } else if (data.type === 'run_cancelled') {
           es.close();

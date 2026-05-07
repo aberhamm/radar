@@ -11,6 +11,7 @@ function makeMinimalState(overrides?: Partial<AgentState>): AgentState {
     findings: [],
     filesRead: new Set(),
     toolCallCount: 17,
+    totalToolCallsExecuted: 17,
     toolCallBudget: 45,
     webSearchCount: 0,
     webSearchBudget: 0,
@@ -50,7 +51,7 @@ function makeMinimalMetrics(): RunMetrics {
 
 describe('buildFullExport', () => {
   it('populates terminationReason, toolCallsUsed, toolCallBudget in metadata', () => {
-    const state = makeMinimalState({ toolCallCount: 23 });
+    const state = makeMinimalState({ toolCallCount: 23, totalToolCallsExecuted: 23 });
     const result = buildFullExport(
       state,
       makeMinimalScorecard(),
@@ -66,7 +67,7 @@ describe('buildFullExport', () => {
   });
 
   it('leaves metadata fields undefined when not provided', () => {
-    const state = makeMinimalState({ toolCallCount: 0 });
+    const state = makeMinimalState({ toolCallCount: 0, totalToolCallsExecuted: 0 });
     const result = buildFullExport(
       state,
       makeMinimalScorecard(),
@@ -80,7 +81,7 @@ describe('buildFullExport', () => {
   });
 
   it('includes metadata fields in serialized JSON output', () => {
-    const state = makeMinimalState({ toolCallCount: 30 });
+    const state = makeMinimalState({ toolCallCount: 30, totalToolCallsExecuted: 30 });
     const exportData = buildFullExport(
       state,
       makeMinimalScorecard(),

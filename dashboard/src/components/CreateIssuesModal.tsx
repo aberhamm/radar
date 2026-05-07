@@ -84,13 +84,13 @@ export function CreateIssuesModal({ isOpen, onClose, findings, repoUrl }: Create
       const p = parseGitHubRepo(repoUrl);
       setOwner(p?.owner ?? '');
       setRepo(p?.repo ?? '');
-      setThreshold('medium');
+      setThreshold(findings.length === 1 ? 'info' : 'medium');
       setState('form');
       setResult(null);
       setErrorMsg('');
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [isOpen, repoUrl]);
+  }, [isOpen, repoUrl, findings.length]);
 
   const eligibleCount = findings.filter(
     f => (SEV_ORDER[f.severity as Severity] ?? 0) >= (SEV_ORDER[threshold] ?? 0),
@@ -198,32 +198,43 @@ export function CreateIssuesModal({ isOpen, onClose, findings, repoUrl }: Create
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[12px] font-medium text-[var(--color-secondary-label)]">Minimum severity</label>
-                <select
-                  value={threshold}
-                  onChange={e => setThreshold(e.target.value as Severity)}
-                  className="w-full bg-[var(--color-elevated)] rounded-md px-3 py-2 text-[13px] text-[var(--color-label)] border border-[var(--color-separator)]/60 outline-none focus:border-[var(--color-tint)] cursor-pointer"
-                >
-                  <option value="critical">Critical only</option>
-                  <option value="high">High and above</option>
-                  <option value="medium">Medium and above</option>
-                  <option value="low">Low and above</option>
-                  <option value="info">All findings</option>
-                </select>
-              </div>
+              {findings.length > 1 && (
+                <div className="space-y-1.5">
+                  <label className="text-[12px] font-medium text-[var(--color-secondary-label)]">Minimum severity</label>
+                  <select
+                    value={threshold}
+                    onChange={e => setThreshold(e.target.value as Severity)}
+                    className="w-full bg-[var(--color-elevated)] rounded-md px-3 py-2 text-[13px] text-[var(--color-label)] border border-[var(--color-separator)]/60 outline-none focus:border-[var(--color-tint)] cursor-pointer"
+                  >
+                    <option value="critical">Critical only</option>
+                    <option value="high">High and above</option>
+                    <option value="medium">Medium and above</option>
+                    <option value="low">Low and above</option>
+                    <option value="info">All findings</option>
+                  </select>
+                </div>
+              )}
 
               <div className="bg-[var(--color-elevated)] rounded-lg px-4 py-3 text-[12px] text-[var(--color-secondary-label)]">
-                <span className="font-medium text-[var(--color-label)]">{eligibleCount}</span> issue{eligibleCount !== 1 ? 's' : ''} will be created
-                {Object.keys(sevBreakdown).length > 0 && (
-                  <span className="ml-1.5">
-                    ({Object.entries(sevBreakdown)
-                      .sort(([a], [b]) => (SEV_ORDER[b as Severity] ?? 0) - (SEV_ORDER[a as Severity] ?? 0))
-                      .map(([sev, count]) => `${count} ${sev}`)
-                      .join(', ')})
-                  </span>
+                {findings.length === 1 ? (
+                  <>
+                    <span className="font-medium text-[var(--color-label)]">{findings[0].title}</span>
+                    <p className="mt-1 text-[var(--color-tertiary-label)]">{findings[0].severity} / {findings[0].category}</p>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-[var(--color-label)]">{eligibleCount}</span> issue{eligibleCount !== 1 ? 's' : ''} will be created
+                    {Object.keys(sevBreakdown).length > 0 && (
+                      <span className="ml-1.5">
+                        ({Object.entries(sevBreakdown)
+                          .sort(([a], [b]) => (SEV_ORDER[b as Severity] ?? 0) - (SEV_ORDER[a as Severity] ?? 0))
+                          .map(([sev, count]) => `${count} ${sev}`)
+                          .join(', ')})
+                      </span>
+                    )}
+                    <p className="mt-1 text-[var(--color-tertiary-label)]">Duplicates will be skipped automatically via fingerprint matching.</p>
+                  </>
                 )}
-                <p className="mt-1 text-[var(--color-tertiary-label)]">Duplicates will be skipped automatically via fingerprint matching.</p>
               </div>
             </>
           )}

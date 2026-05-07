@@ -64,6 +64,7 @@ export async function runSynthesis(config: SynthesisConfig): Promise<SynthesisRe
     findings: [...config.findings],
     filesRead: new Set(),
     toolCallCount: 0,
+    totalToolCallsExecuted: 0,
     toolCallBudget: budget,
     webSearchCount: 0,
     webSearchBudget: 0,

@@ -14,6 +14,7 @@ function makeState(overrides?: Partial<AgentState>): AgentState {
     filesRead: new Set<string>(),
     fileReadCache: new Map(),
     toolCallCount: 0,
+    totalToolCallsExecuted: 0,
     toolCallBudget: 45,
     webSearchCount: 0,
     webSearchBudget: 5,

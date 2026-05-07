@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
           terminationReason: 'completed',
           briefMarkdown: '',
           outputPaths: [],
-          state: { findings: [] },
+          state: { findings: multiResult.findings },
         };
 
         // Refresh history

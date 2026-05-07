@@ -36,6 +36,7 @@ export interface SerializedAgentState {
   filesRead: string[];
   fileReadCache: Record<string, { mtime: number; size: number; summary?: string }>;
   toolCallCount: number;
+  totalToolCallsExecuted: number;
   toolCallBudget: number;
   webSearchCount: number;
   webSearchBudget: number;

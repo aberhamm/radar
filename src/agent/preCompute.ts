@@ -94,9 +94,9 @@ export function formatPreComputeContext(pre: PreComputeResult): string {
 
   if (pre.specialists && pre.specialists.specialists.length > 0) {
     const specs = pre.specialists.specialists.map(s =>
-      `  ${s.name} (${s.relevance}): ${s.checklist.slice(0, 150)}${s.checklist.length > 150 ? '...' : ''}`
-    ).join('\n');
-    sections.push(`Specialist Checklists:\n${specs}`);
+      `### ${s.name} (${s.relevance} relevance)\n${s.checklist}`
+    ).join('\n\n');
+    sections.push(`Specialist Investigation Checklists — follow these during investigation:\n\n${specs}`);
   }
 
   if (pre.packageJson) {

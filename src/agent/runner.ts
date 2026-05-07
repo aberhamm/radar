@@ -105,6 +105,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     findings: [],
     filesRead: new Set(),
     toolCallCount: 0,
+    totalToolCallsExecuted: 0,
     toolCallBudget,
     webSearchCount: 0,
     webSearchBudget,
@@ -181,6 +182,21 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         action: 'pre_compute',
         type: 'tool_call',
         result: `Pre-computed: ${preComputed.appRoots ? preComputed.appRoots.roots.length + ' app roots' : 'no roots'}, ${preComputed.specialists ? preComputed.specialists.specialists.length + ' specialists' : 'no specialists'}, ${preComputed.packageJson ? 'package.json' : 'no package.json'}, ${preComputed.fileTree ? preComputed.fileTree.entries.length + ' entries' : 'no tree'}`,
+        details: {
+          roots: preComputed.appRoots?.roots.map(r => ({
+            path: r.path,
+            type: r.type,
+            framework: r.framework,
+            frameworkVersion: r.frameworkVersion,
+            plugins: r.plugins,
+          })),
+          specialists: preComputed.specialists?.specialists.map(s => ({
+            name: s.name,
+            relevance: s.relevance,
+          })),
+          monorepoTool: preComputed.appRoots?.monorepoTool,
+          packageName: preComputed.packageJson?.name,
+        },
       });
     } catch {
       // Graceful — agent proceeds without pre-computed context
@@ -486,7 +502,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
 
   scorecard.metadata.repoUrl = config.repoUrl;
   scorecard.metadata.detectedPlatform = platform;
-  scorecard.metadata.toolCallsUsed = state.toolCallCount;
+  scorecard.metadata.toolCallsUsed = state.totalToolCallsExecuted;
   scorecard.metadata.webSearchesUsed = state.webSearchCount;
   scorecard.metadata.urlFetchesUsed = state.urlFetchCount;
   scorecard.metadata.documentationSources = state.fetchedDocs.map((d) => ({ url: d.url, title: d.title }));

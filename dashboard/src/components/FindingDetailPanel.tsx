@@ -12,11 +12,13 @@ import {
   CheckCircle,
   Copy,
   FileCode,
+  Clipboard,
+  GitPullRequestCreate,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { Finding, EvidenceItem } from '@/lib/runTransform';
 import type { TriageStatus } from '@/lib/triageState';
-import { buildAiFixPrompt } from '@/lib/exportPayloads';
+import { buildAiFixPrompt, buildJiraPayload, buildAdoPayload } from '@/lib/exportPayloads';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -45,7 +47,8 @@ export interface FindingDetailPanelProps {
   onTriageChange: (status: TriageStatus) => void;
   onClose: () => void;
   onNav: (direction: 'prev' | 'next') => void;
-  onExport?: (findings: Finding[]) => void;
+  onGithubExport?: (findings: Finding[]) => void;
+  onCopy?: (label: string, payload: string) => void;
   onViewFile?: (filePath: string, highlightLine?: number) => void;
   currentIndex: number;
   totalCount: number;
@@ -105,6 +108,84 @@ function CodeSnippet({ evidence, onViewFile }: { evidence: EvidenceItem; onViewF
   );
 }
 
+// ─── Export dropdown ────────────────────────────────────────────
+
+function ExportDropdown({ finding, onGithubExport, onCopy }: { finding: Finding; onGithubExport?: (findings: Finding[]) => void; onCopy?: (label: string, payload: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const copyPayload = useCallback(async (label: string, payload: string) => {
+    if (onCopy) {
+      onCopy(label, payload);
+    } else {
+      try { await navigator.clipboard.writeText(payload); } catch { /* */ }
+    }
+    setOpen(false);
+  }, [onCopy]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 h-7 rounded-md border border-[var(--color-separator)] px-2.5 text-[11px] font-medium text-[var(--color-secondary-label)] cursor-pointer hover:bg-[var(--color-elevated)] active:scale-[0.98] transition-all"
+      >
+        <ExternalLink className="w-3 h-3" />
+        Export
+        <ChevronDown className="w-3 h-3 opacity-50" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-1 z-50 bg-[var(--color-surface)] border border-[var(--color-separator)] rounded-lg shadow-[var(--shadow-elevated)] py-1 min-w-[200px]" style={{ animation: 'scaleIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+          {onGithubExport && (
+            <button
+              type="button"
+              onClick={() => { onGithubExport([finding]); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[var(--color-label)] hover:bg-[var(--color-elevated)] transition-colors cursor-pointer"
+            >
+              <GitPullRequestCreate className="w-3.5 h-3.5 text-[var(--color-secondary-label)]" />
+              Create GitHub Issue
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => copyPayload('Jira JSON copied', JSON.stringify(buildJiraPayload(finding), null, 2))}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[var(--color-label)] hover:bg-[var(--color-elevated)] transition-colors cursor-pointer"
+          >
+            <Clipboard className="w-3.5 h-3.5 text-[var(--color-secondary-label)]" />
+            Copy Jira JSON
+          </button>
+          <button
+            type="button"
+            onClick={() => copyPayload('ADO JSON copied', JSON.stringify(buildAdoPayload(finding), null, 2))}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[var(--color-label)] hover:bg-[var(--color-elevated)] transition-colors cursor-pointer"
+          >
+            <Clipboard className="w-3.5 h-3.5 text-[var(--color-secondary-label)]" />
+            Copy Azure DevOps JSON
+          </button>
+          <div className="border-t border-[var(--color-separator)]/50 my-1" />
+          <button
+            type="button"
+            onClick={() => copyPayload('AI fix prompt copied', buildAiFixPrompt(finding))}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[var(--color-label)] hover:bg-[var(--color-elevated)] transition-colors cursor-pointer"
+          >
+            <Copy className="w-3.5 h-3.5 text-[var(--color-secondary-label)]" />
+            Copy AI Fix Prompt
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────
 
 export function FindingDetailPanel({
@@ -113,7 +194,8 @@ export function FindingDetailPanel({
   onTriageChange,
   onClose,
   onNav,
-  onExport,
+  onGithubExport,
+  onCopy,
   onViewFile,
   currentIndex,
   totalCount,
@@ -358,16 +440,11 @@ export function FindingDetailPanel({
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 shrink-0">
-          {onExport && (
-            <button
-              type="button"
-              onClick={() => onExport([finding])}
-              className="inline-flex items-center gap-1 h-7 rounded-md border border-[var(--color-separator)] px-2.5 text-[11px] font-medium text-[var(--color-secondary-label)] cursor-pointer hover:bg-[var(--color-elevated)] active:scale-[0.98] transition-all"
-            >
-              <ExternalLink className="w-3 h-3" />
-              Export
-            </button>
-          )}
+          <ExportDropdown
+            finding={finding}
+            onGithubExport={onGithubExport}
+            onCopy={onCopy}
+          />
           <button
             type="button"
             onClick={handleCopyAiFix}

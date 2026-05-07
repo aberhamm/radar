@@ -1072,7 +1072,8 @@ export function FindingsTriagePage({
           onTriageChange={(s) => handleTriageChange(selectedFinding.id, s)}
           onClose={() => onFindingSelect?.(null)}
           onNav={handlePanelNav}
-          onExport={handleExport}
+          onGithubExport={handleExport}
+          onCopy={handleCopyPayload}
           onViewFile={handleViewFile}
           currentIndex={selectedFindingIndex + 1}
           totalCount={rows.length}

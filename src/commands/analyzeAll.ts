@@ -141,6 +141,7 @@ export async function handleAnalyzeAll(opts: {
   const allInvestigationLogs: AgentState['investigationLog'] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allEvents: Array<Record<string, any>> = [];
+  let stepOffset = 0;
 
   // Budget extension callback — interactive prompt for TTY, skip for CI/JSON
   const isInteractive = process.stdin.isTTY && !opts.json;
@@ -195,6 +196,7 @@ export async function handleAnalyzeAll(opts: {
       fetchedDocs: coreResult.state.fetchedDocs,
       modelUsage: coreResult.state.modelUsage,
     };
+    stepOffset = coreResult.metrics.toolCalls;
     allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Core', toolCalls: coreResult.metrics.toolCalls, budget: coreBudget, terminationReason: coreResult.terminationReason }), timestamp: new Date().toISOString() });
     console.log(`[Core] Done: ${coreResult.state.findings.length} findings, ${coreResult.metrics.toolCalls}/${coreBudget} calls, ${(coreDuration / 1000).toFixed(1)}s`);
   } catch (err) {
@@ -257,12 +259,14 @@ export async function handleAnalyzeAll(opts: {
           preCompute,
           onBudgetExhausted,
           onStep: (step) => {
-            allEvents.push(step);
-            if (verbose) formatVerboseStep(step, '[Next.js]');
-            else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') console.log(`  [Next.js] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+            const adjusted = step.step > 0 ? { ...step, step: step.step + stepOffset } : step;
+            allEvents.push(adjusted);
+            if (verbose) formatVerboseStep(adjusted, '[Next.js]');
+            else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') console.log(`  [Next.js] [Step ${adjusted.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
           },
         });
         const nextjsDuration = Date.now() - nextjsStart;
+        stepOffset += nextjsResult.metrics.toolCalls;
         allInvestigationLogs.push(...nextjsResult.state.investigationLog);
         allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Next.js Specialist', toolCalls: nextjsResult.metrics.toolCalls, budget: nextjsBudget, terminationReason: nextjsResult.terminationReason }), timestamp: new Date().toISOString() });
         console.log(`[Next.js] Done: ${nextjsResult.state.findings.length} total findings, ${nextjsResult.metrics.toolCalls}/${nextjsBudget} calls`);
@@ -299,12 +303,14 @@ export async function handleAnalyzeAll(opts: {
           preCompute,
           onBudgetExhausted,
           onStep: (step) => {
-            allEvents.push(step);
-            if (verbose) formatVerboseStep(step, '[A11y]');
-            else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') console.log(`  [A11y] [Step ${step.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
+            const adjusted = step.step > 0 ? { ...step, step: step.step + stepOffset } : step;
+            allEvents.push(adjusted);
+            if (verbose) formatVerboseStep(adjusted, '[A11y]');
+            else if (step.type !== 'text_delta' && step.type !== 'tool_start' && step.type !== 'finding_progress') console.log(`  [A11y] [Step ${adjusted.step}] ${step.action} → ${step.result?.slice(0, 60) ?? ''}`);
           },
         });
         const a11yDuration = Date.now() - a11yStart;
+        stepOffset += a11yResult.metrics.toolCalls;
         allInvestigationLogs.push(...a11yResult.state.investigationLog);
         allEvents.push({ step: -1, action: 'pass_complete', result: JSON.stringify({ pass: 'Accessibility Specialist', toolCalls: a11yResult.metrics.toolCalls, budget: a11yBudget, terminationReason: a11yResult.terminationReason }), timestamp: new Date().toISOString() });
         console.log(`[A11y] Done: ${a11yResult.state.findings.length} total findings, ${a11yResult.metrics.toolCalls}/${a11yBudget} calls`);

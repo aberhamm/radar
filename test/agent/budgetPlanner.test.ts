@@ -63,6 +63,7 @@ function makeRunResult(overrides: {
       filesRead: new Set<string>(),
       fileReadCache: new Map(),
       toolCallCount: overrides.toolCalls ?? 50,
+      totalToolCallsExecuted: overrides.toolCalls ?? 50,
       toolCallBudget: 105,
       webSearchCount: 0,
       webSearchBudget: 5,

@@ -69,6 +69,7 @@ export interface MultiGoalRunResult {
   }>;
   totalToolCalls: number;
   totalDurationMs: number;
+  findings: unknown[];
 }
 
 /**
@@ -88,6 +89,7 @@ export async function dashboardAnalyzeAll(
   const allEvents: StepEvent[] = [];
   let sharedState: Record<string, unknown> | undefined;
   let lastResult: RunResult | undefined;
+  let stepOffset = 0;
 
   // Budget planning — deterministic allocation based on repo signals
   const { planBudget, rebalanceBudget } = await loadBudgetPlanner();
@@ -140,6 +142,7 @@ export async function dashboardAnalyzeAll(
     });
 
     lastResult = coreResult;
+    stepOffset = ((coreResult.metrics as unknown as Record<string, unknown>)?.toolCalls as number) ?? 0;
 
     const passCompleteEvent: StepEvent = {
       step: -1,
@@ -214,13 +217,15 @@ export async function dashboardAnalyzeAll(
         verbose: true,
         initialState: sharedState,
         onStep: (event: StepEvent) => {
-          allEvents.push(event);
-          opts.onStep(event);
+          const adjusted = event.step > 0 ? { ...event, step: event.step + stepOffset } : event;
+          allEvents.push(adjusted);
+          opts.onStep(adjusted);
         },
         onBudgetExhausted: opts.onBudgetExhausted,
       });
 
       lastResult = result;
+      stepOffset += ((result.metrics as unknown as Record<string, unknown>)?.toolCalls as number) ?? 0;
 
       const passCompleteEvent: StepEvent = {
         step: -1,
@@ -284,13 +289,15 @@ export async function dashboardAnalyzeAll(
         verbose: true,
         initialState: sharedState,
         onStep: (event: StepEvent) => {
-          allEvents.push(event);
-          opts.onStep(event);
+          const adjusted = event.step > 0 ? { ...event, step: event.step + stepOffset } : event;
+          allEvents.push(adjusted);
+          opts.onStep(adjusted);
         },
         onBudgetExhausted: opts.onBudgetExhausted,
       });
 
       lastResult = result;
+      stepOffset += ((result.metrics as unknown as Record<string, unknown>)?.toolCalls as number) ?? 0;
 
       const passCompleteEvent: StepEvent = {
         step: -1,
@@ -389,6 +396,7 @@ export async function dashboardAnalyzeAll(
     goals,
     totalToolCalls,
     totalDurationMs,
+    findings: allFindings,
   };
 }
 
@@ -585,5 +593,5 @@ async function dashboardParallelDispatch(
     goals.push({ goal, runId, scorecard, metrics: lastResult.metrics });
   }
 
-  return { parentRunId, goals, totalToolCalls, totalDurationMs };
+  return { parentRunId, goals, totalToolCalls, totalDurationMs, findings: mergedFindings };
 }

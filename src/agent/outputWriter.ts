@@ -62,7 +62,7 @@ export function writeOutputFiles(
     repoName: state.repo.name,
     entries: state.investigationLog,
     scorecard,
-    toolCallCount: state.toolCallCount,
+    toolCallCount: state.totalToolCallsExecuted,
     findingCount: state.findings.length,
   });
   fs.writeFileSync(htmlLogPath, htmlContent, 'utf-8');
@@ -83,7 +83,7 @@ export function renderInvestigationLog(state: AgentState): string {
   lines.push(`# Investigation Log: ${state.repo.name}`);
   lines.push('');
   lines.push(`**Goal:** ${state.goal}`);
-  lines.push(`**Tool calls:** ${state.toolCallCount} / ${state.toolCallBudget}`);
+  lines.push(`**Tool calls:** ${state.totalToolCallsExecuted} / ${state.toolCallBudget}`);
   lines.push(`**Findings:** ${state.findings.length}`);
   lines.push('');
   lines.push('---');

@@ -21,6 +21,7 @@ interface ContextBarProps {
   budget?: number;
   onStop: () => void;
   onBudgetDecision?: (extend: boolean) => void;
+  onViewResults?: () => void;
   compareRunNames?: [string, string];
   compareSummary?: string;
   onExitCompare?: () => void;
@@ -28,7 +29,7 @@ interface ContextBarProps {
   activeTab?: Tab;
 }
 
-export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onBudgetDecision, compareRunNames, compareSummary, onExitCompare, activeTab }: ContextBarProps) {
+export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budget, onStop, onBudgetDecision, onViewResults, compareRunNames, compareSummary, onExitCompare, activeTab }: ContextBarProps) {
   const isRunning = status === 'running' || status === 'budget_paused';
   const isComplete = status === 'complete' || status === 'error';
   const isComparing = status === 'comparing';
@@ -100,6 +101,14 @@ export function ContextBar({ status, repoName, goal, scorecard, toolCalls, budge
       <div className="flex-1" />
 
       {/* Contextual action */}
+      {onViewResults && (
+        <button
+          onClick={onViewResults}
+          className="bg-tint text-white rounded-md px-3 py-1.5 text-xs font-semibold cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-tint-focus"
+        >
+          View Results
+        </button>
+      )}
       {isRunning && status === 'budget_paused' && onBudgetDecision && (
         <div className="flex items-center gap-2">
           <button

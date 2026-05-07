@@ -92,6 +92,8 @@ export interface AgentState {
   /** Dedup cache: tracks file mtime + size + content summary to avoid re-sending unchanged files. */
   fileReadCache: Map<string, { mtime: number; size: number; summary?: string }>;
   toolCallCount: number;
+  /** Total actual tool calls executed (includes budget-free calls like worker record_finding). */
+  totalToolCallsExecuted: number;
   toolCallBudget: number;
   webSearchCount: number;
   webSearchBudget: number;

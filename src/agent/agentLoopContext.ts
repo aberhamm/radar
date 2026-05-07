@@ -319,6 +319,7 @@ export class AgentLoopContext {
     _signal?: AbortSignal,
   ): Promise<AfterToolCallResult | undefined> {
     const toolName = ctx.toolCall.name;
+    this.state.totalToolCallsExecuted++;
     if (!(this.isWorker && toolName === 'record_finding')) {
       this.state.toolCallCount++;
     }

@@ -52,7 +52,7 @@ export function buildFullExport(
       repoName: state.repo.name,
       repoSource: state.repo.source,
       terminationReason,
-      toolCallsUsed: state.toolCallCount,
+      toolCallsUsed: state.totalToolCallsExecuted,
       toolCallBudget,
     },
     scorecard,

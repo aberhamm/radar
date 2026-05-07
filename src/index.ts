@@ -82,7 +82,7 @@ program
     const dummyState: AgentState = {
       goal: 'onboarding', repo: { source: 'local', localPath: '.', name: 'introspection' },
       resolvedVersions: {}, findings: [], filesRead: new Set(),
-      toolCallCount: 0, toolCallBudget: 0, webSearchCount: 0, webSearchBudget: 0,
+      toolCallCount: 0, totalToolCallsExecuted: 0, toolCallBudget: 0, webSearchCount: 0, webSearchBudget: 0,
       urlFetchCount: 0, urlFetchBudget: 0, docTokensUsed: 0, docTokenBudget: 0,
       fetchedDocs: [], investigationLog: [], modelUsage: new Map(),
       fileReadCache: new Map(),

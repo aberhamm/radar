@@ -13,6 +13,7 @@ function makeState(): AgentState {
     findings: [],
     filesRead: new Set(),
     toolCallCount: 0,
+    totalToolCallsExecuted: 0,
     toolCallBudget: 50,
     webSearchCount: 0,
     webSearchBudget: 5,

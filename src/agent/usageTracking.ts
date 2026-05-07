@@ -85,7 +85,7 @@ export function buildMetrics(
     startedAt: startedAt.toISOString(),
     completedAt: completedAt.toISOString(),
     durationMs: completedAt.getTime() - startedAt.getTime(),
-    toolCalls: state.toolCallCount,
+    toolCalls: state.totalToolCallsExecuted,
     models,
     totalEstimatedCostUsd: Math.round(totalCost * 10000) / 10000,
     ...(llmLatencyMs != null ? { llmLatencyMs } : {}),

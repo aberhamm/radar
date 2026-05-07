@@ -110,6 +110,11 @@ export default function DashboardPage() {
   const [multiRunData, setMultiRunData] = useState<RunViewMode | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedParallelWorker, setSelectedParallelWorker] = useState<string | null>(null);
+  const [pendingMultiComplete, setPendingMultiComplete] = useState<{
+    parentRunId: string;
+    groupData: MultiGoalData;
+    history: HistoryItem[];
+  } | null>(null);
   const [sampleInvestigation, setSampleInvestigation] = useState<TransformedRunData | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [activeInfoPage, setActiveInfoPage] = useState<InfoPage | undefined>(undefined);
@@ -368,12 +373,16 @@ export default function DashboardPage() {
         return { ...prev, events: [...prev.events, event] };
       }
 
-      // Regular events: strip trailing text_delta from the SAME worker
+      // text_response supersedes the streaming delta — strip it.
+      // Other events (tool_call, finding, etc.) leave the delta in place
+      // so useLiveAnalysis can still derive typingText from it until
+      // the final text_response arrives (prevents reasoning flicker).
       const events = prev.events;
       const last = events[events.length - 1];
-      const base = last?.type === 'text_delta' && last.workerId === event.workerId
-        ? events.slice(0, -1)
-        : events;
+      const shouldStripDelta = event.type === 'text_response'
+        && last?.type === 'text_delta'
+        && last.workerId === event.workerId;
+      const base = shouldStripDelta ? events.slice(0, -1) : events;
 
       return {
         ...prev,
@@ -432,10 +441,28 @@ export default function DashboardPage() {
   }, [handleBudgetDecision]);
 
   const handleRunComplete = useCallback(
-    (data: { scorecard: unknown; metrics: unknown; terminationReason: string }) => {
+    (data: { scorecard: unknown; metrics: unknown; terminationReason: string; multiGoal?: boolean; parentRunId?: string }) => {
       fetch('/api/session')
         .then((r) => r.json())
-        .then((sessionData) => {
+        .then(async (sessionData) => {
+          if (sessionData.history) setHistory(sessionData.history);
+
+          // Multi-goal: defer transition so user can keep browsing worker streams
+          if (data.multiGoal && data.parentRunId) {
+            try {
+              const r = await fetch(`/api/history/group/${encodeURIComponent(data.parentRunId)}`);
+              const groupData = await r.json();
+              if (!groupData.error) {
+                setPendingMultiComplete({
+                  parentRunId: data.parentRunId,
+                  groupData: groupData as MultiGoalData,
+                  history: sessionData.history ?? [],
+                });
+                return;
+              }
+            } catch { /* fall through to single-goal display */ }
+          }
+
           if (sessionData.result) {
             setResult(sessionData.result as CompletedResult);
           } else {
@@ -446,7 +473,6 @@ export default function DashboardPage() {
               briefMarkdown: '',
             });
           }
-          if (sessionData.history) setHistory(sessionData.history);
           setStatus('complete');
         })
         .catch(() => {
@@ -461,6 +487,16 @@ export default function DashboardPage() {
     },
     [],
   );
+
+  const handleViewMultiResults = useCallback(() => {
+    if (!pendingMultiComplete) return;
+    const { parentRunId, groupData } = pendingMultiComplete;
+    setMultiRunData({ kind: 'multi', data: toMultiRunData(groupData) });
+    setSelectedRunId(parentRunId);
+    setStatus('complete');
+    pushUrl({ view: 'multi', parentId: parentRunId });
+    setPendingMultiComplete(null);
+  }, [pendingMultiComplete, pushUrl]);
 
   const handleRunError = useCallback((error: string) => {
     console.error('Run error:', error);
@@ -477,6 +513,7 @@ export default function DashboardPage() {
     setResult(null);
     setBudgetPausedData(null);
     setSelectedRunId(null);
+    setPendingMultiComplete(null);
     pushUrl({ view: 'idle' });
   }, [pushUrl]);
 
@@ -487,6 +524,7 @@ export default function DashboardPage() {
     setCompareSelections([]);
     setCompareData(null);
     setNewRunModal(false);
+    setPendingMultiComplete(null);
     pushUrl({ view: 'idle' });
   }, [pushUrl]);
 
@@ -1084,7 +1122,7 @@ export default function DashboardPage() {
         )}
         {showRunContextBar && (
           <ContextBar
-            status={status as 'running' | 'budget_paused' | 'complete' | 'error'}
+            status={pendingMultiComplete ? 'complete' : status as 'running' | 'budget_paused' | 'complete' | 'error'}
             repoName={multiRunData?.kind === 'multi' ? multiRunData.data.repoName : (currentRun?.repoName ?? '')}
             goal={multiRunData?.kind === 'multi' ? 'all' : currentRun?.goal}
             scorecard={multiRunData?.kind === 'multi' ? multiRunData.data.mergedScorecard : result?.scorecard}
@@ -1092,6 +1130,7 @@ export default function DashboardPage() {
             budget={currentRun?.budget ?? 0}
             onStop={handleStop}
             onBudgetDecision={status === 'budget_paused' ? handleBudgetDecisionWithApi : undefined}
+            onViewResults={pendingMultiComplete ? handleViewMultiResults : undefined}
             activeTab={activeTab}
           />
         )}
@@ -1109,10 +1148,10 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {isRunningOrPaused && currentRun && !historyLoading && (
-            <div key="running" className="animate-slide-up flex-1 flex flex-col overflow-hidden">
+          {(isRunningOrPaused || pendingMultiComplete) && currentRun && !historyLoading && (
+            <div key="running" className="animate-slide-up flex-1 flex flex-col overflow-hidden relative">
               <AnalysisView
-                isLive
+                isLive={isRunningOrPaused}
                 liveState={liveState}
                 budgetPaused={status === 'budget_paused'}
                 budgetPausedData={budgetPausedData}

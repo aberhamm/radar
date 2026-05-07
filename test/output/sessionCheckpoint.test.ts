@@ -36,6 +36,7 @@ function makeState(overrides?: Partial<AgentState>): AgentState {
       ['package.json', { mtime: 1000, contentHash: 'abc123' }],
     ]),
     toolCallCount: 12,
+    totalToolCallsExecuted: 12,
     toolCallBudget: 45,
     webSearchCount: 1,
     webSearchBudget: 5,

@@ -364,8 +364,9 @@ export function transformRunData(
     if (ev.type === 'text_response') {
       const reasoning = ev.fullReasoning || ev.reasoning;
       if (reasoning && reasoning !== currentReasoning) {
-        // New reasoning = new turn. Flush accumulated tool calls.
-        if (currentActivities.length > 0) flush(currentReasoning);
+        // New reasoning = new turn. Always flush previous (even without activities)
+        // so consecutive reasoning turns aren't silently dropped.
+        if (currentActivities.length > 0 || currentReasoning) flush(currentReasoning);
         currentReasoning = reasoning;
         turnStartTime = ts;
       }
@@ -388,19 +389,18 @@ export function transformRunData(
       toolCallCount++;
 
       // Auto-flush: create a turn every N tool calls so the replay is granular.
-      // The first flush in a pass uses the agent's reasoning text; subsequent
-      // flushes get a description built from the tool calls.
+      // Keep currentReasoning — it stays associated with this group of sub-turns
+      // until the next text_response arrives.
       if (toolCallCount >= TOOL_CALLS_PER_TURN) {
         flush(currentReasoning);
-        currentReasoning = ''; // subsequent sub-turns use auto-generated description
       }
     }
 
     if (ts) lastTimestamp = ts;
   }
 
-  // Flush remaining
-  if (currentActivities.length > 0) {
+  // Flush remaining (activities or trailing reasoning)
+  if (currentActivities.length > 0 || currentReasoning) {
     flush(currentReasoning);
   }
 
