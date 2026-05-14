@@ -14,6 +14,17 @@ See [docs/orchestrator-plan.md](docs/orchestrator-plan.md) for full design and r
 - [ ] **A/B testing** — Run both architectures (current single-agent vs. parallel workers) against same repos. Compare output quality, cost, and wall-clock time.
 - [ ] **Remove `detect_scope_drift` tool** — Not referenced in any goal rules, no tests, duplicates LLM reasoning. Remove tool + adapter + validator + concurrency entry. Add one line to investigation rules about noting README contradictions.
 
+## P1 — Platform Expansion (Sitecore XP + framework onboarding)
+
+Triggered by Honda Canada RFP inquiry (2026-05-08). Current rules are tuned for XM Cloud/headless. XP 10.2 has a different surface area that the tool can't assess. This pattern will repeat across Perficient's Sitecore book of business. See [docs/platform-onboarding.md](docs/platform-onboarding.md) for the repeatable process.
+
+- [ ] **Platform variant detection** — Expand `detectAppRoots` to distinguish Sitecore XP from XM Cloud. Signals: JSS version (21.x = XP era), absence of `xmcloud.build.json`, presence of `App_Config/Include/`, `.csproj` with `Sitecore.Kernel` NuGet references. Add variant metadata to AppRoot so specialist loading can branch. Files: `src/tools/analysis/detectAppRoots.ts`, `src/tools/analysis/getSpecialistPrompts.ts`.
+- [ ] **XML config parser tool** — New tool that reads Sitecore `.config` patch files (`App_Config/Include/**/*.config`) and extracts: connection string names, pipeline processor registrations, settings patches, event handlers, site definitions. Returns structured data, not raw XML. Files: new `src/tools/config/parseSitecoreConfig.ts`, tool adapter, validator.
+- [ ] **Sitecore XP specialist checklist** — New `src/rules/specialists/cms-sitecore-xp.md` covering: xConnect pipeline health, EXM configuration, custom processors, Solr index setup, session state management, publishing targets, security hardening (admin pages, patch priority), serialization strategy (Unicorn vs SCS vs TDS). Each item verifiable from code/config.
+- [ ] **XP reference files** — `src/references/sitecore/xp-common-antipatterns.md` (hardcoded connection strings, missing patch priority, oversized indexes), `src/references/sitecore/xp-migration-readiness.md` (what has XM Cloud equivalents vs what doesn't), `src/references/sitecore/xp-infrastructure-patterns.md` (topology, scaling, session state).
+- [ ] **.NET project detection** — Expand `detectAppRoots` to recognize `.csproj`/`.sln` as app roots. Parse `PackageReference` elements for NuGet dependencies. Add tracked packages for Sitecore NuGet (Sitecore.Kernel, Sitecore.Mvc, Sitecore.XConnect.Client, Sitecore.ContentSearch). Files: `src/tools/analysis/detectAppRoots.ts`, new `src/tools/config/parseCsproj.ts`, `src/tools/dependency/queryNugetVersions.ts`.
+- [ ] **Serialized item analysis tool** — New tool that reads Unicorn YAML (`.yml`) or SCS (`.item.json`) serialized items and extracts: template definitions, workflow states/transitions, role and permission assignments, personalization rules, rendering definitions, content tree depth. Files: new `src/tools/content/parseSerializedItems.ts`.
+
 ## P2
 
 - [ ] **Excessive monorepo root handling** — Repos like Refine dump 254 app roots into a flat `<select>`. Needs: searchable/filterable combobox, grouping by top-level directory, sensible cap (top 20 by framework relevance, "show all" expander).
