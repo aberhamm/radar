@@ -25,10 +25,12 @@ import type { AgentState } from '../types/state.js';
 import type { RunnerConfig, RunResult, StepEvent } from './runnerTypes.js';
 import type { CompressionState } from './contextCompression.js';
 import type { AssembledSections } from '../tools/piToolAdapter.js';
+import type { ToolMetricEntry } from '../types/output.js';
 import { redactSecrets } from './redaction.js';
 import { wrapInBoundary, validateFindingContent, sanitizeToolOutput } from './contextBoundary.js';
 import { saveCheckpoint, buildCheckpointEntry } from '../output/sessionCheckpoint.js';
 import { trackUsage } from './usageTracking.js';
+import { logger } from '../lib/logger.js';
 import { RECORDING_GATE_PCT, EXTENSION_GATE_PCT, BUDGET_EXTENSION } from '../config/defaults.js';
 
 /** Configuration passed to AgentLoopContext constructor. */
@@ -86,6 +88,9 @@ export class AgentLoopContext {
   readonly toolCallIdToFiles = new Map<string, Set<string>>();
   readonly toolCallIdToName = new Map<string, string>();
   readonly toolStartTimes = new Map<string, number>();
+
+  // ─── Per-tool timing metrics ─────────────────────────────────────
+  readonly toolMetricsAccumulator = new Map<string, { calls: number; totalMs: number; errors: number }>();
 
   // ─── Checkpoint state ─────────────────────────────────────────────
   checkpointSeq: number;
@@ -157,6 +162,28 @@ export class AgentLoopContext {
       reasoning: this.piFastModel.reasoning ?? false,
     });
     this.agent.state.thinkingLevel = 'off';
+  }
+
+  /** Build the finalized toolMetrics record for RunMetrics. */
+  getToolMetrics(): Record<string, ToolMetricEntry> {
+    const result: Record<string, ToolMetricEntry> = {};
+    for (const [name, acc] of this.toolMetricsAccumulator) {
+      result[name] = {
+        calls: acc.calls,
+        totalMs: acc.totalMs,
+        avgMs: acc.calls > 0 ? Math.round(acc.totalMs / acc.calls) : 0,
+        errors: acc.errors,
+      };
+    }
+    return result;
+  }
+
+  private recordToolMetric(toolName: string, durationMs: number | undefined, isError: boolean): void {
+    const existing = this.toolMetricsAccumulator.get(toolName) ?? { calls: 0, totalMs: 0, errors: 0 };
+    existing.calls++;
+    if (durationMs != null) existing.totalMs += durationMs;
+    if (isError) existing.errors++;
+    this.toolMetricsAccumulator.set(toolName, existing);
   }
 
   // ─── beforeToolCall hook ──────────────────────────────────────────
@@ -358,6 +385,16 @@ export class AgentLoopContext {
     const startMs = tcId ? this.toolStartTimes.get(tcId) : undefined;
     const durationMs = startMs ? Date.now() - startMs : undefined;
     if (tcId) this.toolStartTimes.delete(tcId);
+
+    // Track per-tool timing metrics
+    const isToolError = resultText.includes('"error"') && resultText.includes('failed');
+    this.recordToolMetric(toolName, durationMs, isToolError);
+
+    logger.debug('Tool executed', {
+      tool: toolName,
+      duration: durationMs,
+      context: isToolError ? 'error' : 'success',
+    });
 
     this.state.investigationLog.push({
       step: this.stepCount,

@@ -50,6 +50,8 @@ export function trackUsage(
   });
 }
 
+import type { ToolMetricEntry } from '../types/output.js';
+
 /** Build the final RunMetrics object from accumulated usage data and timing info. */
 export function buildMetrics(
   state: AgentState,
@@ -57,6 +59,7 @@ export function buildMetrics(
   completedAt: Date,
   llmLatencyMs?: number,
   llmTurns?: number,
+  toolMetrics?: Record<string, ToolMetricEntry>,
 ): RunMetrics {
   const models: RunMetrics['models'] = {};
   for (const [modelId, usage] of state.modelUsage.entries()) {
@@ -90,5 +93,6 @@ export function buildMetrics(
     totalEstimatedCostUsd: Math.round(totalCost * 10000) / 10000,
     ...(llmLatencyMs != null ? { llmLatencyMs } : {}),
     ...(llmTurns != null ? { llmTurns } : {}),
+    ...(toolMetrics && Object.keys(toolMetrics).length > 0 ? { toolMetrics } : {}),
   };
 }

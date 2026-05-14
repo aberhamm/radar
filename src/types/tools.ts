@@ -4,6 +4,18 @@
 
 import type { PackageInfo, ResolvedVersionMap } from './state.js';
 
+/** Structured error codes returned by tools for programmatic handling. */
+export type ToolErrorCode =
+  | 'FILE_NOT_FOUND'
+  | 'PATTERN_NO_MATCH'
+  | 'PERMISSION_DENIED'
+  | 'TIMEOUT'
+  | 'INVALID_ARGS'
+  | 'INTERNAL_ERROR'
+  | 'PATH_NOT_DIRECTORY'
+  | 'PATH_TRAVERSAL'
+  | 'BINARY_FILE';
+
 // --- Repo tools ---
 
 export interface ListDirectoryInput {
@@ -23,6 +35,7 @@ export interface FileEntry {
 export interface ListDirectoryOutput {
   entries: FileEntry[];
   error?: string;
+  errorCode?: ToolErrorCode;
 }
 
 export interface ReadFileInput {
@@ -38,6 +51,7 @@ export interface ReadFileOutput {
   language: string;
   unchanged?: boolean;
   error?: string;
+  errorCode?: ToolErrorCode;
 }
 
 export interface ReadFilesBatchInput {
@@ -76,6 +90,7 @@ export interface GrepPatternOutput {
   fileCounts?: Record<string, number>;
   matchedFiles?: string[];
   error?: string;
+  errorCode?: ToolErrorCode;
 }
 
 export interface FindFilesInput {

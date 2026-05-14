@@ -23,12 +23,14 @@ export async function listDirectory(
       return {
         entries: [],
         error: `Path "${input.path}" exists but is not a directory (it's a file). Use read_file instead.`,
+        errorCode: 'PATH_NOT_DIRECTORY',
       };
     }
   } catch {
     return {
       entries: [],
       error: `Directory "${input.path}" does not exist. Check the path — use "." to list the repo root, or try list_directory with "." first to see what's available.`,
+      errorCode: 'FILE_NOT_FOUND',
     };
   }
 

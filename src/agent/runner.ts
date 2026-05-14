@@ -62,6 +62,7 @@ import { buildMetrics } from './usageTracking.js';
 import { writeOutputFiles } from './outputWriter.js';
 import { autoAssembleFromFindings } from './autoAssemble.js';
 import { AgentLoopContext } from './agentLoopContext.js';
+import { logger } from '../lib/logger.js';
 
 // Re-export public API so existing consumers don't break
 export type { RunnerConfig, StepEvent, RunResult } from './runnerTypes.js';
@@ -75,6 +76,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
 
   setMaxListeners(100);
   const startedAt = new Date();
+
+  logger.info('Agent run starting', {
+    context: `goal=${config.goal} repo=${config.repoName}`,
+  });
 
   const _rawOnStep = config.onStep;
   if (_rawOnStep) {
@@ -311,6 +316,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // If the agent finishes without calling assemble_output, nudge it up to
   // 2 times, then fall back to auto-assembly from recorded findings.
 
+  logger.info('Agent loop starting', { context: `budget=${toolCallBudget} mode=${config.mode ?? 'full'}` });
+
   try {
     await withRetry(() => agent.prompt(goalPrompt), {
       onRetry: (attempt, error, delayMs, classification) => {
@@ -372,6 +379,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
     } else {
       ctx.terminationReason = 'error';
       ctx.errorDetail = (err as Error).message;
+      logger.error('Agent loop error', { context: ctx.errorDetail });
       if (checkpointInterval > 0) {
         try {
           saveCheckpoint(outputDir, repoSlug,
@@ -397,7 +405,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   if (isWorker) {
     cleanup();
     const completedAt = new Date();
-    const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount);
+    const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount, ctx.getToolMetrics());
     return {
       scorecard: computeScorecard(config.repoName, config.goal, state.findings),
       briefMarkdown: '',
@@ -508,7 +516,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   scorecard.metadata.documentationSources = state.fetchedDocs.map((d) => ({ url: d.url, title: d.title }));
 
   const completedAt = new Date();
-  const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount);
+  const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount, ctx.getToolMetrics());
 
   const briefMarkdown = renderBrief(
     scorecard,
@@ -553,6 +561,11 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   }
 
   cleanup();
+
+  logger.info('Agent run completed', {
+    context: `termination=${ctx.terminationReason} findings=${state.findings.length}`,
+    duration: metrics.durationMs,
+  });
 
   return {
     scorecard,

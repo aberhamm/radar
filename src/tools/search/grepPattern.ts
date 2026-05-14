@@ -28,6 +28,7 @@ export async function grepPattern(
     return {
       matches: [],
       error: `Search path "${input.path ?? '.'}" does not exist. Use "." to search from the repo root.`,
+      errorCode: 'FILE_NOT_FOUND',
     };
   }
 

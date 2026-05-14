@@ -68,6 +68,14 @@ export interface AssembledOutput {
   stackProfile?: StackProfile;
 }
 
+/** Per-tool timing metrics aggregated across all calls during a run. */
+export interface ToolMetricEntry {
+  calls: number;
+  totalMs: number;
+  avgMs: number;
+  errors: number;
+}
+
 /** Run metrics — computed post-run from AgentState.modelUsage. */
 export interface RunMetrics {
   startedAt: string;
@@ -89,4 +97,6 @@ export interface RunMetrics {
   llmLatencyMs?: number;
   /** Number of LLM turns (reasoning cycles) */
   llmTurns?: number;
+  /** Per-tool timing and error metrics */
+  toolMetrics?: Record<string, ToolMetricEntry>;
 }
