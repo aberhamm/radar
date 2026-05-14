@@ -1,0 +1,272 @@
+{
+  "id": "demo-00000000-0000-0000-0000-000000000001",
+  "goal": "audit",
+  "repoName": "acme/ecommerce-storefront",
+  "startedAt": "2026-05-14T09:00:00.000Z",
+  "completedAt": "2026-05-14T09:03:42.000Z",
+  "result": {
+    "scorecard": {
+      "repoName": "acme/ecommerce-storefront",
+      "goalType": "audit",
+      "generatedAt": "2026-05-14T09:03:42.000Z",
+      "overallScore": "yellow",
+      "categories": [
+        {
+          "category": "CMS Integration",
+          "score": "green",
+          "findings": [],
+          "summary": "Clean SDK integration with proper typing and error boundaries."
+        },
+        {
+          "category": "Preview & Editing",
+          "score": "yellow",
+          "findings": [],
+          "summary": "Preview mode works but lacks live editing support for inline content."
+        },
+        {
+          "category": "Architecture",
+          "score": "green",
+          "findings": [],
+          "summary": "Well-structured component hierarchy with clear data flow patterns."
+        },
+        {
+          "category": "Security",
+          "score": "red",
+          "findings": [],
+          "summary": "API keys exposed in client bundle; missing CSP headers."
+        },
+        {
+          "category": "Dependencies",
+          "score": "yellow",
+          "findings": [],
+          "summary": "Several packages 2+ major versions behind; no automated update strategy."
+        },
+        {
+          "category": "Deployment",
+          "score": "green",
+          "findings": [],
+          "summary": "Vercel deployment with proper build caching and environment separation."
+        }
+      ],
+      "topRisks": [
+        {
+          "rank": 1,
+          "findingId": "finding-001",
+          "title": "API key exposed in client-side bundle",
+          "severity": "critical",
+          "businessContext": "Leaked keys allow unauthorized API access and potential data exfiltration."
+        },
+        {
+          "rank": 2,
+          "findingId": "finding-002",
+          "title": "Missing Content-Security-Policy headers",
+          "severity": "high",
+          "businessContext": "XSS attacks could inject malicious scripts without CSP protection."
+        },
+        {
+          "rank": 3,
+          "findingId": "finding-003",
+          "title": "React 17 with known hydration vulnerabilities",
+          "severity": "high",
+          "businessContext": "Unpatched framework exposes users to documented attack vectors."
+        }
+      ],
+      "metadata": {
+        "repoName": "acme/ecommerce-storefront",
+        "analysisDate": "2026-05-14T09:03:42.000Z",
+        "agentVersion": "1.0.0",
+        "goalType": "audit",
+        "detectedPlatform": "sitecore",
+        "toolCallsUsed": 32,
+        "webSearchesUsed": 2,
+        "urlFetchesUsed": 1,
+        "documentationSources": [
+          { "url": "https://doc.sitecore.com/xmc/en/developers/jss/22/jss-xmc/index.html", "title": "Sitecore JSS 22 Documentation" }
+        ]
+      }
+    },
+    "metrics": {
+      "startedAt": "2026-05-14T09:00:00.000Z",
+      "completedAt": "2026-05-14T09:03:42.000Z",
+      "durationMs": 222000,
+      "toolCalls": 32,
+      "models": {
+        "sonnet-4.6": {
+          "bedrockModelId": "us.anthropic.claude-sonnet-4-6",
+          "calls": 18,
+          "inputTokens": 145000,
+          "outputTokens": 28000,
+          "cachedTokens": 52000,
+          "estimatedCostUsd": 0.72
+        },
+        "haiku-4.5": {
+          "bedrockModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+          "calls": 14,
+          "inputTokens": 42000,
+          "outputTokens": 8500,
+          "cachedTokens": 18000,
+          "estimatedCostUsd": 0.08
+        }
+      },
+      "totalEstimatedCostUsd": 0.80
+    },
+    "terminationReason": "budget_exhausted",
+    "briefMarkdown": "# Audit Report: acme/ecommerce-storefront\n\n## Executive Summary\n\nThe storefront is architecturally sound with clean CMS integration but has critical security gaps that must be addressed before the next production deployment.\n\n## Key Findings\n\n- **Critical:** API delivery key is bundled into the client JavaScript, exposing it to any visitor\n- **High:** No Content-Security-Policy headers configured, leaving the app vulnerable to XSS\n- **High:** React 17.0.2 has known hydration vulnerabilities patched in 18.x\n- Several dependencies are 2+ major versions behind with no Dependabot or Renovate configured\n\n## Recommendations\n\n1. Move API keys to server-side routes or middleware (immediate)\n2. Add CSP headers via next.config.js security headers (this sprint)\n3. Plan React 18 migration — hydration fixes alone justify the upgrade\n4. Enable Dependabot for automated dependency PRs\n",
+    "outputPaths": [],
+    "state": {
+      "findings": [
+        {
+          "id": "finding-001",
+          "category": "security",
+          "severity": "critical",
+          "confidence": 10,
+          "title": "API key exposed in client-side bundle",
+          "description": "The Sitecore delivery API key is referenced directly in a client component without the NEXT_PUBLIC_ prefix guard, causing it to be bundled into the browser JavaScript.",
+          "evidence": [
+            {
+              "filePath": "src/lib/sitecore-client.ts",
+              "lineNumber": 12,
+              "snippet": "const apiKey = process.env.SITECORE_API_KEY ?? 'fallback-key-abc123';",
+              "description": "API key accessed in a module imported by client components",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["security", "api-key", "client-exposure"]
+        },
+        {
+          "id": "finding-002",
+          "category": "security",
+          "severity": "high",
+          "confidence": 9,
+          "title": "Missing Content-Security-Policy headers",
+          "description": "No CSP headers are configured in next.config.js or middleware, leaving the application vulnerable to cross-site scripting attacks.",
+          "evidence": [
+            {
+              "filePath": "next.config.js",
+              "lineNumber": 1,
+              "snippet": "const nextConfig = {\n  reactStrictMode: true,\n  images: { domains: ['cdn.sitecore.com'] },\n};",
+              "description": "next.config.js has no security headers configuration",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["security", "csp", "headers"]
+        },
+        {
+          "id": "finding-003",
+          "category": "dependencies",
+          "severity": "high",
+          "confidence": 9,
+          "title": "React 17 with known hydration vulnerabilities",
+          "description": "The project uses React 17.0.2 which has documented hydration mismatch vulnerabilities that can be exploited for XSS in specific conditions.",
+          "evidence": [
+            {
+              "filePath": "package.json",
+              "lineNumber": 8,
+              "snippet": "\"react\": \"^17.0.2\",\n\"react-dom\": \"^17.0.2\",",
+              "description": "Outdated React version with known security patches in 18.x",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["dependencies", "react", "outdated"]
+        },
+        {
+          "id": "finding-004",
+          "category": "preview-editing",
+          "severity": "medium",
+          "confidence": 7,
+          "title": "Live editing not supported for inline text fields",
+          "description": "Preview mode renders correctly but inline text editing falls back to a full page reload instead of using the Experience Editor bridge.",
+          "evidence": [
+            {
+              "filePath": "src/components/RichText.tsx",
+              "lineNumber": 24,
+              "snippet": "return <div dangerouslySetInnerHTML={{ __html: field.value }} />;",
+              "description": "Missing Sitecore editable wrapper for inline editing support",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["preview", "editing", "experience-editor"]
+        },
+        {
+          "id": "finding-005",
+          "category": "dependencies",
+          "severity": "medium",
+          "confidence": 8,
+          "title": "No automated dependency update strategy",
+          "description": "Neither Dependabot nor Renovate is configured. 8 packages are 2+ major versions behind their latest release.",
+          "evidence": [
+            {
+              "filePath": ".github/",
+              "lineNumber": 0,
+              "snippet": "",
+              "description": "No dependabot.yml or renovate.json found in repository",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["dependencies", "automation", "maintenance"]
+        },
+        {
+          "id": "finding-006",
+          "category": "architecture",
+          "severity": "low",
+          "confidence": 8,
+          "title": "Prop drilling through 4+ component levels",
+          "description": "Layout context data is passed through 4 intermediate components before reaching leaf nodes. Consider React Context or a state management solution.",
+          "evidence": [
+            {
+              "filePath": "src/components/Layout/MainLayout.tsx",
+              "lineNumber": 15,
+              "snippet": "export const MainLayout = ({ navigation, footer, seo, children, sitecoreContext }: Props) => (",
+              "description": "Layout passes 5 props that are consumed 4 levels deep",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["architecture", "prop-drilling", "state-management"]
+        },
+        {
+          "id": "finding-007",
+          "category": "cms-integration",
+          "severity": "info",
+          "confidence": 9,
+          "title": "Clean component factory pattern with type safety",
+          "description": "The component registry uses a typed factory pattern that maps Sitecore rendering names to React components with full TypeScript coverage.",
+          "evidence": [
+            {
+              "filePath": "src/lib/component-factory.ts",
+              "lineNumber": 1,
+              "snippet": "import { ComponentFactory } from '@sitecore-jss/sitecore-jss-nextjs';\n\nconst components = new Map<string, React.ComponentType>();",
+              "description": "Well-implemented component factory with type-safe registration",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["cms-integration", "component-factory", "positive"]
+        }
+      ]
+    }
+  },
+  "events": [
+    { "step": 1, "type": "tool_call", "action": "detect_stack", "result": "Detected: Sitecore JSS + Next.js 13 (Pages Router), TypeScript, pnpm", "timestamp": "2026-05-14T09:00:03.000Z" },
+    { "step": 2, "type": "tool_call", "action": "read_file", "args": "package.json", "result": "Read 42 lines — React 17.0.2, @sitecore-jss/sitecore-jss-nextjs ^21.6.0", "timestamp": "2026-05-14T09:00:08.000Z" },
+    { "step": 3, "type": "tool_call", "action": "read_file", "args": "next.config.js", "result": "Read 18 lines — standard config, no security headers", "timestamp": "2026-05-14T09:00:12.000Z" },
+    { "step": 4, "type": "tool_call", "action": "search_files", "args": "pattern: SITECORE_API_KEY", "result": "3 matches in 2 files", "timestamp": "2026-05-14T09:00:18.000Z" },
+    { "step": 5, "type": "tool_call", "action": "read_file", "args": "src/lib/sitecore-client.ts", "result": "Read 28 lines — API key used in client-importable module", "timestamp": "2026-05-14T09:00:22.000Z" },
+    { "step": 6, "type": "tool_call", "action": "record_finding", "result": "Recorded: API key exposed in client-side bundle (critical)", "timestamp": "2026-05-14T09:00:25.000Z" },
+    { "step": 7, "type": "tool_call", "action": "search_files", "args": "pattern: Content-Security-Policy", "result": "0 matches", "timestamp": "2026-05-14T09:00:30.000Z" },
+    { "step": 8, "type": "tool_call", "action": "record_finding", "result": "Recorded: Missing Content-Security-Policy headers (high)", "timestamp": "2026-05-14T09:00:33.000Z" },
+    { "step": 9, "type": "tool_call", "action": "list_directory", "args": "src/components/", "result": "Listed 24 entries", "timestamp": "2026-05-14T09:00:38.000Z" },
+    { "step": 10, "type": "tool_call", "action": "read_file", "args": "src/components/RichText.tsx", "result": "Read 35 lines — missing editable wrapper", "timestamp": "2026-05-14T09:00:42.000Z" },
+    { "step": 11, "type": "tool_call", "action": "record_finding", "result": "Recorded: Live editing not supported for inline text fields (medium)", "timestamp": "2026-05-14T09:00:45.000Z" },
+    { "step": 12, "type": "tool_call", "action": "switch_to_fast_model", "result": "Switched to fast model for writing phase", "timestamp": "2026-05-14T09:01:00.000Z" },
+    { "step": 13, "type": "tool_call", "action": "record_finding", "result": "Recorded: React 17 with known hydration vulnerabilities (high)", "timestamp": "2026-05-14T09:01:05.000Z" },
+    { "step": 14, "type": "tool_call", "action": "record_finding", "result": "Recorded: No automated dependency update strategy (medium)", "timestamp": "2026-05-14T09:01:08.000Z" },
+    { "step": 15, "type": "tool_call", "action": "record_finding", "result": "Recorded: Prop drilling through 4+ component levels (low)", "timestamp": "2026-05-14T09:01:11.000Z" },
+    { "step": 16, "type": "tool_call", "action": "record_finding", "result": "Recorded: Clean component factory pattern with type safety (info)", "timestamp": "2026-05-14T09:01:14.000Z" }
+  ]
+}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, loadRunEnvelope, loadRunFindings, findRunById } from '@/lib/agentSession';
+import demoRun from '@/fixtures/demo-run.json';
 
 export async function GET(
   req: NextRequest,
@@ -7,6 +8,34 @@ export async function GET(
 ) {
   const { id } = await params;
   const slim = req.nextUrl.searchParams.get('slim') === '1';
+
+  if (process.env.DEMO_MODE === 'true' && id === demoRun.id) {
+    const findings = slim
+      ? demoRun.result.state.findings.map(f => ({
+          id: f.id,
+          severity: f.severity,
+          category: f.category,
+          title: f.title,
+          evidenceFiles: f.evidence.map(e => e.filePath),
+          tags: f.tags,
+        }))
+      : demoRun.result.state.findings;
+    return NextResponse.json({
+      id: demoRun.id,
+      goal: demoRun.goal,
+      repoName: demoRun.repoName,
+      startedAt: demoRun.startedAt,
+      completedAt: demoRun.completedAt,
+      result: {
+        scorecard: demoRun.result.scorecard,
+        metrics: demoRun.result.metrics,
+        terminationReason: demoRun.result.terminationReason,
+        briefMarkdown: demoRun.result.briefMarkdown,
+        state: { findings },
+      },
+    });
+  }
+
   const session = getSession();
   let record = session.history.find(r => r.id === id);
 

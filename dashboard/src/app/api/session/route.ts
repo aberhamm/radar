@@ -1,7 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, resetSession, sendStreamEvent, loadPersistedRuns, getRunCount } from '@/lib/agentSession';
+import demoRun from '@/fixtures/demo-run.json';
 
 export async function GET(req: NextRequest) {
+  if (process.env.DEMO_MODE === 'true') {
+    return NextResponse.json({
+      status: 'complete',
+      lastError: null,
+      history: [{
+        id: demoRun.id,
+        goal: demoRun.goal,
+        repoName: demoRun.repoName,
+        startedAt: demoRun.startedAt,
+        completedAt: demoRun.completedAt,
+        hasResult: true,
+        score: demoRun.result.scorecard.overallScore,
+        findingsCount: demoRun.result.state.findings.length,
+        repoPath: '/demo/acme-ecommerce-storefront',
+        repoSource: 'local',
+        repoUrl: null,
+        parentRunId: null,
+      }],
+      hasMore: false,
+      currentRun: null,
+      result: {
+        scorecard: demoRun.result.scorecard,
+        metrics: demoRun.result.metrics,
+        terminationReason: demoRun.result.terminationReason,
+        briefMarkdown: demoRun.result.briefMarkdown,
+        state: { findings: demoRun.result.state.findings },
+      },
+    });
+  }
+
   const session = getSession();
   const url = new URL(req.url);
   const offset = parseInt(url.searchParams.get('offset') ?? '0', 10);
