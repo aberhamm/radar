@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, loadRunEnvelope, loadRunFindings, findRunById } from '@/lib/agentSession';
 import demoRun from '@/fixtures/demo-run.json';
 
+const DEMO_ID = demoRun.id;
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -9,7 +11,7 @@ export async function GET(
   const { id } = await params;
   const slim = req.nextUrl.searchParams.get('slim') === '1';
 
-  if (process.env.DEMO_MODE === 'true' && id === demoRun.id) {
+  if (id === DEMO_ID) {
     const findings = slim
       ? demoRun.result.state.findings.map(f => ({
           id: f.id,

@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, loadRunEvents, findRunById } from '@/lib/agentSession';
 import demoRun from '@/fixtures/demo-run.json';
 
+const DEMO_ID = demoRun.id;
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
 
-  if (process.env.DEMO_MODE === 'true' && id === demoRun.id) {
+  if (id === DEMO_ID) {
     return NextResponse.json(
       { events: demoRun.events },
       { headers: { 'Cache-Control': 'public, max-age=86400, immutable' } },
