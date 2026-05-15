@@ -257,6 +257,7 @@ export async function handleAnalyzeAll(opts: {
           verbose,
           initialState: coreSharedState,
           preCompute,
+          mode: 'worker',
           onBudgetExhausted,
           onStep: (step) => {
             const adjusted = step.step > 0 ? { ...step, step: step.step + stepOffset } : step;
@@ -301,6 +302,7 @@ export async function handleAnalyzeAll(opts: {
           verbose,
           initialState: coreSharedState,
           preCompute,
+          mode: 'worker',
           onBudgetExhausted,
           onStep: (step) => {
             const adjusted = step.step > 0 ? { ...step, step: step.step + stepOffset } : step;

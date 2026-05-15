@@ -216,10 +216,13 @@ export async function dashboardAnalyzeAll(
         toolCallBudget: nextjsBudget,
         verbose: true,
         initialState: sharedState,
+        preCompute: opts.preCompute,
+        mode: 'worker',
         onStep: (event: StepEvent) => {
           const adjusted = event.step > 0 ? { ...event, step: event.step + stepOffset } : event;
-          allEvents.push(adjusted);
-          opts.onStep(adjusted);
+          const tagged = { ...adjusted, specialistId: 'nextjs-specialist' };
+          allEvents.push(tagged);
+          opts.onStep(tagged);
         },
         onBudgetExhausted: opts.onBudgetExhausted,
       });
@@ -230,6 +233,7 @@ export async function dashboardAnalyzeAll(
       const passCompleteEvent: StepEvent = {
         step: -1,
         action: 'pass_complete',
+        specialistId: 'nextjs-specialist',
         result: JSON.stringify({
           pass: 'Next.js Specialist',
           toolCalls: (result.metrics as unknown as Record<string, unknown>)?.toolCalls ?? 0,
@@ -288,10 +292,13 @@ export async function dashboardAnalyzeAll(
         toolCallBudget: a11yBudget,
         verbose: true,
         initialState: sharedState,
+        preCompute: opts.preCompute,
+        mode: 'worker',
         onStep: (event: StepEvent) => {
           const adjusted = event.step > 0 ? { ...event, step: event.step + stepOffset } : event;
-          allEvents.push(adjusted);
-          opts.onStep(adjusted);
+          const tagged = { ...adjusted, specialistId: 'a11y-specialist' };
+          allEvents.push(tagged);
+          opts.onStep(tagged);
         },
         onBudgetExhausted: opts.onBudgetExhausted,
       });
@@ -302,6 +309,7 @@ export async function dashboardAnalyzeAll(
       const passCompleteEvent: StepEvent = {
         step: -1,
         action: 'pass_complete',
+        specialistId: 'a11y-specialist',
         result: JSON.stringify({
           pass: 'Accessibility Specialist',
           toolCalls: (result.metrics as unknown as Record<string, unknown>)?.toolCalls ?? 0,

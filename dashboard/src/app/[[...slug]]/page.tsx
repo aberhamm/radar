@@ -110,6 +110,7 @@ export default function DashboardPage() {
   const [multiRunData, setMultiRunData] = useState<RunViewMode | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedParallelWorker, setSelectedParallelWorker] = useState<string | null>(null);
+  const [selectedSpecialist, setSelectedSpecialist] = useState<string | null>(null);
   const [pendingMultiComplete, setPendingMultiComplete] = useState<{
     parentRunId: string;
     groupData: MultiGoalData;
@@ -345,6 +346,7 @@ export default function DashboardPage() {
     setMultiRunData(null);
     setActiveTab('overview');
     setSelectedParallelWorker(null);
+    setSelectedSpecialist(null);
 
     // Push URL with runId so refresh reconnects
     if (runId) {
@@ -983,6 +985,7 @@ export default function DashboardPage() {
     currentRun?.toolCalls ?? 0,
     currentRun?.budget ?? 45,
     selectedParallelWorker,
+    selectedSpecialist,
   );
 
   const commands = useMemo(() => {
@@ -1157,6 +1160,7 @@ export default function DashboardPage() {
                 budgetPausedData={budgetPausedData}
                 onBudgetDecision={handleBudgetDecisionWithApi}
                 onSelectWorker={setSelectedParallelWorker}
+                onSelectSpecialist={setSelectedSpecialist}
               />
             </div>
           )}

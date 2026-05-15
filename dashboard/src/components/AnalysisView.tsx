@@ -11,6 +11,7 @@ import { PhaseRail } from '@/components/analysis/PhaseRail';
 import { ReasoningStream } from '@/components/analysis/ReasoningStream';
 import { RightPanel } from '@/components/analysis/RightPanel';
 import { WorkerLaneGrid } from '@/components/analysis/WorkerLaneGrid';
+import { SpecialistLaneGrid } from '@/components/analysis/SpecialistLaneGrid';
 import { SynthesisBar } from '@/components/analysis/SynthesisBar';
 
 // ─── Props ──────────────────────────────────────────────────────
@@ -25,6 +26,7 @@ interface AnalysisViewProps {
   budgetPausedData?: { findings: number; toolCalls: number; budget: number } | null;
   onBudgetDecision?: (extend: boolean) => void;
   onSelectWorker?: (id: string) => void;
+  onSelectSpecialist?: (id: string | null) => void;
 }
 
 // ─── Analysis View ───────────────────────────────────────────────
@@ -39,6 +41,7 @@ export function AnalysisView({
   budgetPausedData,
   onBudgetDecision,
   onSelectWorker,
+  onSelectSpecialist,
 }: AnalysisViewProps) {
 
   // ─── State source routing ──────────────────────────────────────
@@ -174,6 +177,15 @@ export function AnalysisView({
             workers={workers}
             selectedWorkerId={effectiveSelectedWorker}
             onSelectWorker={onSelectWorker ?? (() => {})}
+          />
+        )}
+
+        {/* Sequential specialist mode: specialist lane grid */}
+        {!isParallel && liveState?.specialists && (
+          <SpecialistLaneGrid
+            specialists={liveState.specialists}
+            selectedSpecialistId={liveState.selectedSpecialistId}
+            onSelectSpecialist={onSelectSpecialist ?? (() => {})}
           />
         )}
 

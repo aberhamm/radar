@@ -29,6 +29,17 @@ export interface WorkerState {
   currentActivity: string;
 }
 
+export interface SpecialistState {
+  id: string;
+  name: string;
+  status: 'running' | 'complete' | 'skipped';
+  toolCalls: number;
+  budget: number;
+  findingsCount: number;
+  currentActivity: string;
+  color: string;
+}
+
 export interface LiveAnalysisState {
   phase: AnimationPhase;
   turns: StreamTurn[];
@@ -53,7 +64,85 @@ export interface LiveAnalysisState {
   synthesisStatus: 'pending' | 'running' | 'complete' | null;
   /** Whether this run is using parallel dispatch */
   isParallel: boolean;
+  /** Specialist mode: specialist states keyed by specialistId */
+  specialists: Map<string, SpecialistState> | null;
+  /** Specialist mode: currently selected specialist for detail view (null = Core) */
+  selectedSpecialistId: string | null;
 }
+
+const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+/**
+ * Parse a finding from a StepEvent and merge/dedup into the findings array.
+ * Handles JSON parse, dedup by category + 50% evidence file overlap, severity merge, evidence merge.
+ */
+export function parseFinding(ev: StepEvent, findings: Finding[]): void {
+  try {
+    const args = ev.args ? JSON.parse(ev.args) : {};
+    let f = args.finding ?? args;
+    if (typeof f === 'string') f = JSON.parse(f);
+    if (!f || typeof f !== 'object' || !f.title) return;
+    const incoming: Finding = {
+      id: f.id ?? `f-${findings.length}`,
+      severity: f.severity ?? 'info',
+      category: f.category ?? '',
+      title: f.title ?? ev.action,
+      evidenceFiles: (f.evidence ?? []).map((e: { filePath: string }) => e.filePath),
+      evidence: (f.evidence ?? []).map((e: { filePath: string; lineNumber?: number; snippet?: string; description?: string; verificationStatus?: string; sourceContext?: string; originalSnippet?: string }) => ({
+        filePath: e.filePath,
+        lineNumber: e.lineNumber,
+        snippet: e.snippet ?? '',
+        description: e.description ?? '',
+        verificationStatus: e.verificationStatus,
+        sourceContext: e.sourceContext,
+        originalSnippet: e.originalSnippet,
+      })),
+      note: f.investigationNote ?? f.description ?? '',
+      tags: f.tags ?? [],
+    };
+    const incomingPaths = new Set(incoming.evidenceFiles);
+    const dupIdx = findings.findIndex((existing) => {
+      if (existing.category !== incoming.category) return false;
+      const existPaths = new Set(existing.evidenceFiles);
+      if (incomingPaths.size === 0 && existPaths.size === 0) return false;
+      let inter = 0;
+      for (const p of incomingPaths) if (existPaths.has(p)) inter++;
+      const union = new Set([...incomingPaths, ...existPaths]).size;
+      return union > 0 && inter / union >= 0.5;
+    });
+    if (dupIdx !== -1) {
+      const existing = findings[dupIdx];
+      const keepSeverity = (SEV_RANK[existing.severity] ?? 0) >= (SEV_RANK[incoming.severity] ?? 0)
+        ? existing.severity : incoming.severity;
+      const seenEvPaths = new Set(existing.evidenceFiles.map((ef, i) => `${ef}:${existing.evidence[i]?.lineNumber ?? 'none'}`));
+      const mergedEvidence = [...existing.evidence];
+      const mergedEvFiles = [...existing.evidenceFiles];
+      for (let ei = 0; ei < incoming.evidence.length; ei++) {
+        const key = `${incoming.evidenceFiles[ei]}:${incoming.evidence[ei]?.lineNumber ?? 'none'}`;
+        if (!seenEvPaths.has(key)) {
+          seenEvPaths.add(key);
+          mergedEvidence.push(incoming.evidence[ei]);
+          mergedEvFiles.push(incoming.evidenceFiles[ei]);
+        }
+      }
+      findings[dupIdx] = {
+        ...existing,
+        severity: keepSeverity,
+        note: existing.note.length >= incoming.note.length ? existing.note : incoming.note,
+        evidence: mergedEvidence,
+        evidenceFiles: mergedEvFiles,
+        tags: [...new Set([...existing.tags, ...incoming.tags])],
+      };
+    } else {
+      findings.push(incoming);
+    }
+  } catch { /* parse error */ }
+}
+
+const SPECIALIST_META: Record<string, { name: string; color: string }> = {
+  'nextjs-specialist': { name: 'Next.js Specialist', color: '#0070f3' },
+  'a11y-specialist': { name: 'Accessibility Specialist', color: '#8b5cf6' },
+};
 
 /**
  * Derives AnalysisView-compatible state from live SSE events.
@@ -71,6 +160,7 @@ export function useLiveAnalysis(
   toolCalls: number,
   budget: number,
   selectedWorkerOverride?: string | null,
+  selectedSpecialistOverride?: string | null,
 ): LiveAnalysisState {
   return useMemo(() => {
     const turns: StreamTurn[] = [];
@@ -109,6 +199,27 @@ export function useLiveAnalysis(
       if (!a) {
         a = { turns: [], currentReasoning: '', currentActivities: [], currentPhase: 'analyze', pendingDeltaText: '', switchSeen: false };
         workerAccum.set(wid, a);
+      }
+      return a;
+    }
+
+    // Per-specialist accumulators — used in sequential multi-goal mode.
+    interface SpecialistAccum {
+      turns: StreamTurn[];
+      currentReasoning: string;
+      currentActivities: Activity[];
+      pendingDeltaText: string;
+    }
+    const specialistAccum = new Map<string, SpecialistAccum>();
+    const specialistBudgets = new Map<string, number>();
+    let specialists: Map<string, SpecialistState> | null = null;
+    let selectedSpecialistId: string | null = null;
+
+    function getSpecAccum(sid: string): SpecialistAccum {
+      let a = specialistAccum.get(sid);
+      if (!a) {
+        a = { turns: [], currentReasoning: '', currentActivities: [], pendingDeltaText: '' };
+        specialistAccum.set(sid, a);
       }
       return a;
     }
@@ -244,67 +355,7 @@ export function useLiveAnalysis(
 
         // Findings (shared across all workers — not per-worker)
         if (ev.type === 'finding' || ev.action === 'record_finding') {
-          try {
-            const args = ev.args ? JSON.parse(ev.args) : {};
-            let f = args.finding ?? args;
-            if (typeof f === 'string') f = JSON.parse(f);
-            if (!f || typeof f !== 'object' || !f.title) continue;
-            const incoming: Finding = {
-              id: f.id ?? `f-${findings.length}`,
-              severity: f.severity ?? 'info',
-              category: f.category ?? '',
-              title: f.title ?? ev.action,
-              evidenceFiles: (f.evidence ?? []).map((e: { filePath: string }) => e.filePath),
-              evidence: (f.evidence ?? []).map((e: { filePath: string; lineNumber?: number; snippet?: string; description?: string; verificationStatus?: string; sourceContext?: string; originalSnippet?: string }) => ({
-                filePath: e.filePath,
-                lineNumber: e.lineNumber,
-                snippet: e.snippet ?? '',
-                description: e.description ?? '',
-                verificationStatus: e.verificationStatus,
-                sourceContext: e.sourceContext,
-                originalSnippet: e.originalSnippet,
-              })),
-              note: f.investigationNote ?? f.description ?? '',
-              tags: f.tags ?? [],
-            };
-            const incomingPaths = new Set(incoming.evidenceFiles);
-            const dupIdx = findings.findIndex((existing) => {
-              if (existing.category !== incoming.category) return false;
-              const existPaths = new Set(existing.evidenceFiles);
-              if (incomingPaths.size === 0 && existPaths.size === 0) return false;
-              let inter = 0;
-              for (const p of incomingPaths) if (existPaths.has(p)) inter++;
-              const union = new Set([...incomingPaths, ...existPaths]).size;
-              return union > 0 && inter / union >= 0.5;
-            });
-            if (dupIdx !== -1) {
-              const existing = findings[dupIdx];
-              const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-              const keepSeverity = (SEV_RANK[existing.severity] ?? 0) >= (SEV_RANK[incoming.severity] ?? 0)
-                ? existing.severity : incoming.severity;
-              const seenEvPaths = new Set(existing.evidenceFiles.map((f, i) => `${f}:${existing.evidence[i]?.lineNumber ?? 'none'}`));
-              const mergedEvidence = [...existing.evidence];
-              const mergedEvFiles = [...existing.evidenceFiles];
-              for (let ei = 0; ei < incoming.evidence.length; ei++) {
-                const key = `${incoming.evidenceFiles[ei]}:${incoming.evidence[ei]?.lineNumber ?? 'none'}`;
-                if (!seenEvPaths.has(key)) {
-                  seenEvPaths.add(key);
-                  mergedEvidence.push(incoming.evidence[ei]);
-                  mergedEvFiles.push(incoming.evidenceFiles[ei]);
-                }
-              }
-              findings[dupIdx] = {
-                ...existing,
-                severity: keepSeverity,
-                note: existing.note.length >= incoming.note.length ? existing.note : incoming.note,
-                evidence: mergedEvidence,
-                evidenceFiles: mergedEvFiles,
-                tags: [...new Set([...existing.tags, ...incoming.tags])],
-              };
-            } else {
-              findings.push(incoming);
-            }
-          } catch { /* parse error */ }
+          parseFinding(ev, findings);
           const existing = acc.currentActivities.find(a => a.label === 'record_finding');
           if (existing) existing.pending = false;
           findingProgress = null;
@@ -414,6 +465,13 @@ export function useLiveAnalysis(
 
       // Budget rebalance (multi-goal sequential: after core, before specialists)
       if (ev.action === 'budget_rebalance' && ev.result) {
+        try {
+          const rb = JSON.parse(ev.result as string);
+          for (const p of (rb.adjustedPasses ?? [])) {
+            if (p.name?.includes('Next.js')) specialistBudgets.set('nextjs-specialist', p.budget ?? 0);
+            if (p.name?.includes('Accessibility')) specialistBudgets.set('a11y-specialist', p.budget ?? 0);
+          }
+        } catch { /* parse error */ }
         turns.push({ reasoning: 'Specialist budgets adjusted based on core findings', activities: [{ label: 'budget_rebalance', files: [], detail: ev.result }], phase: 'analyze' });
         statusMessage = 'Budgets rebalanced — starting specialist passes...';
         continue;
@@ -429,7 +487,186 @@ export function useLiveAnalysis(
         currentActivities = [];
         currentWorkerId = undefined;
         statusMessage = `Running ${ev.result} pass...`;
+
+        // Initialize specialist state from pass_boundary (specialist names)
+        const passName = ev.result as string;
+        const isSkipped = passName.includes('(skipped)');
+        for (const [sid, meta] of Object.entries(SPECIALIST_META)) {
+          if (passName.includes(meta.name.replace(' Specialist', ''))) {
+            if (!specialists) specialists = new Map();
+            specialists.set(sid, {
+              id: sid,
+              name: meta.name,
+              status: isSkipped ? 'skipped' : 'running',
+              toolCalls: 0,
+              budget: specialistBudgets.get(sid) ?? 0,
+              findingsCount: 0,
+              currentActivity: isSkipped ? 'Skipped' : '',
+              color: meta.color,
+            });
+            if (!isSkipped && selectedSpecialistId === null) {
+              selectedSpecialistId = sid;
+            }
+          }
+        }
         continue;
+      }
+
+      // Pass complete (multi-goal: specialist pass finished)
+      if (ev.action === 'pass_complete' && ev.result && specialists) {
+        let passName = '';
+        let parsedToolCalls: number | undefined;
+        let parsedBudget: number | undefined;
+        try {
+          const data = JSON.parse(ev.result as string);
+          passName = data.pass as string ?? '';
+          parsedToolCalls = data.toolCalls;
+          parsedBudget = data.budget;
+        } catch {
+          passName = String(ev.result);
+        }
+        // Resolve target specialist: prefer tagged specialistId, fall back to name matching
+        const targetSids: string[] = [];
+        if (ev.specialistId && SPECIALIST_META[ev.specialistId]) {
+          targetSids.push(ev.specialistId);
+        } else {
+          for (const [sid, meta] of Object.entries(SPECIALIST_META)) {
+            if (passName.includes(meta.name.replace(' Specialist', ''))) {
+              targetSids.push(sid);
+            }
+          }
+        }
+        for (const sid of targetSids) {
+          const spec = specialists.get(sid);
+          if (spec) {
+            spec.status = 'complete';
+            if (parsedToolCalls !== undefined) spec.toolCalls = parsedToolCalls;
+            if (parsedBudget !== undefined) spec.budget = parsedBudget;
+            spec.currentActivity = 'Complete';
+          }
+          const acc = specialistAccum.get(sid);
+          if (acc && acc.currentReasoning) {
+            acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: 'analyze' });
+            acc.currentReasoning = '';
+            acc.currentActivities = [];
+          }
+        }
+        continue;
+      }
+
+      // ── Specialist event routing (events tagged with specialistId) ──
+      if (ev.specialistId && specialists) {
+        const sid = ev.specialistId;
+        const spec = specialists.get(sid);
+        if (spec) {
+          if (spec.status !== 'running') spec.status = 'running';
+          if (ev.type === 'tool_call') spec.toolCalls++;
+          if (ev.action === 'record_finding') spec.findingsCount++;
+          if (ev.type === 'tool_start' && ev.action) spec.currentActivity = ev.action;
+        }
+
+        const acc = getSpecAccum(sid);
+
+        // Finding sub-progress
+        if (ev.type === 'finding_progress' && ev.details) {
+          const d = ev.details as Record<string, unknown>;
+          findingProgress = {
+            findingIndex: (d.findingIndex as number) ?? 0,
+            findingTotal: (d.findingTotal as number) ?? 0,
+            findingId: (d.findingId as string) ?? '',
+            phase: (d.phase as FindingProgressState['phase']) ?? 'verifying_evidence',
+            evidenceIndex: d.evidenceIndex as number | undefined,
+            evidenceTotal: d.evidenceTotal as number | undefined,
+            evidenceStatus: d.evidenceStatus as string | undefined,
+            evidenceFile: d.evidenceFile as string | undefined,
+          };
+          continue;
+        }
+
+        // Findings (shared pool)
+        if (ev.type === 'finding' || ev.action === 'record_finding') {
+          parseFinding(ev, findings);
+          const existing = acc.currentActivities.find(a => a.label === 'record_finding');
+          if (existing) existing.pending = false;
+          findingProgress = null;
+          continue;
+        }
+
+        // Text delta
+        if (ev.type === 'text_delta' && ev.reasoning) {
+          acc.pendingDeltaText = ev.reasoning;
+          continue;
+        }
+
+        // Clear status
+        if (statusMessage && (ev.type === 'text_response' || ev.type === 'tool_call')) {
+          statusMessage = '';
+        }
+
+        // Text response — specialist turn boundary
+        const specReasoning = ev.fullReasoning ?? ev.reasoning;
+        if (ev.type === 'text_response' && specReasoning) {
+          if (acc.currentReasoning) {
+            acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: 'analyze' });
+          }
+          acc.currentReasoning = specReasoning;
+          acc.currentActivities = [];
+          acc.pendingDeltaText = '';
+          continue;
+        }
+
+        // Tool start
+        if (ev.type === 'tool_start' && ev.action) {
+          if (acc.pendingDeltaText || acc.currentReasoning) {
+            const text = acc.pendingDeltaText || acc.currentReasoning;
+            if (text && acc.currentActivities.length === 0) {
+              acc.currentReasoning = text;
+              acc.pendingDeltaText = '';
+            }
+          }
+          const DIR_TOOLS = new Set(['list_directory', 'grep_pattern', 'find_files', 'analyze_route_structure', 'analyze_component_directives', 'analyze_middleware', 'analyze_env_usage']);
+          let files: string[] = [];
+          let detail = '';
+          try {
+            const args = ev.args ? JSON.parse(ev.args) : {};
+            if (args.path && !DIR_TOOLS.has(ev.action)) files = [args.path];
+            if (args.paths) files = args.paths;
+            if (args.filePath) files = [args.filePath];
+            if (args.pattern) detail = args.pattern;
+          } catch { /* parse error */ }
+          files = files.filter(f => f && f !== '.');
+          const existing = acc.currentActivities.find(a => a.label === ev.action);
+          if (existing) { existing.files.push(...files); }
+          else { acc.currentActivities.push({ label: ev.action, files, detail, pending: true }); }
+          files.filter(f => f && f !== '.').forEach(f => examinedFilesSet.add(f));
+          const hints = ACTION_CATEGORY_HINTS[ev.action];
+          if (hints) hints.forEach(c => coveredTopics.add(c));
+          continue;
+        }
+
+        // Tool call
+        if (ev.type === 'tool_call' && ev.action) {
+          const DIR_TOOLS = new Set(['list_directory', 'grep_pattern', 'find_files', 'analyze_route_structure', 'analyze_component_directives', 'analyze_middleware', 'analyze_env_usage']);
+          let files: string[] = [];
+          let detail = '';
+          try {
+            const args = ev.args ? JSON.parse(ev.args) : {};
+            if (args.path && !DIR_TOOLS.has(ev.action)) files = [args.path];
+            if (args.paths) files = args.paths;
+            if (args.filePath) files = [args.filePath];
+            if (args.pattern) detail = args.pattern;
+            if (args.packages) detail = Object.keys(args.packages).join(', ');
+          } catch { /* parse error */ }
+          files = files.filter(f => f && f !== '.');
+          const existing = acc.currentActivities.find(a => a.label === ev.action);
+          if (existing) { existing.files.push(...files); existing.pending = false; }
+          else { acc.currentActivities.push({ label: ev.action, files, detail }); }
+          files.filter(f => f && f !== '.').forEach(f => examinedFilesSet.add(f));
+          const hints = ACTION_CATEGORY_HINTS[ev.action];
+          if (hints) hints.forEach(c => coveredTopics.add(c));
+        }
+
+        continue; // All specialist events handled above
       }
 
       // Clear status once real investigation events arrive
@@ -471,73 +708,7 @@ export function useLiveAnalysis(
 
       // Findings
       if (ev.type === 'finding' || ev.action === 'record_finding') {
-        try {
-          const args = ev.args ? JSON.parse(ev.args) : {};
-          let f = args.finding ?? args;
-          if (typeof f === 'string') f = JSON.parse(f);
-          if (!f || typeof f !== 'object' || !f.title) continue;
-          const incoming: Finding = {
-            id: f.id ?? `f-${findings.length}`,
-            severity: f.severity ?? 'info',
-            category: f.category ?? '',
-            title: f.title ?? ev.action,
-            evidenceFiles: (f.evidence ?? []).map((e: { filePath: string }) => e.filePath),
-            evidence: (f.evidence ?? []).map((e: { filePath: string; lineNumber?: number; snippet?: string; description?: string; verificationStatus?: string; sourceContext?: string; originalSnippet?: string }) => ({
-              filePath: e.filePath,
-              lineNumber: e.lineNumber,
-              snippet: e.snippet ?? '',
-              description: e.description ?? '',
-              verificationStatus: e.verificationStatus,
-              sourceContext: e.sourceContext,
-              originalSnippet: e.originalSnippet,
-            })),
-            note: f.investigationNote ?? f.description ?? '',
-            tags: f.tags ?? [],
-          };
-
-          // Dedup: same category + 50%+ evidence file overlap → merge
-          const incomingPaths = new Set(incoming.evidenceFiles);
-          const dupIdx = findings.findIndex((existing) => {
-            if (existing.category !== incoming.category) return false;
-            const existPaths = new Set(existing.evidenceFiles);
-            if (incomingPaths.size === 0 && existPaths.size === 0) return false;
-            let inter = 0;
-            for (const p of incomingPaths) if (existPaths.has(p)) inter++;
-            const union = new Set([...incomingPaths, ...existPaths]).size;
-            return union > 0 && inter / union >= 0.5;
-          });
-
-          if (dupIdx !== -1) {
-            const existing = findings[dupIdx];
-            const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-            const keepSeverity = (SEV_RANK[existing.severity] ?? 0) >= (SEV_RANK[incoming.severity] ?? 0)
-              ? existing.severity : incoming.severity;
-            const seenEvPaths = new Set(existing.evidenceFiles.map((f, i) => `${f}:${existing.evidence[i]?.lineNumber ?? 'none'}`));
-            const mergedEvidence = [...existing.evidence];
-            const mergedEvFiles = [...existing.evidenceFiles];
-            for (let ei = 0; ei < incoming.evidence.length; ei++) {
-              const key = `${incoming.evidenceFiles[ei]}:${incoming.evidence[ei]?.lineNumber ?? 'none'}`;
-              if (!seenEvPaths.has(key)) {
-                seenEvPaths.add(key);
-                mergedEvidence.push(incoming.evidence[ei]);
-                mergedEvFiles.push(incoming.evidenceFiles[ei]);
-              }
-            }
-            findings[dupIdx] = {
-              ...existing,
-              severity: keepSeverity,
-              note: existing.note.length >= incoming.note.length ? existing.note : incoming.note,
-              evidence: mergedEvidence,
-              evidenceFiles: mergedEvFiles,
-              tags: [...new Set([...existing.tags, ...incoming.tags])],
-            };
-          } else {
-            findings.push(incoming);
-          }
-        } catch { /* parse error */ }
-        // Clear pending state on any matching activity chip (tool_start fires
-        // before the finding event, so the activity exists but stays pending=true
-        // because 'finding' type never reaches the tool_call handler below).
+        parseFinding(ev, findings);
         const existing = currentActivities.find(a => a.label === 'record_finding');
         if (existing) existing.pending = false;
         findingProgress = null;
@@ -726,9 +897,38 @@ export function useLiveAnalysis(
       }
       typingText = cleanReasoning(typingText);
 
-      filteredTurns = turns;
-      filteredTypingText = typingText;
-      filteredPendingActions = currentActivities.filter(a => a.pending).map(a => a.label);
+      // Specialist view switching: when a specialist is selected, show its turns
+      const effectiveSpecialist = selectedSpecialistOverride !== undefined ? selectedSpecialistOverride : selectedSpecialistId;
+      if (effectiveSpecialist && specialists) {
+        const acc = specialistAccum.get(effectiveSpecialist);
+        if (acc) {
+          let sTyping = '';
+          if (acc.currentReasoning) {
+            if (acc.currentActivities.length > 0) {
+              acc.turns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: 'analyze' });
+              acc.currentReasoning = '';
+              acc.currentActivities = [];
+            } else {
+              sTyping = acc.currentReasoning;
+            }
+          }
+          if (acc.pendingDeltaText) sTyping = acc.pendingDeltaText;
+          for (const turn of acc.turns) {
+            turn.reasoning = cleanReasoning(turn.reasoning);
+          }
+          filteredTurns = acc.turns;
+          filteredTypingText = cleanReasoning(sTyping);
+          filteredPendingActions = acc.currentActivities.filter(a => a.pending).map(a => a.label);
+        } else {
+          filteredTurns = [];
+          filteredTypingText = '';
+          filteredPendingActions = [];
+        }
+      } else {
+        filteredTurns = turns;
+        filteredTypingText = typingText;
+        filteredPendingActions = currentActivities.filter(a => a.pending).map(a => a.label);
+      }
     }
 
     // Derive phase
@@ -775,6 +975,8 @@ export function useLiveAnalysis(
       selectedWorkerId: effectiveWorker,
       synthesisStatus,
       isParallel,
+      specialists,
+      selectedSpecialistId: selectedSpecialistOverride !== undefined ? selectedSpecialistOverride : selectedSpecialistId,
     };
-  }, [events, runStatus, toolCalls, budget, selectedWorkerOverride]);
+  }, [events, runStatus, toolCalls, budget, selectedWorkerOverride, selectedSpecialistOverride]);
 }
