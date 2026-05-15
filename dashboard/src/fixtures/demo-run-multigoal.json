@@ -1,0 +1,372 @@
+{
+  "id": "demo-00000000-0000-0000-0000-000000000002",
+  "goal": "all",
+  "repoName": "acme/ecommerce-storefront",
+  "startedAt": "2026-05-15T10:00:00.000Z",
+  "completedAt": "2026-05-15T10:08:15.000Z",
+  "result": {
+    "scorecard": {
+      "repoName": "acme/ecommerce-storefront",
+      "goalType": "all",
+      "generatedAt": "2026-05-15T10:08:15.000Z",
+      "overallScore": "yellow",
+      "categories": [
+        {
+          "category": "CMS Integration",
+          "score": "green",
+          "findings": [],
+          "summary": "Clean SDK integration with proper typing and error boundaries."
+        },
+        {
+          "category": "Preview & Editing",
+          "score": "yellow",
+          "findings": [],
+          "summary": "Preview mode works but lacks live editing support for inline content."
+        },
+        {
+          "category": "Architecture",
+          "score": "green",
+          "findings": [],
+          "summary": "Well-structured component hierarchy with clear data flow patterns."
+        },
+        {
+          "category": "Security",
+          "score": "red",
+          "findings": [],
+          "summary": "API keys exposed in client bundle; missing CSP headers."
+        },
+        {
+          "category": "Next.js Framework",
+          "score": "yellow",
+          "findings": [],
+          "summary": "Pages Router with no App Router migration path; missing ISR for dynamic routes."
+        },
+        {
+          "category": "Accessibility",
+          "score": "red",
+          "findings": [],
+          "summary": "Missing alt text on 40% of images; no skip navigation; insufficient color contrast on CTAs."
+        },
+        {
+          "category": "Dependencies",
+          "score": "yellow",
+          "findings": [],
+          "summary": "Several packages 2+ major versions behind; no automated update strategy."
+        },
+        {
+          "category": "Deployment",
+          "score": "green",
+          "findings": [],
+          "summary": "Vercel deployment with proper build caching and environment separation."
+        }
+      ],
+      "topRisks": [
+        {
+          "rank": 1,
+          "findingId": "finding-001",
+          "title": "API key exposed in client-side bundle",
+          "severity": "critical",
+          "businessContext": "Leaked keys allow unauthorized API access and potential data exfiltration."
+        },
+        {
+          "rank": 2,
+          "findingId": "finding-a11y-001",
+          "title": "Images missing alt text site-wide",
+          "severity": "high",
+          "businessContext": "Fails WCAG 2.1 AA criterion 1.1.1; blocks accessibility compliance."
+        },
+        {
+          "rank": 3,
+          "findingId": "finding-next-001",
+          "title": "No ISR configured for product pages",
+          "severity": "high",
+          "businessContext": "Every product page request hits the CMS API; TTFB degrades under load."
+        }
+      ],
+      "metadata": {
+        "repoName": "acme/ecommerce-storefront",
+        "analysisDate": "2026-05-15T10:08:15.000Z",
+        "agentVersion": "1.0.0",
+        "goalType": "all",
+        "detectedPlatform": "sitecore",
+        "toolCallsUsed": 58,
+        "webSearchesUsed": 3,
+        "urlFetchesUsed": 2,
+        "documentationSources": [
+          { "url": "https://doc.sitecore.com/xmc/en/developers/jss/22/jss-xmc/index.html", "title": "Sitecore JSS 22 Documentation" },
+          { "url": "https://nextjs.org/docs/app/building-your-application/data-fetching/incremental-static-regeneration", "title": "Next.js ISR Documentation" }
+        ]
+      }
+    },
+    "metrics": {
+      "startedAt": "2026-05-15T10:00:00.000Z",
+      "completedAt": "2026-05-15T10:08:15.000Z",
+      "durationMs": 495000,
+      "toolCalls": 58,
+      "models": {
+        "sonnet-4.6": {
+          "bedrockModelId": "us.anthropic.claude-sonnet-4-6",
+          "calls": 42,
+          "inputTokens": 280000,
+          "outputTokens": 52000,
+          "cachedTokens": 95000,
+          "estimatedCostUsd": 1.35
+        },
+        "haiku-4.5": {
+          "bedrockModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+          "calls": 16,
+          "inputTokens": 48000,
+          "outputTokens": 9200,
+          "cachedTokens": 20000,
+          "estimatedCostUsd": 0.09
+        }
+      },
+      "totalEstimatedCostUsd": 1.44,
+      "toolMetrics": {
+        "detect_stack": { "calls": 1, "totalMs": 320, "avgMs": 320, "errors": 0 },
+        "read_file": { "calls": 18, "totalMs": 2400, "avgMs": 133, "errors": 1 },
+        "search_files": { "calls": 12, "totalMs": 4800, "avgMs": 400, "errors": 0 },
+        "list_directory": { "calls": 8, "totalMs": 640, "avgMs": 80, "errors": 0 },
+        "record_finding": { "calls": 12, "totalMs": 600, "avgMs": 50, "errors": 0 },
+        "switch_to_fast_model": { "calls": 1, "totalMs": 5, "avgMs": 5, "errors": 0 },
+        "web_search": { "calls": 3, "totalMs": 4500, "avgMs": 1500, "errors": 0 },
+        "fetch_url": { "calls": 2, "totalMs": 3200, "avgMs": 1600, "errors": 0 },
+        "assemble_output": { "calls": 1, "totalMs": 1200, "avgMs": 1200, "errors": 0 }
+      }
+    },
+    "terminationReason": "budget_exhausted",
+    "briefMarkdown": "# Multi-Goal Audit: acme/ecommerce-storefront\n\n## Executive Summary\n\nThe storefront has strong CMS integration and deployment practices but critical gaps in security, accessibility, and Next.js performance optimization. The specialist passes identified framework-specific issues that the core audit alone would miss.\n\n## Key Findings\n\n- **Critical:** API delivery key bundled into client JavaScript\n- **High:** 40% of product images missing alt text (WCAG 1.1.1 failure)\n- **High:** No ISR for product pages causing degraded TTFB under load\n- **Medium:** Pages Router with no migration path to App Router\n- **Medium:** Skip navigation missing; keyboard users trapped in header nav\n\n## Specialist Insights\n\n### Next.js Specialist\nIdentified ISR gaps, missing middleware for auth redirects, and an opportunity to adopt Server Components for the product listing page (60% reduction in client JS).\n\n### Accessibility Specialist\nFound 12 WCAG 2.1 AA violations across 4 severity levels. Most impactful: missing alt text and insufficient contrast ratios on primary CTAs.\n",
+    "outputPaths": [],
+    "state": {
+      "findings": [
+        {
+          "id": "finding-001",
+          "category": "security",
+          "severity": "critical",
+          "confidence": 10,
+          "title": "API key exposed in client-side bundle",
+          "description": "The Sitecore delivery API key is referenced directly in a client component without the NEXT_PUBLIC_ prefix guard.",
+          "evidence": [
+            {
+              "filePath": "src/lib/sitecore-client.ts",
+              "lineNumber": 12,
+              "snippet": "const apiKey = process.env.SITECORE_API_KEY ?? 'fallback-key-abc123';",
+              "description": "API key accessed in a module imported by client components",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["security", "api-key", "client-exposure"]
+        },
+        {
+          "id": "finding-002",
+          "category": "security",
+          "severity": "high",
+          "confidence": 9,
+          "title": "Missing Content-Security-Policy headers",
+          "description": "No CSP headers configured in next.config.js or middleware.",
+          "evidence": [
+            {
+              "filePath": "next.config.js",
+              "lineNumber": 1,
+              "snippet": "const nextConfig = {\n  reactStrictMode: true,\n  images: { domains: ['cdn.sitecore.com'] },\n};",
+              "description": "next.config.js has no security headers configuration",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["security", "csp", "headers"]
+        },
+        {
+          "id": "finding-next-001",
+          "category": "nextjs-framework",
+          "severity": "high",
+          "confidence": 9,
+          "title": "No ISR configured for product pages",
+          "description": "Product detail pages use getServerSideProps instead of getStaticProps with revalidate, causing every request to hit the CMS API.",
+          "evidence": [
+            {
+              "filePath": "src/pages/products/[slug].tsx",
+              "lineNumber": 45,
+              "snippet": "export const getServerSideProps: GetServerSideProps = async (ctx) => {\n  const product = await fetchProduct(ctx.params.slug);",
+              "description": "getServerSideProps used instead of getStaticProps + revalidate for product pages",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["nextjs", "isr", "performance"],
+          "specialistId": "nextjs-specialist"
+        },
+        {
+          "id": "finding-next-002",
+          "category": "nextjs-framework",
+          "severity": "medium",
+          "confidence": 8,
+          "title": "No App Router migration path",
+          "description": "Entire application uses Pages Router with no app/ directory. Layout patterns rely on _app.tsx wrapper instead of nested layouts.",
+          "evidence": [
+            {
+              "filePath": "src/pages/_app.tsx",
+              "lineNumber": 1,
+              "snippet": "import type { AppProps } from 'next/app';\nimport { MainLayout } from '../components/Layout/MainLayout';",
+              "description": "All routing through Pages Router _app.tsx wrapper",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["nextjs", "app-router", "migration"],
+          "specialistId": "nextjs-specialist"
+        },
+        {
+          "id": "finding-next-003",
+          "category": "nextjs-framework",
+          "severity": "low",
+          "confidence": 8,
+          "title": "Large client bundle from product listing page",
+          "description": "ProductListingPage ships 180KB of client JS including filter/sort logic that could be Server Components.",
+          "evidence": [
+            {
+              "filePath": "src/pages/products/index.tsx",
+              "lineNumber": 1,
+              "snippet": "import { useState, useEffect } from 'react';\nimport { ProductCard } from '@/components/ProductCard';\nimport { FilterSidebar } from '@/components/FilterSidebar';",
+              "description": "Client-side filtering that could be server-rendered with searchParams",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["nextjs", "bundle-size", "server-components"],
+          "specialistId": "nextjs-specialist"
+        },
+        {
+          "id": "finding-a11y-001",
+          "category": "accessibility",
+          "severity": "high",
+          "confidence": 9,
+          "title": "Images missing alt text site-wide",
+          "description": "40% of img elements and Next.js Image components have empty or missing alt attributes, failing WCAG 2.1 AA criterion 1.1.1.",
+          "evidence": [
+            {
+              "filePath": "src/components/ProductCard.tsx",
+              "lineNumber": 18,
+              "snippet": "<Image src={product.image} width={300} height={300} alt=\"\" />",
+              "description": "Product images use empty alt text instead of descriptive labels",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["accessibility", "wcag", "images"],
+          "specialistId": "a11y-specialist"
+        },
+        {
+          "id": "finding-a11y-002",
+          "category": "accessibility",
+          "severity": "medium",
+          "confidence": 8,
+          "title": "Skip navigation missing",
+          "description": "No skip-to-content link exists. Keyboard users must tab through 24 header navigation items to reach main content.",
+          "evidence": [
+            {
+              "filePath": "src/components/Layout/Header.tsx",
+              "lineNumber": 1,
+              "snippet": "<header>\n  <nav aria-label=\"Main\">\n    <ul>{navItems.map(item => (",
+              "description": "Header nav has no skip link before it",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["accessibility", "wcag", "keyboard-navigation"],
+          "specialistId": "a11y-specialist"
+        },
+        {
+          "id": "finding-a11y-003",
+          "category": "accessibility",
+          "severity": "medium",
+          "confidence": 9,
+          "title": "Insufficient color contrast on primary CTAs",
+          "description": "Primary action buttons use #4A90D9 on white (#FFFFFF) giving a contrast ratio of 3.2:1, below the 4.5:1 minimum for WCAG AA.",
+          "evidence": [
+            {
+              "filePath": "src/styles/globals.css",
+              "lineNumber": 42,
+              "snippet": ".btn-primary {\n  background-color: #4A90D9;\n  color: #FFFFFF;\n}",
+              "description": "Primary button color fails WCAG AA contrast minimum",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["accessibility", "wcag", "color-contrast"],
+          "specialistId": "a11y-specialist"
+        },
+        {
+          "id": "finding-a11y-004",
+          "category": "accessibility",
+          "severity": "low",
+          "confidence": 7,
+          "title": "Form inputs missing visible labels",
+          "description": "Search and newsletter signup forms use placeholder text as the only label. When focused, users lose context of what the field expects.",
+          "evidence": [
+            {
+              "filePath": "src/components/SearchBar.tsx",
+              "lineNumber": 8,
+              "snippet": "<input type=\"text\" placeholder=\"Search products...\" className=\"search-input\" />",
+              "description": "Input relies on placeholder instead of a visible <label>",
+              "verified": true,
+              "verificationStatus": "verified"
+            }
+          ],
+          "tags": ["accessibility", "wcag", "forms"],
+          "specialistId": "a11y-specialist"
+        }
+      ]
+    }
+  },
+  "specialists": [
+    {
+      "id": "nextjs-specialist",
+      "name": "Next.js Specialist",
+      "status": "complete",
+      "toolCalls": 12,
+      "budget": 15,
+      "findingsCount": 3,
+      "color": "#0070f3"
+    },
+    {
+      "id": "a11y-specialist",
+      "name": "Accessibility Specialist",
+      "status": "complete",
+      "toolCalls": 14,
+      "budget": 15,
+      "findingsCount": 4,
+      "color": "#8b5cf6"
+    }
+  ],
+  "events": [
+    { "step": 1, "type": "tool_call", "action": "detect_stack", "result": "Detected: Sitecore JSS + Next.js 13 (Pages Router), TypeScript, pnpm", "timestamp": "2026-05-15T10:00:03.000Z" },
+    { "step": 2, "type": "tool_call", "action": "read_file", "args": "package.json", "result": "Read 42 lines — React 17.0.2, @sitecore-jss/sitecore-jss-nextjs ^21.6.0", "timestamp": "2026-05-15T10:00:08.000Z" },
+    { "step": 3, "type": "tool_call", "action": "read_file", "args": "next.config.js", "result": "Read 18 lines — standard config, no security headers", "timestamp": "2026-05-15T10:00:12.000Z" },
+    { "step": 4, "type": "tool_call", "action": "search_files", "args": "pattern: SITECORE_API_KEY", "result": "3 matches in 2 files", "timestamp": "2026-05-15T10:00:18.000Z" },
+    { "step": 5, "type": "tool_call", "action": "read_file", "args": "src/lib/sitecore-client.ts", "result": "Read 28 lines — API key used in client-importable module", "timestamp": "2026-05-15T10:00:22.000Z" },
+    { "step": 6, "type": "tool_call", "action": "record_finding", "result": "Recorded: API key exposed in client-side bundle (critical)", "timestamp": "2026-05-15T10:00:25.000Z" },
+    { "step": 7, "type": "tool_call", "action": "record_finding", "result": "Recorded: Missing Content-Security-Policy headers (high)", "timestamp": "2026-05-15T10:00:33.000Z" },
+    { "step": 8, "type": "tool_call", "action": "switch_to_fast_model", "result": "Switched to fast model for writing phase", "timestamp": "2026-05-15T10:01:00.000Z" },
+    { "step": 9, "type": "tool_call", "action": "assemble_output", "result": "Core audit brief assembled", "timestamp": "2026-05-15T10:01:30.000Z" },
+    { "step": 10, "type": "pass_boundary", "action": "pass_boundary", "result": "Starting specialist: Next.js Specialist", "timestamp": "2026-05-15T10:02:00.000Z" },
+    { "step": 11, "type": "tool_call", "action": "read_file", "args": "src/pages/products/[slug].tsx", "result": "Read 68 lines — getServerSideProps, no revalidate", "timestamp": "2026-05-15T10:02:10.000Z", "specialistId": "nextjs-specialist" },
+    { "step": 12, "type": "tool_call", "action": "search_files", "args": "pattern: getStaticProps", "result": "0 matches", "timestamp": "2026-05-15T10:02:18.000Z", "specialistId": "nextjs-specialist" },
+    { "step": 13, "type": "tool_call", "action": "read_file", "args": "src/pages/_app.tsx", "result": "Read 35 lines — Pages Router only", "timestamp": "2026-05-15T10:02:25.000Z", "specialistId": "nextjs-specialist" },
+    { "step": 14, "type": "tool_call", "action": "record_finding", "result": "Recorded: No ISR configured for product pages (high)", "timestamp": "2026-05-15T10:02:35.000Z", "specialistId": "nextjs-specialist" },
+    { "step": 15, "type": "tool_call", "action": "record_finding", "result": "Recorded: No App Router migration path (medium)", "timestamp": "2026-05-15T10:02:42.000Z", "specialistId": "nextjs-specialist" },
+    { "step": 16, "type": "tool_call", "action": "record_finding", "result": "Recorded: Large client bundle from product listing page (low)", "timestamp": "2026-05-15T10:02:50.000Z", "specialistId": "nextjs-specialist" },
+    { "step": 17, "type": "pass_complete", "action": "pass_complete", "result": "{\"specialist\":\"nextjs-specialist\",\"toolCalls\":12,\"findingsCount\":3}", "timestamp": "2026-05-15T10:03:00.000Z" },
+    { "step": 18, "type": "pass_boundary", "action": "pass_boundary", "result": "Starting specialist: Accessibility Specialist", "timestamp": "2026-05-15T10:03:05.000Z" },
+    { "step": 19, "type": "tool_call", "action": "search_files", "args": "pattern: alt=", "result": "18 matches in 12 files", "timestamp": "2026-05-15T10:03:15.000Z", "specialistId": "a11y-specialist" },
+    { "step": 20, "type": "tool_call", "action": "read_file", "args": "src/components/ProductCard.tsx", "result": "Read 42 lines — Image with empty alt", "timestamp": "2026-05-15T10:03:22.000Z", "specialistId": "a11y-specialist" },
+    { "step": 21, "type": "tool_call", "action": "search_files", "args": "pattern: skip-to|skip-nav|skipnav", "result": "0 matches", "timestamp": "2026-05-15T10:03:30.000Z", "specialistId": "a11y-specialist" },
+    { "step": 22, "type": "tool_call", "action": "read_file", "args": "src/styles/globals.css", "result": "Read 120 lines — #4A90D9 primary color", "timestamp": "2026-05-15T10:03:38.000Z", "specialistId": "a11y-specialist" },
+    { "step": 23, "type": "tool_call", "action": "record_finding", "result": "Recorded: Images missing alt text site-wide (high)", "timestamp": "2026-05-15T10:03:45.000Z", "specialistId": "a11y-specialist" },
+    { "step": 24, "type": "tool_call", "action": "record_finding", "result": "Recorded: Skip navigation missing (medium)", "timestamp": "2026-05-15T10:03:52.000Z", "specialistId": "a11y-specialist" },
+    { "step": 25, "type": "tool_call", "action": "record_finding", "result": "Recorded: Insufficient color contrast on primary CTAs (medium)", "timestamp": "2026-05-15T10:04:00.000Z", "specialistId": "a11y-specialist" },
+    { "step": 26, "type": "tool_call", "action": "record_finding", "result": "Recorded: Form inputs missing visible labels (low)", "timestamp": "2026-05-15T10:04:08.000Z", "specialistId": "a11y-specialist" },
+    { "step": 27, "type": "pass_complete", "action": "pass_complete", "result": "{\"specialist\":\"a11y-specialist\",\"toolCalls\":14,\"findingsCount\":4}", "timestamp": "2026-05-15T10:04:15.000Z" }
+  ]
+}

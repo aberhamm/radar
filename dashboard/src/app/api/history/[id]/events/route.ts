@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, loadRunEvents, findRunById } from '@/lib/agentSession';
 import demoRun from '@/fixtures/demo-run.json';
+import demoMultigoal from '@/fixtures/demo-run-multigoal.json';
 
-const DEMO_ID = demoRun.id;
+const DEMO_EVENTS: Record<string, unknown[]> = {
+  [demoRun.id]: demoRun.events,
+  [demoMultigoal.id]: demoMultigoal.events,
+};
 
 export async function GET(
   _req: NextRequest,
@@ -10,9 +14,10 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  if (id === DEMO_ID) {
+  const demoEvents = DEMO_EVENTS[id];
+  if (demoEvents) {
     return NextResponse.json(
-      { events: demoRun.events },
+      { events: demoEvents },
       { headers: { 'Cache-Control': 'public, max-age=86400, immutable' } },
     );
   }

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, loadRunEnvelope, loadRunFindings, findRunById } from '@/lib/agentSession';
 import demoRun from '@/fixtures/demo-run.json';
+import demoMultigoal from '@/fixtures/demo-run-multigoal.json';
 
-const DEMO_ID = demoRun.id;
+const DEMO_RUNS: Record<string, typeof demoRun> = {
+  [demoRun.id]: demoRun,
+  [demoMultigoal.id]: demoMultigoal as typeof demoRun,
+};
 
 export async function GET(
   req: NextRequest,
@@ -11,9 +15,10 @@ export async function GET(
   const { id } = await params;
   const slim = req.nextUrl.searchParams.get('slim') === '1';
 
-  if (id === DEMO_ID) {
+  const demo = DEMO_RUNS[id];
+  if (demo) {
     const findings = slim
-      ? demoRun.result.state.findings.map(f => ({
+      ? demo.result.state.findings.map(f => ({
           id: f.id,
           severity: f.severity,
           category: f.category,
@@ -21,18 +26,19 @@ export async function GET(
           evidenceFiles: f.evidence.map(e => e.filePath),
           tags: f.tags,
         }))
-      : demoRun.result.state.findings;
+      : demo.result.state.findings;
     return NextResponse.json({
-      id: demoRun.id,
-      goal: demoRun.goal,
-      repoName: demoRun.repoName,
-      startedAt: demoRun.startedAt,
-      completedAt: demoRun.completedAt,
+      id: demo.id,
+      goal: demo.goal,
+      repoName: demo.repoName,
+      startedAt: demo.startedAt,
+      completedAt: demo.completedAt,
+      specialists: (demo as typeof demoMultigoal).specialists ?? null,
       result: {
-        scorecard: demoRun.result.scorecard,
-        metrics: demoRun.result.metrics,
-        terminationReason: demoRun.result.terminationReason,
-        briefMarkdown: demoRun.result.briefMarkdown,
+        scorecard: demo.result.scorecard,
+        metrics: demo.result.metrics,
+        terminationReason: demo.result.terminationReason,
+        briefMarkdown: demo.result.briefMarkdown,
         state: { findings },
       },
     });
