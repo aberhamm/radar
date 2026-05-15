@@ -55,6 +55,13 @@ Triggered by Honda Canada RFP inquiry (2026-05-08). Current rules are tuned for 
 - [ ] **Dashboard concurrent sessions** — Replace global singleton session with per-session isolation.
 - [ ] **Generator-based agent loop wrapper** — Wrap Pi's callback events in async generator. Parked until Pi's event model becomes bottleneck.
 
+## Replay Fidelity & AI Testing Infrastructure
+
+- [ ] **Visual snapshot baseline** — Script that navigates to demo run URLs via `/browse`, captures screenshots, and saves as golden PNGs. Future runs diff against baseline to catch visual regressions. Files: new `test/visual/capture-golden.sh`, golden PNGs in `test/visual/golden/`.
+- [ ] **API response shape assertions** — Vitest test that fetches `/api/history/:id` and `/api/history/:id/events` for both demo fixtures, asserts: findings count, scorecard category count/scores, event count, specialist metadata presence. Catches serialization bugs after refactors. Files: new `test/dashboard/demoFixtures.test.ts`.
+- [ ] **Real-run fixture capture** — CLI command (`pnpm capture-fixture <run-id>`) that reads a completed run from history, strips timestamps/IDs for stability, and writes it as a new demo fixture JSON. Keeps fixtures realistic as output schema evolves. Files: new `scripts/capture-fixture.ts`.
+- [ ] **Console error monitoring hook** — Post-navigation check that runs `$B console --errors` after page load and fails if any JS errors exist. Can be wired into `/browse` QA flows or as a standalone test. Files: integrate into `test/visual/` or as a Claude hook.
+
 ## Dashboard polish
 
 - [ ] **ActivityChipGroup needs more vertical padding around tools**
