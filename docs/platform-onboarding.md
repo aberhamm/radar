@@ -110,6 +110,22 @@ Some platforms need variant-level support (e.g., Sitecore XP vs XM Cloud). The c
 
 The CLI `--platform` flag can override auto-detection when the signals are ambiguous.
 
+## Intake process: turning client inquiries into platform support
+
+Every client engagement that mentions a platform we don't fully cover is a signal. The process:
+
+1. **Capture the assessment scope** — what does the client's team expect to evaluate? (e.g., Neha's Honda RFP activity list)
+2. **Map against existing coverage** — which items can the tool already produce findings for? Which are gaps?
+3. **Classify the gaps:**
+   - Missing rules/references (knowledge gap, no code needed)
+   - Missing detection (can't tell it's this platform)
+   - Missing tools (can't read the data source)
+   - Out of scope (human-only work: stakeholder interviews, strategy)
+4. **Add TODOs for automatable gaps** — reference this doc for the implementation pattern
+5. **Request repo access** — rules validated against a real codebase are 10x more useful than hypothetical ones
+
+The goal: when the same platform comes up in the next engagement, the tool is ready.
+
 ## Checklist summary
 
 - [ ] Detection signals identified and implemented in `detectAppRoots.ts`
