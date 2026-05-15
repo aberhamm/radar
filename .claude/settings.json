@@ -3,7 +3,12 @@
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "pnpm vitest run --reporter=verbose --changed"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm vitest run --reporter=verbose --changed"
+          }
+        ]
       }
     ]
   }
