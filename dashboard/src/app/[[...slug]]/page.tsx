@@ -117,7 +117,7 @@ export default function DashboardPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedParallelWorker, setSelectedParallelWorker] = useState<string | null>(null);
   const [selectedSpecialist, setSelectedSpecialist] = useState<string | null>(null);
-  const [specialistDisplayMode] = useSpecialistDisplayMode();
+  const [specialistDisplayMode, setSpecialistDisplayMode] = useSpecialistDisplayMode();
   const [pendingMultiComplete, setPendingMultiComplete] = useState<{
     parentRunId: string;
     groupData: MultiGoalData;
@@ -1323,17 +1323,68 @@ export default function DashboardPage() {
           {status === 'settings' && (
             <div key="settings" className="animate-slide-up flex-1 flex flex-col overflow-y-auto px-6 py-8">
               <h1 className="text-xl font-bold font-brand text-label tracking-tight mb-6">Settings</h1>
-              <div className="flex flex-col items-center justify-center py-16 gap-4">
-                <svg className="w-10 h-10 text-quaternary-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-                <div className="text-center">
-                  <p className="text-sm font-medium text-secondary-label">Settings coming soon</p>
-                  <p className="text-[12px] text-tertiary-label mt-1 max-w-xs">
-                    GitHub tokens, Jira integration, and Azure DevOps connections will be configured here.
+              <div className="max-w-lg space-y-8">
+
+                {/* Specialist Display Mode */}
+                <div className="space-y-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-label">Specialist Display</h2>
+                    <p className="text-[12px] text-tertiary-label mt-0.5">How specialist worker streams appear in the analysis view.</p>
+                  </div>
+                  <div className="flex gap-1.5 p-1 rounded-lg bg-elevated border border-separator">
+                    {(['inline', 'modal', 'panel'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setSpecialistDisplayMode(m)}
+                        className={`flex-1 px-3 py-2 rounded-md text-[12px] font-medium transition-all cursor-pointer ${
+                          specialistDisplayMode === m
+                            ? 'bg-surface shadow-card text-label'
+                            : 'text-tertiary-label hover:text-secondary-label'
+                        }`}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          {m === 'inline' && (
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                              <rect x="2" y="3" width="12" height="2" rx="1" stroke="currentColor" strokeWidth="1" />
+                              <rect x="4" y="7" width="8" height="5" rx="1" stroke="currentColor" strokeWidth="1" strokeDasharray="2 1" />
+                              <rect x="2" y="14" width="12" height="1" rx="0.5" fill="currentColor" opacity="0.3" />
+                            </svg>
+                          )}
+                          {m === 'modal' && (
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                              <rect x="1" y="1" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+                              <rect x="3" y="4" width="10" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+                              <path d="M3 6h10" stroke="currentColor" strokeWidth="0.7" />
+                            </svg>
+                          )}
+                          {m === 'panel' && (
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                              <rect x="1" y="1" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1" />
+                              <path d="M10 1v14" stroke="currentColor" strokeWidth="1" />
+                            </svg>
+                          )}
+                          <span className="capitalize">{m}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-quaternary-label">
+                    {specialistDisplayMode === 'inline' && 'Specialist reasoning expands directly in the timeline stream.'}
+                    {specialistDisplayMode === 'modal' && 'Click a specialist chip to open a centered dialog with its full stream.'}
+                    {specialistDisplayMode === 'panel' && 'Click a specialist chip to open a slide-over panel from the right.'}
                   </p>
                 </div>
+
+                {/* Placeholder for future settings */}
+                <div className="pt-4 border-t border-separator space-y-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-label">Integrations</h2>
+                    <p className="text-[12px] text-tertiary-label mt-0.5">GitHub tokens, Jira, and Azure DevOps connections.</p>
+                  </div>
+                  <p className="text-[11px] text-quaternary-label italic">Coming soon</p>
+                </div>
+
               </div>
             </div>
           )}
