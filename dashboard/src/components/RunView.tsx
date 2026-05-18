@@ -217,7 +217,7 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
       <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as Tab)} className="gap-0">
         <div className="bg-surface border-b border-separator px-6 py-2.5 flex items-center">
           <TabsList className="bg-elevated rounded-lg p-0.5 gap-0.5 h-auto">
-            {TABS.map(tab => (
+            {TABS.filter(tab => tab.id !== 'timeline' || mode.kind === 'single').map(tab => (
               <TabsTrigger
                 key={tab.id}
                 value={tab.id}
