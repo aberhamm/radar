@@ -103,6 +103,25 @@ export interface StepEvent {
   model?: string;
   /** Duration of tool execution in milliseconds */
   durationMs?: number;
+  /** Time spent in context compression before the preceding LLM turn (ms) */
+  compressionMs?: number;
+  /** Idle gap between previous tool end and this LLM turn start (ms) */
+  idleMs?: number;
+  /** LLM inference time for the turn that preceded this event (ms) */
+  llmDurationMs?: number;
+  /** Token counts for the preceding LLM turn */
+  turnTokens?: { input: number; output: number; cached: number };
+  /** Running USD cost accumulated after this step */
+  costSoFar?: number;
+  /** True if this tool call has identical signature to a previous call */
+  repeated?: boolean;
+  /** Snapshot of investigation state at this step */
+  stateSnapshot?: {
+    findingsCount: number;
+    filesReadCount: number;
+    toolCallsUsed: number;
+    budgetRemaining: number;
+  };
   /** Worker ID for parallel dispatch — used by dashboard to demux events. */
   workerId?: string;
 }

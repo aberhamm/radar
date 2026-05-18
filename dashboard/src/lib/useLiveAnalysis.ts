@@ -68,6 +68,8 @@ export interface LiveAnalysisState {
   specialists: Map<string, SpecialistState> | null;
   /** Specialist mode: currently selected specialist for detail view (null = Core) */
   selectedSpecialistId: string | null;
+  /** Specialist mode: per-specialist turns for modal/panel display */
+  specialistTurns: Map<string, StreamTurn[]>;
 }
 
 const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
@@ -156,6 +158,7 @@ const SPECIALIST_META: Record<string, { name: string; color: string }> = {
  */
 export function useLiveAnalysis(
   events: StepEvent[],
+  eventsVersion: number,
   runStatus: string,
   toolCalls: number,
   budget: number,
@@ -482,7 +485,6 @@ export function useLiveAnalysis(
         if (currentReasoning) {
           turns.push({ reasoning: currentReasoning, activities: [...currentActivities], phase: currentPhase, workerId: currentWorkerId });
         }
-        turns.push({ reasoning: `Starting ${ev.result} pass`, activities: [], phase: 'analyze' });
         currentReasoning = '';
         currentActivities = [];
         currentWorkerId = undefined;
@@ -491,6 +493,7 @@ export function useLiveAnalysis(
         // Initialize specialist state from pass_boundary (specialist names)
         const passName = ev.result as string;
         const isSkipped = passName.includes('(skipped)');
+        let matchedSid: string | undefined;
         for (const [sid, meta] of Object.entries(SPECIALIST_META)) {
           if (passName.includes(meta.name.replace(' Specialist', ''))) {
             if (!specialists) specialists = new Map();
@@ -507,7 +510,24 @@ export function useLiveAnalysis(
             if (!isSkipped && selectedSpecialistId === null) {
               selectedSpecialistId = sid;
             }
+            matchedSid = sid;
           }
+        }
+
+        if (matchedSid && specialists) {
+          const meta = specialists.get(matchedSid)!;
+          turns.push({
+            reasoning: '',
+            activities: [],
+            phase: 'analyze',
+            isSpecialistStart: true,
+            specialistId: matchedSid,
+            specialistName: meta.name,
+            specialistColor: meta.color,
+            specialistStatus: meta.status,
+          });
+        } else {
+          turns.push({ reasoning: `Starting ${ev.result} pass`, activities: [], phase: 'analyze', isPassBoundary: true, passName: ev.result as string });
         }
         continue;
       }
@@ -550,6 +570,9 @@ export function useLiveAnalysis(
             acc.currentReasoning = '';
             acc.currentActivities = [];
           }
+          // Update the specialist start turn's status to 'complete'
+          const startTurn = turns.find(t => t.isSpecialistStart && t.specialistId === sid);
+          if (startTurn) startTurn.specialistStatus = 'complete';
         }
         continue;
       }
@@ -958,6 +981,17 @@ export function useLiveAnalysis(
 
     const scoreVisible = phase === 'done' && findings.length > 0;
 
+    // Build specialistTurns map from accumulators
+    const specialistTurnsMap = new Map<string, StreamTurn[]>();
+    for (const [sid, acc] of specialistAccum) {
+      const sTurns = [...acc.turns];
+      if (acc.currentReasoning) {
+        sTurns.push({ reasoning: acc.currentReasoning, activities: [...acc.currentActivities], phase: 'analyze' });
+      }
+      for (const t of sTurns) { t.reasoning = cleanReasoning(t.reasoning); }
+      specialistTurnsMap.set(sid, sTurns);
+    }
+
     return {
       phase,
       turns: filteredTurns,
@@ -977,6 +1011,8 @@ export function useLiveAnalysis(
       isParallel,
       specialists,
       selectedSpecialistId: selectedSpecialistOverride !== undefined ? selectedSpecialistOverride : selectedSpecialistId,
+      specialistTurns: specialistTurnsMap,
     };
-  }, [events, runStatus, toolCalls, budget, selectedWorkerOverride, selectedSpecialistOverride]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventsVersion, runStatus, toolCalls, budget, selectedWorkerOverride, selectedSpecialistOverride]);
 }

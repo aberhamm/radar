@@ -5,11 +5,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { AnimationPhase } from '@/lib/useAnimationSequence';
 import type { StreamTurn, Finding } from '@/lib/runTransform';
-import type { FindingProgressState } from '@/lib/useLiveAnalysis';
+import type { FindingProgressState, SpecialistState } from '@/lib/useLiveAnalysis';
+import type { SpecialistDisplayMode } from '@/lib/useSpecialistDisplayMode';
 import { StaggeredSpinner } from '@/components/Skeleton';
 import { TurnItem } from './TurnItem';
 import { SwitchMarker } from './SwitchMarker';
 import { PassBoundaryMarker } from './PassBoundaryMarker';
+import { SpecialistDisplay } from './SpecialistDisplay';
 
 interface ReasoningStreamProps {
   phase: AnimationPhase;
@@ -23,6 +25,9 @@ interface ReasoningStreamProps {
   verbose: boolean;
   accentColor: string;
   findingProgress?: FindingProgressState | null;
+  specialists?: Map<string, SpecialistState> | null;
+  specialistTurns?: Map<string, StreamTurn[]>;
+  specialistDisplayMode?: SpecialistDisplayMode;
 }
 
 export function ReasoningStream({
@@ -37,6 +42,9 @@ export function ReasoningStream({
   verbose,
   accentColor,
   findingProgress,
+  specialists,
+  specialistTurns,
+  specialistDisplayMode = 'inline',
 }: ReasoningStreamProps) {
   const streamRef = useRef<HTMLDivElement>(null);
   const streamContainerRef = useRef<HTMLDivElement>(null);
@@ -129,6 +137,22 @@ export function ReasoningStream({
           {turns.map((turn, i) => {
             if (turn.isSwitch) return <SwitchMarker key={`switch-${i}`} />;
             if (turn.isPassBoundary) return <PassBoundaryMarker key={`pass-${i}`} passName={turn.passName} />;
+
+            if (turn.isSpecialistStart && turn.specialistId && specialists) {
+              const spec = specialists.get(turn.specialistId);
+              if (spec) {
+                const sTurns = specialistTurns?.get(turn.specialistId) ?? [];
+                return (
+                  <SpecialistDisplay
+                    key={`spec-${turn.specialistId}`}
+                    specialist={spec}
+                    turns={sTurns}
+                    mode={specialistDisplayMode}
+                    accentColor={accentColor}
+                  />
+                );
+              }
+            }
 
             return (
               <TurnItem

@@ -10,6 +10,7 @@ const TAB_LABELS: Record<Tab, string> = {
   overview: 'Overview',
   investigation: 'Investigation',
   cost: 'Cost',
+  timeline: 'Timeline',
 };
 
 interface ContextBarProps {

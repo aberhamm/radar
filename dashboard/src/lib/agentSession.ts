@@ -55,6 +55,14 @@ export interface Scorecard {
   findings?: unknown[];
 }
 
+export interface RunDiagnostics {
+  retryStats: { totalAttempts: number; totalWaitMs: number; rateLimitCount: number; byStatus: Record<number, number> };
+  compressionStats: { totalMs: number; calls: number; avgMessagesDropped: number };
+  idleStats: { totalIdleMs: number; avgIdleMs: number };
+  efficiency: { repeatedCalls: number; toolErrorRate: number; uniqueToolCallRatio: number };
+  investigationBreadth: { uniqueFiles: number; uniqueDirectories: number; totalToolCalls: number; fileToCallRatio: number };
+}
+
 export interface RunMetrics {
   startedAt: string;
   completedAt: string;
@@ -71,6 +79,7 @@ export interface RunMetrics {
     };
   };
   totalEstimatedCostUsd: number;
+  diagnostics?: RunDiagnostics;
 }
 
 // --- From src/agent/runner.ts ---
@@ -87,13 +96,19 @@ export interface StepEvent {
   batchId?: string;
   newBudget?: number;
   timestamp?: string;
-  /** Structured metadata from the tool result (e.g. findingId, severity, matchCount) */
   details?: Record<string, unknown>;
   thinking?: string;
   model?: string;
   durationMs?: number;
   workerId?: string;
   specialistId?: string;
+  compressionMs?: number;
+  idleMs?: number;
+  llmDurationMs?: number;
+  turnTokens?: { input: number; output: number; cached: number };
+  costSoFar?: number;
+  repeated?: boolean;
+  stateSnapshot?: { findingsCount: number; filesReadCount: number; toolCallsUsed: number; budgetRemaining: number };
 }
 
 export interface SourceFile {
@@ -321,6 +336,14 @@ function writeRunData(dirPath: string, events: StepEvent[], result: RunResult): 
     fs.writeFileSync(path.join(dirPath, 'rundata.json'), JSON.stringify(data));
   } catch {
     // Non-critical — client falls back to loading events
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { buildTimeline } = require('../../../src/output/buildTimeline') as { buildTimeline: (events: unknown[]) => unknown };
+    const timeline = buildTimeline(events);
+    fs.writeFileSync(path.join(dirPath, 'timeline.json'), JSON.stringify(timeline));
+  } catch {
+    // Non-critical — timeline is optional observability artifact
   }
 }
 
@@ -616,6 +639,42 @@ export function loadRunData(record: RunRecord): unknown | null {
   } catch {
     return null;
   }
+}
+
+/** Load timeline data for a specific run. Returns pre-computed timeline.json or builds from events. */
+export function loadRunTimeline(record: RunRecord): { timeline: unknown; diagnostics: RunDiagnostics | null } | null {
+  const dirPath = record._dirPath;
+  if (!dirPath) return null;
+
+  let timeline: unknown = null;
+  const timelinePath = path.join(dirPath, 'timeline.json');
+  try {
+    if (fs.existsSync(timelinePath)) {
+      timeline = JSON.parse(fs.readFileSync(timelinePath, 'utf-8'));
+    }
+  } catch { /* fall through */ }
+
+  if (!timeline) {
+    try {
+      const { buildTimeline } = require('../../../src/output/buildTimeline') as { buildTimeline: (events: unknown[]) => unknown };
+      const events = loadRunEvents(record);
+      if (events.length === 0) return null;
+      timeline = buildTimeline(events);
+    } catch {
+      return null;
+    }
+  }
+
+  let diagnostics: RunDiagnostics | null = null;
+  const envelope = loadRunEnvelope(record);
+  if (envelope && typeof envelope === 'object' && 'metrics' in (envelope as unknown as Record<string, unknown>)) {
+    const metrics = (envelope as unknown as Record<string, unknown>).metrics as Record<string, unknown> | undefined;
+    if (metrics?.diagnostics) {
+      diagnostics = metrics.diagnostics as RunDiagnostics;
+    }
+  }
+
+  return { timeline, diagnostics };
 }
 
 /** Load source files (Tier 3) for a specific run. Returns null for old runs without sources. */

@@ -6,12 +6,12 @@ import { buildInstantState } from '@/lib/runTransform';
 import { SAMPLE_ANALYSIS_TURNS, SAMPLE_FINDINGS } from '@/lib/sampleRunData';
 import { useAnimationSequence } from '@/lib/useAnimationSequence';
 import type { LiveAnalysisState } from '@/lib/useLiveAnalysis';
+import type { SpecialistDisplayMode } from '@/lib/useSpecialistDisplayMode';
 import { BudgetPausedView } from '@/components/BudgetPausedView';
 import { PhaseRail } from '@/components/analysis/PhaseRail';
 import { ReasoningStream } from '@/components/analysis/ReasoningStream';
 import { RightPanel } from '@/components/analysis/RightPanel';
 import { WorkerLaneGrid } from '@/components/analysis/WorkerLaneGrid';
-import { SpecialistLaneGrid } from '@/components/analysis/SpecialistLaneGrid';
 import { SynthesisBar } from '@/components/analysis/SynthesisBar';
 
 // ─── Props ──────────────────────────────────────────────────────
@@ -27,6 +27,7 @@ interface AnalysisViewProps {
   onBudgetDecision?: (extend: boolean) => void;
   onSelectWorker?: (id: string) => void;
   onSelectSpecialist?: (id: string | null) => void;
+  specialistDisplayMode?: SpecialistDisplayMode;
 }
 
 // ─── Analysis View ───────────────────────────────────────────────
@@ -42,6 +43,7 @@ export function AnalysisView({
   onBudgetDecision,
   onSelectWorker,
   onSelectSpecialist,
+  specialistDisplayMode = 'inline',
 }: AnalysisViewProps) {
 
   // ─── State source routing ──────────────────────────────────────
@@ -180,14 +182,7 @@ export function AnalysisView({
           />
         )}
 
-        {/* Sequential specialist mode: specialist lane grid */}
-        {!isParallel && liveState?.specialists && (
-          <SpecialistLaneGrid
-            specialists={liveState.specialists}
-            selectedSpecialistId={liveState.selectedSpecialistId}
-            onSelectSpecialist={onSelectSpecialist ?? (() => {})}
-          />
-        )}
+        {/* Specialist mode: inline display is handled within ReasoningStream */}
 
         <ReasoningStream
           phase={phase}
@@ -201,6 +196,9 @@ export function AnalysisView({
           verbose={verbose}
           accentColor={accentColor}
           findingProgress={findingProgress}
+          specialists={liveState?.specialists}
+          specialistTurns={liveState?.specialistTurns}
+          specialistDisplayMode={specialistDisplayMode}
         />
 
         {/* Parallel mode: synthesis bar */}

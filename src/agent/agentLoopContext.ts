@@ -25,11 +25,11 @@ import type { AgentState } from '../types/state.js';
 import type { RunnerConfig, RunResult, StepEvent } from './runnerTypes.js';
 import type { CompressionState } from './contextCompression.js';
 import type { AssembledSections } from '../tools/piToolAdapter.js';
-import type { ToolMetricEntry } from '../types/output.js';
+import type { ToolMetricEntry, RunDiagnostics } from '../types/output.js';
 import { redactSecrets } from './redaction.js';
 import { wrapInBoundary, validateFindingContent, sanitizeToolOutput } from './contextBoundary.js';
 import { saveCheckpoint, buildCheckpointEntry } from '../output/sessionCheckpoint.js';
-import { trackUsage } from './usageTracking.js';
+import { trackUsage, computeTurnCost } from './usageTracking.js';
 import { logger } from '../lib/logger.js';
 import { RECORDING_GATE_PCT, EXTENSION_GATE_PCT, BUDGET_EXTENSION } from '../config/defaults.js';
 
@@ -84,6 +84,17 @@ export class AgentLoopContext {
   turnCount = 0;
   streamingText = '';
 
+  // ─── Per-turn telemetry (captured at message_end, emitted on next onStep) ──
+  lastTurnLlmMs: number | undefined;
+  lastTurnTokens: { input: number; output: number; cached: number } | undefined;
+  costAccumulator = 0;
+
+  // ─── Compression & idle tracking ─────────────────────────────────
+  lastToolEndMs = 0;
+  lastCompressionMs: number | undefined;
+  lastIdleMs: number | undefined;
+  readonly compressionStats = { totalMs: 0, calls: 0, totalMessagesDropped: 0 };
+
   // ─── Compression maps ─────────────────────────────────────────────
   readonly toolCallIdToFiles = new Map<string, Set<string>>();
   readonly toolCallIdToName = new Map<string, string>();
@@ -91,6 +102,13 @@ export class AgentLoopContext {
 
   // ─── Per-tool timing metrics ─────────────────────────────────────
   readonly toolMetricsAccumulator = new Map<string, { calls: number; totalMs: number; errors: number }>();
+
+  // ─── Retry stats accumulator ──────────────────────────────────────
+  readonly retryStats = { totalAttempts: 0, totalWaitMs: 0, rateLimitCount: 0, byStatus: {} as Record<number, number> };
+
+  // ─── Decision quality: dedup detection ────────────────────────────
+  readonly toolCallSignatures = new Set<string>();
+  repeatedCallCount = 0;
 
   // ─── Checkpoint state ─────────────────────────────────────────────
   checkpointSeq: number;
@@ -164,6 +182,44 @@ export class AgentLoopContext {
     this.agent.state.thinkingLevel = 'off';
   }
 
+  /** Build partial RunDiagnostics from accumulated stats. */
+  getDiagnostics(): RunDiagnostics {
+    const totalErrors = [...this.toolMetricsAccumulator.values()].reduce((s, m) => s + m.errors, 0);
+    const totalCalls = [...this.toolMetricsAccumulator.values()].reduce((s, m) => s + m.calls, 0);
+    const uniqueFiles = this.state.filesRead.size;
+    const uniqueDirs = new Set([...this.state.filesRead].map(f => f.replace(/\\/g, '/').replace(/\/[^/]+$/, ''))).size;
+    const totalIdleMs = this.totalLlmMs > 0 ? this.totalToolMs : 0;
+    return {
+      retryStats: { ...this.retryStats },
+      compressionStats: {
+        totalMs: this.compressionStats.totalMs,
+        calls: this.compressionStats.calls,
+        avgMessagesDropped: this.compressionStats.calls > 0
+          ? Math.round(this.compressionStats.totalMessagesDropped / this.compressionStats.calls)
+          : 0,
+      },
+      idleStats: {
+        totalIdleMs,
+        avgIdleMs: this.turnCount > 0 ? Math.round(totalIdleMs / this.turnCount) : 0,
+      },
+      efficiency: {
+        repeatedCalls: this.repeatedCallCount,
+        toolErrorRate: totalCalls > 0 ? Math.round((totalErrors / totalCalls) * 10000) / 10000 : 0,
+        uniqueToolCallRatio: totalCalls > 0
+          ? Math.round((this.toolCallSignatures.size / totalCalls) * 100) / 100
+          : 0,
+      },
+      investigationBreadth: {
+        uniqueFiles,
+        uniqueDirectories: uniqueDirs,
+        totalToolCalls: this.state.totalToolCallsExecuted,
+        fileToCallRatio: this.state.totalToolCallsExecuted > 0
+          ? Math.round((uniqueFiles / this.state.totalToolCallsExecuted) * 100) / 100
+          : 0,
+      },
+    };
+  }
+
   /** Build the finalized toolMetrics record for RunMetrics. */
   getToolMetrics(): Record<string, ToolMetricEntry> {
     const result: Record<string, ToolMetricEntry> = {};
@@ -176,6 +232,16 @@ export class AgentLoopContext {
       };
     }
     return result;
+  }
+
+  /** Accumulate a retry event into diagnostics. */
+  recordRetry(delayMs: number, statusCode?: number): void {
+    this.retryStats.totalAttempts++;
+    this.retryStats.totalWaitMs += delayMs;
+    if (statusCode === 429) this.retryStats.rateLimitCount++;
+    if (statusCode != null) {
+      this.retryStats.byStatus[statusCode] = (this.retryStats.byStatus[statusCode] ?? 0) + 1;
+    }
   }
 
   private recordToolMetric(toolName: string, durationMs: number | undefined, isError: boolean): void {
@@ -217,6 +283,9 @@ export class AgentLoopContext {
       this.state.toolCallCount < this.currentBudget &&
       !WRITING_TOOLS.has(toolName)
     ) {
+      logger.debug('Recording gate triggered', {
+        context: `calls=${this.state.toolCallCount}/${this.currentBudget} findings=0`,
+      });
       if (!this.budgetExhaustedFired && this.config.onBudgetExhausted) {
         this.budgetExhaustedFired = true;
         const shouldExtend = await this.config.onBudgetExhausted({
@@ -291,6 +360,9 @@ export class AgentLoopContext {
     }
 
     if (this.state.toolCallCount >= this.currentBudget) {
+      logger.debug('Budget exhausted gate', {
+        context: `calls=${this.state.toolCallCount}/${this.currentBudget} tool=${toolName}`,
+      });
       if (toolName === 'assemble_output' && !this.isWorker) {
         return undefined;
       }
@@ -389,6 +461,13 @@ export class AgentLoopContext {
     // Track per-tool timing metrics
     const isToolError = resultText.includes('"error"') && resultText.includes('failed');
     this.recordToolMetric(toolName, durationMs, isToolError);
+    this.lastToolEndMs = Date.now();
+
+    // Decision quality: detect repeated identical calls
+    const signature = `${toolName}:${argsJson}`;
+    const isRepeated = this.toolCallSignatures.has(signature);
+    if (isRepeated) this.repeatedCallCount++;
+    this.toolCallSignatures.add(signature);
 
     logger.debug('Tool executed', {
       tool: toolName,
@@ -436,6 +515,18 @@ export class AgentLoopContext {
       model: this.lastAssistantModel || undefined,
       durationMs,
       thinking: thinking || undefined,
+      repeated: isRepeated || undefined,
+      compressionMs: this.lastCompressionMs,
+      idleMs: this.lastIdleMs,
+      llmDurationMs: this.lastTurnLlmMs,
+      turnTokens: this.lastTurnTokens,
+      costSoFar: Math.round(this.costAccumulator * 10000) / 10000,
+      stateSnapshot: {
+        findingsCount: this.state.findings.length,
+        filesReadCount: this.state.filesRead.size,
+        toolCallsUsed: this.state.toolCallCount,
+        budgetRemaining: this.currentBudget - this.state.toolCallCount,
+      },
     });
 
     if (this.checkpointInterval > 0 && this.state.toolCallCount % this.checkpointInterval === 0) {
@@ -596,8 +687,15 @@ export class AgentLoopContext {
       this.currentBatchId = randomUUID();
       this.streamingText = '';
       this.lastAssistantThinking = '';
-      this.turnStartMs = Date.now();
+      const now = Date.now();
+      if (this.lastToolEndMs > 0) {
+        this.lastIdleMs = now - this.lastToolEndMs;
+      }
+      this.turnStartMs = now;
       this.turnCount++;
+      logger.debug('LLM turn starting', {
+        context: `turn=${this.turnCount} budget=${this.state.toolCallCount}/${this.currentBudget}`,
+      });
     }
 
     if (event.type === 'message_update') {
@@ -628,18 +726,24 @@ export class AgentLoopContext {
     }
 
     if (event.type === 'message_end' && event.message && 'role' in event.message && event.message.role === 'assistant') {
-      if (this.turnStartMs > 0) {
-        this.totalLlmMs += Date.now() - this.turnStartMs;
+      const turnLlmMs = this.turnStartMs > 0 ? Date.now() - this.turnStartMs : undefined;
+      if (turnLlmMs != null) {
+        this.totalLlmMs += turnLlmMs;
+        this.lastTurnLlmMs = turnLlmMs;
         this.turnStartMs = 0;
       }
 
       const msg = event.message;
       this.lastAssistantModel = msg.model ?? '';
-      trackUsage(this.state, msg.model, {
+      const turnUsage = {
         inputTokens: msg.usage.input,
         outputTokens: msg.usage.output,
         cachedTokens: msg.usage.cacheRead,
-      });
+      };
+      trackUsage(this.state, msg.model, turnUsage);
+
+      this.lastTurnTokens = { input: turnUsage.inputTokens, output: turnUsage.outputTokens, cached: turnUsage.cachedTokens };
+      this.costAccumulator += computeTurnCost(msg.model, turnUsage);
 
       if (Array.isArray(msg.content)) {
         const textParts = (msg.content as { type: string; text?: string }[])

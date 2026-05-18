@@ -76,6 +76,36 @@ export interface ToolMetricEntry {
   errors: number;
 }
 
+/** Run-level diagnostics for debugging and observability. */
+export interface RunDiagnostics {
+  retryStats: {
+    totalAttempts: number;
+    totalWaitMs: number;
+    rateLimitCount: number;
+    byStatus: Record<number, number>;
+  };
+  compressionStats: {
+    totalMs: number;
+    calls: number;
+    avgMessagesDropped: number;
+  };
+  idleStats: {
+    totalIdleMs: number;
+    avgIdleMs: number;
+  };
+  efficiency: {
+    repeatedCalls: number;
+    toolErrorRate: number;
+    uniqueToolCallRatio: number;
+  };
+  investigationBreadth: {
+    uniqueFiles: number;
+    uniqueDirectories: number;
+    totalToolCalls: number;
+    fileToCallRatio: number;
+  };
+}
+
 /** Run metrics — computed post-run from AgentState.modelUsage. */
 export interface RunMetrics {
   startedAt: string;
@@ -99,4 +129,6 @@ export interface RunMetrics {
   llmTurns?: number;
   /** Per-tool timing and error metrics */
   toolMetrics?: Record<string, ToolMetricEntry>;
+  /** Run-level diagnostics (retries, compression, efficiency) */
+  diagnostics?: RunDiagnostics;
 }

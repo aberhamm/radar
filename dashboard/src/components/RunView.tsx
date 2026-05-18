@@ -24,6 +24,7 @@ import { SingleOverviewContent } from './SingleOverviewContent';
 import { SingleInvestigationContent } from './SingleInvestigationContent';
 import { MultiOverviewContent, PerGoalSummaryTable } from './MultiOverviewContent';
 import { MultiInvestigationContent } from './MultiInvestigationContent';
+import { TimelineTab } from './TimelineTab';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'investigation', label: 'Investigation' },
   { id: 'cost', label: 'Cost' },
+  { id: 'timeline', label: 'Timeline' },
 ];
 
 // ─── Component ──────────────────────────────────────────────────
@@ -308,6 +310,15 @@ export function RunView({ mode, activeTab: controlledTab, onTabChange }: RunView
                 <PerGoalSummaryTable goals={mode.data.goals} />
               )}
             </div>
+          )}
+
+          {/* Timeline (single runs only) */}
+          {activeTab === 'timeline' && mode.kind === 'single' && mode.data.runId && (
+            <TimelineTab
+              runId={mode.data.runId}
+              metrics={metrics}
+              events={mode.data.events}
+            />
           )}
         </div>
       </div>

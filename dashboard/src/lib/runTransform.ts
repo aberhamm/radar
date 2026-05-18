@@ -59,6 +59,12 @@ export interface StreamTurn {
   isPassBoundary?: boolean;
   passName?: string;
   workerId?: string;
+  specialistId?: string;
+  isSpecialistStart?: boolean;
+  isSpecialistEnd?: boolean;
+  specialistName?: string;
+  specialistColor?: string;
+  specialistStatus?: 'running' | 'complete' | 'skipped';
 }
 
 export interface AnalysisTurn {

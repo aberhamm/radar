@@ -411,7 +411,7 @@ const STATUS_OPACITY: Record<TurnStatus, string> = {
   complete: 'opacity-75',
 };
 
-function TurnCard({ turn, turnIndex, isLatest, fileOriginMap, status, isLive }: { turn: Turn; turnIndex: number; isLatest: boolean; fileOriginMap: Map<string, number>; status: TurnStatus; isLive: boolean }) {
+const TurnCard = memo(function TurnCard({ turn, turnIndex, isLatest, fileOriginMap, status, isLive }: { turn: Turn; turnIndex: number; isLatest: boolean; fileOriginMap: Map<string, number>; status: TurnStatus; isLive: boolean }) {
   const [expandedCalls, setExpandedCalls] = useState<Set<number>>(new Set());
   const [manualToggle, setManualToggle] = useState<boolean | null>(null);
 
@@ -561,7 +561,7 @@ function TurnCard({ turn, turnIndex, isLatest, fileOriginMap, status, isLive }: 
       )}
     </div>
   );
-}
+});
 
 // ─── Main component ───────────────────────────────────────────────
 

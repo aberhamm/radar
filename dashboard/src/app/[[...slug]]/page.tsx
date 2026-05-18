@@ -20,6 +20,7 @@ import { RunsListView } from '@/components/RunsListView';
 import { FindingsTriagePage } from '@/components/FindingsTriagePage';
 import { useEventSource } from '@/lib/useEventSource';
 import { useLiveAnalysis } from '@/lib/useLiveAnalysis';
+import { useSpecialistDisplayMode } from '@/lib/useSpecialistDisplayMode';
 import type { TransformedRunData } from '@/lib/runTransform';
 import { normalizeFindings, deduplicateFindings, type Finding } from '@/lib/runTransform';
 import { toMultiRunData, type RunViewMode, type MultiGoalData } from '@/lib/runViewAdapters';
@@ -61,7 +62,6 @@ interface CurrentRun {
   repoName: string;
   goal: string;
   startedAt: Date;
-  events: StepEvent[];
   toolCalls: number;
   budget: number;
 }
@@ -87,6 +87,12 @@ export default function DashboardPage() {
     budget: number;
   } | null>(null);
   const [lastRepoPath, setLastRepoPath] = useState('');
+
+  // ─── Events: stored in ref to avoid per-event rerenders ──────
+  const eventsRef = useRef<StepEvent[]>([]);
+  const [eventsVersion, setEventsVersion] = useState(0);
+  const eventsFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const EVENTS_THROTTLE_MS = 80;
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -111,6 +117,7 @@ export default function DashboardPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedParallelWorker, setSelectedParallelWorker] = useState<string | null>(null);
   const [selectedSpecialist, setSelectedSpecialist] = useState<string | null>(null);
+  const [specialistDisplayMode] = useSpecialistDisplayMode();
   const [pendingMultiComplete, setPendingMultiComplete] = useState<{
     parentRunId: string;
     groupData: MultiGoalData;
@@ -150,6 +157,11 @@ export default function DashboardPage() {
   // Prepend sample run to history
   const fullHistory = useMemo(() => [SAMPLE_HISTORY_ITEM as HistoryItem, ...history], [history]);
 
+  // Cleanup events flush timer on unmount
+  useEffect(() => {
+    return () => { if (eventsFlushTimer.current) clearTimeout(eventsFlushTimer.current); };
+  }, []);
+
   // Stable mobile/desktop detection via media query (avoids stale window.innerWidth checks)
   const isMobileRef = useRef(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
   useEffect(() => {
@@ -176,12 +188,13 @@ export default function DashboardPage() {
         }
         if (data.status === 'running' || data.status === 'budget_paused') {
           if (data.currentRun && data.currentRun.isAlive) {
+            eventsRef.current = [];
+            setEventsVersion(0);
             setCurrentRun({
               repoPath: '',
               repoName: data.currentRun.repoName,
               goal: data.currentRun.goal,
               startedAt: new Date(data.currentRun.startedAt),
-              events: [],
               toolCalls: 0,
               budget: 45,
             });
@@ -288,6 +301,7 @@ export default function DashboardPage() {
     } else if (urlView.view === 'idle' && status !== 'idle' && status !== 'running' && status !== 'budget_paused') {
       setStatus('idle');
       setResult(null);
+      eventsRef.current = [];
       setCurrentRun(null);
       setSelectedRunId(null);
       setMultiRunData(null);
@@ -301,6 +315,7 @@ export default function DashboardPage() {
     setStatus('info');
     setActiveInfoPage(page);
     setResult(null);
+    eventsRef.current = [];
     setCurrentRun(null);
     setSelectedRunId(null);
     setMultiRunData(null);
@@ -329,12 +344,13 @@ export default function DashboardPage() {
   const handleStart = useCallback((repoPath: string, goal: string, repoName?: string, _appRoot?: string, runId?: string, budget?: number, _goals?: string[], _parallel?: boolean) => {
     const resolvedName = repoName ?? (repoPath.split(/[/\\]/).pop() || repoPath);
     setLastRepoPath(repoPath);
+    eventsRef.current = [];
+    setEventsVersion(0);
     setCurrentRun({
       repoPath,
       repoName: resolvedName,
       goal,
       startedAt: new Date(),
-      events: [],
       toolCalls: 0,
       budget: budget ?? 45,
     });
@@ -354,46 +370,60 @@ export default function DashboardPage() {
     }
   }, [pushUrl]);
 
-  const handleNewEvent = useCallback((event: StepEvent) => {
-    setCurrentRun((prev) => {
-      if (!prev) return prev;
-
-      // text_delta: replace previous delta from the SAME worker only
-      if (event.type === 'text_delta') {
-        const events = prev.events;
-        const last = events[events.length - 1];
-        if (last?.type === 'text_delta' && last.workerId === event.workerId) {
-          const updated = [...events];
-          updated[updated.length - 1] = event;
-          return { ...prev, events: updated };
-        }
-        return { ...prev, events: [...events, event] };
-      }
-
-      // tool_start: append directly (parallel tools start simultaneously, ~5-10 per batch)
-      if (event.type === 'tool_start') {
-        return { ...prev, events: [...prev.events, event] };
-      }
-
-      // text_response supersedes the streaming delta — strip it.
-      // Other events (tool_call, finding, etc.) leave the delta in place
-      // so useLiveAnalysis can still derive typingText from it until
-      // the final text_response arrives (prevents reasoning flicker).
-      const events = prev.events;
-      const last = events[events.length - 1];
-      const shouldStripDelta = event.type === 'text_response'
-        && last?.type === 'text_delta'
-        && last.workerId === event.workerId;
-      const base = shouldStripDelta ? events.slice(0, -1) : events;
-
-      return {
-        ...prev,
-        events: [...base, event],
-        toolCalls: event.step > 0 ? event.step : prev.toolCalls,
-        budget: event.newBudget ?? prev.budget,
-      };
-    });
+  const scheduleEventsFlush = useCallback(() => {
+    if (eventsFlushTimer.current) return;
+    eventsFlushTimer.current = setTimeout(() => {
+      eventsFlushTimer.current = null;
+      setEventsVersion((v) => v + 1);
+    }, EVENTS_THROTTLE_MS);
   }, []);
+
+  const handleNewEvent = useCallback((event: StepEvent) => {
+    const events = eventsRef.current;
+
+    // text_delta: replace previous delta from the SAME worker only
+    if (event.type === 'text_delta') {
+      const last = events[events.length - 1];
+      if (last?.type === 'text_delta' && last.workerId === event.workerId) {
+        events[events.length - 1] = event;
+      } else {
+        events.push(event);
+      }
+      scheduleEventsFlush();
+      return;
+    }
+
+    // tool_start: append directly
+    if (event.type === 'tool_start') {
+      events.push(event);
+      scheduleEventsFlush();
+      return;
+    }
+
+    // text_response supersedes the streaming delta — strip it.
+    const last = events[events.length - 1];
+    const shouldStripDelta = event.type === 'text_response'
+      && last?.type === 'text_delta'
+      && last.workerId === event.workerId;
+    if (shouldStripDelta) {
+      events[events.length - 1] = event;
+    } else {
+      events.push(event);
+    }
+
+    // Update toolCalls/budget in currentRun state (infrequent — only on meaningful changes)
+    if (event.step > 0 || event.newBudget != null) {
+      setCurrentRun((prev) => {
+        if (!prev) return prev;
+        const toolCalls = event.step > 0 ? event.step : prev.toolCalls;
+        const budget = event.newBudget ?? prev.budget;
+        if (toolCalls === prev.toolCalls && budget === prev.budget) return prev;
+        return { ...prev, toolCalls, budget };
+      });
+    }
+
+    scheduleEventsFlush();
+  }, [scheduleEventsFlush]);
 
   const handleBudgetPaused = useCallback(
     (data: { findings: number; toolCalls: number; budget: number }) => {
@@ -422,7 +452,9 @@ export default function DashboardPage() {
           result: 'Resuming analysis...',
           newBudget,
         };
-        return { ...prev, budget: newBudget, events: [...prev.events, syntheticEvent] };
+        eventsRef.current.push(syntheticEvent);
+        setEventsVersion((v) => v + 1);
+        return { ...prev, budget: newBudget };
       });
     }
   }, []);
@@ -511,6 +543,7 @@ export default function DashboardPage() {
       console.warn('[session] DELETE failed:', err.message);
     });
     setStatus('idle');
+    eventsRef.current = [];
     setCurrentRun(null);
     setResult(null);
     setBudgetPausedData(null);
@@ -803,12 +836,12 @@ export default function DashboardPage() {
         findings: sampleFindings,
         findingBatches: [sampleFindings.length],
       });
+      eventsRef.current = [];
       setCurrentRun({
         repoPath: '',
         repoName: SAMPLE_HISTORY_ITEM.repoName,
         goal: SAMPLE_HISTORY_ITEM.goal,
         startedAt: new Date(SAMPLE_HISTORY_ITEM.startedAt),
-        events: [],
         toolCalls: 50,
         budget: 45,
       });
@@ -851,12 +884,12 @@ export default function DashboardPage() {
     const cached = runCacheRef.current.get(id);
     if (cached) {
       setResult(cached.result);
+      eventsRef.current = [];
       setCurrentRun({
         repoPath: '',
         repoName: cached.repoName,
         goal: cached.goal,
         startedAt: new Date(cached.startedAt),
-        events: [],
         toolCalls: cached.result.metrics?.toolCalls ?? 0,
         budget: cached.result.metrics?.toolCalls ?? 45,
       });
@@ -891,12 +924,12 @@ export default function DashboardPage() {
         result: data.result,
       });
       setResult(data.result as CompletedResult);
+      eventsRef.current = [];
       setCurrentRun({
         repoPath: '',
         repoName: data.repoName,
         goal: data.goal,
         startedAt: new Date(data.startedAt),
-        events: [],
         toolCalls: data.result.metrics?.toolCalls ?? 0,
         budget: data.result.metrics?.toolCalls ?? 45,
       });
@@ -957,7 +990,7 @@ export default function DashboardPage() {
           briefMarkdown: result.briefMarkdown,
           scorecard: result.scorecard,
           metrics: result.metrics,
-          events: currentRun.events,
+          events: eventsRef.current,
           goal: currentRun.goal,
           findings: result.state?.findings ?? [],
           runId: selectedRunId ?? undefined,
@@ -978,9 +1011,10 @@ export default function DashboardPage() {
     onRunError: handleRunError,
   });
 
-  // Derive AnalysisView state from live SSE events
+  // Derive AnalysisView state from live SSE events (eventsVersion triggers recomputation)
   const liveState = useLiveAnalysis(
-    currentRun?.events ?? [],
+    eventsRef.current,
+    eventsVersion,
     status,
     currentRun?.toolCalls ?? 0,
     currentRun?.budget ?? 45,
@@ -1008,14 +1042,17 @@ export default function DashboardPage() {
       { id: 'theme-system', label: 'Theme: System', action: () => setThemeMode('system') },
     );
     for (const h of fullHistory) {
+      const hId = h.id;
       cmds.push({
-        id: `history-${h.id}`,
+        id: `history-${hId}`,
         label: `Open: ${h.repoName} (${h.goal})`,
-        action: () => handleSelectHistory(h.id),
+        action: () => handleSelectHistory(hId),
       });
     }
     return cmds;
-  }, [isRunningOrPaused, status, fullHistory, handleNewRun, handleStop, handleSelectHistory, handleToggleCompareMode, handleExitCompare, handleInfoNavigate, setThemeMode]);
+    // fullHistory excluded — only rebuild on structural changes (status, callbacks)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunningOrPaused, status, history, handleNewRun, handleStop, handleSelectHistory, handleToggleCompareMode, handleExitCompare, handleInfoNavigate, setThemeMode]);
 
   useKeyboardShortcuts({
     onNewRun: handleNewRun,
@@ -1161,6 +1198,7 @@ export default function DashboardPage() {
                 onBudgetDecision={handleBudgetDecisionWithApi}
                 onSelectWorker={setSelectedParallelWorker}
                 onSelectSpecialist={setSelectedSpecialist}
+                specialistDisplayMode={specialistDisplayMode}
               />
             </div>
           )}

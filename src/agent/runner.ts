@@ -260,6 +260,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // and hook methods (beforeToolCall, afterToolCall, handleAgentEvent) are
   // encapsulated in AgentLoopContext for reuse by parallel workers.
 
+  logger.debug('Setup phase complete', {
+    context: `budget=${toolCallBudget} precompute=${!!preComputeContext} resumed=${!!config.resumeFrom}`,
+  });
+
   const ctx = new AgentLoopContext({
     toolCallBudget,
     config,
@@ -281,10 +285,22 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   ctx.checkpointSeq = checkpointSeq;
 
   // Context compression (extracted module — shared mutable state via object references)
-  const { transformContext, clearSummaryCache } = createTransformContext(
+  const { transformContext: rawTransformContext, clearSummaryCache } = createTransformContext(
     ctx.compressionState,
     { toolCallIdToFiles: ctx.toolCallIdToFiles, toolCallIdToName: ctx.toolCallIdToName },
   );
+  const transformContext = async (messages: Parameters<typeof rawTransformContext>[0]) => {
+    const startMs = Date.now();
+    const result = await rawTransformContext(messages);
+    const elapsed = Date.now() - startMs;
+    if (elapsed > 0) {
+      ctx.lastCompressionMs = elapsed;
+      ctx.compressionStats.totalMs += elapsed;
+      ctx.compressionStats.calls++;
+      ctx.compressionStats.totalMessagesDropped += messages.length - result.length;
+    }
+    return result;
+  };
   ctx.clearSummaryCache = clearSummaryCache;
 
   const onPayload = createOnPayload();
@@ -316,11 +332,15 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // If the agent finishes without calling assemble_output, nudge it up to
   // 2 times, then fall back to auto-assembly from recorded findings.
 
+  logger.debug('Execution phase starting', {
+    context: `model=${piModel.id} fastModel=${piFastModel.id} tools=${tools.length}`,
+  });
   logger.info('Agent loop starting', { context: `budget=${toolCallBudget} mode=${config.mode ?? 'full'}` });
 
   try {
     await withRetry(() => agent.prompt(goalPrompt), {
       onRetry: (attempt, error, delayMs, classification) => {
+        ctx.recordRetry(delayMs, classification.statusCode);
         const status = classification.statusCode ? ` [${classification.statusCode}]` : '';
         const stale = classification.staleConnection ? ' (stale connection)' : '';
         config.onStep?.({
@@ -347,7 +367,8 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
         });
         await withRetry(() => agent.continue(), {
           maxRetries: 2,
-          onRetry: (attempt, error, _delayMs, classification) => {
+          onRetry: (attempt, error, delayMs, classification) => {
+            ctx.recordRetry(delayMs, classification.statusCode);
             const status = classification.statusCode ? ` [${classification.statusCode}]` : '';
             config.onStep?.({
               step: ctx.stepCount,
@@ -405,7 +426,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   if (isWorker) {
     cleanup();
     const completedAt = new Date();
-    const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount, ctx.getToolMetrics());
+    const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount, ctx.getToolMetrics(), ctx.getDiagnostics());
     return {
       scorecard: computeScorecard(config.repoName, config.goal, state.findings),
       briefMarkdown: '',
@@ -421,6 +442,10 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   // ─── Phase 6: Post-processing (full mode only) ───────────────────────
   // Verify evidence, deduplicate findings, compute scorecard, render brief,
   // and write all output files.
+
+  logger.debug('Post-processing phase starting', {
+    context: `findings=${state.findings.length} toolCalls=${state.toolCallCount} termination=${ctx.terminationReason}`,
+  });
 
   const sections = assembledRef.sections ?? {};
 
@@ -516,7 +541,7 @@ export async function runAgent(config: RunnerConfig): Promise<RunResult> {
   scorecard.metadata.documentationSources = state.fetchedDocs.map((d) => ({ url: d.url, title: d.title }));
 
   const completedAt = new Date();
-  const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount, ctx.getToolMetrics());
+  const metrics = buildMetrics(state, startedAt, completedAt, ctx.totalLlmMs, ctx.turnCount, ctx.getToolMetrics(), ctx.getDiagnostics());
 
   const briefMarkdown = renderBrief(
     scorecard,

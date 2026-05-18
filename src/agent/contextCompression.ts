@@ -32,6 +32,7 @@
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
 import type { Finding } from '../types/findings.js';
 import { KEEP_RECENT_NORMAL, KEEP_RECENT_SNIP } from '../config/defaults.js';
+import { logger } from '../lib/logger.js';
 /** Tools whose results must never be compressed (they ARE the output). */
 const WRITING_TOOL_NAMES = new Set(['record_finding', 'assemble_output', 'switch_to_fast_model']);
 
@@ -82,6 +83,10 @@ export function createTransformContext(
   const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
     const keepRecent = state.snipBoundaryActive ? KEEP_RECENT_SNIP : KEEP_RECENT_NORMAL;
     if (messages.length <= keepRecent) return messages;
+
+    logger.debug('Context compression', {
+      context: `messages=${messages.length} keepRecent=${keepRecent} pinned=${cachedPinnedToolCallIds?.size ?? 0}`,
+    });
 
     // Rebuild pinned sets only when findings count changes (cache invalidation)
     if (cachedFindingsCount !== state.findings.length) {

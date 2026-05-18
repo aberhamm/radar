@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 
 // ─── Types ──────────────────────────────────────────────────────
 
-export type Tab = 'overview' | 'investigation' | 'cost';
+export type Tab = 'overview' | 'investigation' | 'cost' | 'timeline';
 
 export type InfoPage = 'how-it-works' | 'changelog';
 
@@ -19,7 +19,7 @@ export type UrlView =
   | { view: 'reports' }
   | { view: 'settings' };
 
-const VALID_TABS = new Set<Tab>(['overview', 'investigation', 'cost']);
+const VALID_TABS = new Set<Tab>(['overview', 'investigation', 'cost', 'timeline']);
 
 // ─── Pure Functions ─────────────────────────────────────────────
 
