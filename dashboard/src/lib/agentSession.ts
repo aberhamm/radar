@@ -228,6 +228,39 @@ declare global {
   var __agentSession: AgentSession | undefined;
 }
 
+// --- LRU cache for disk reads ---
+
+class LRUCache<T> {
+  private map = new Map<string, T>();
+  constructor(private maxSize: number) {}
+
+  get(key: string): T | undefined {
+    const val = this.map.get(key);
+    if (val !== undefined) {
+      this.map.delete(key);
+      this.map.set(key, val);
+    }
+    return val;
+  }
+
+  set(key: string, value: T): void {
+    if (this.map.has(key)) this.map.delete(key);
+    this.map.set(key, value);
+    if (this.map.size > this.maxSize) {
+      const first = this.map.keys().next().value;
+      if (first !== undefined) this.map.delete(first);
+    }
+  }
+
+  has(key: string): boolean { return this.map.has(key); }
+  delete(key: string): void { this.map.delete(key); }
+  clear(): void { this.map.clear(); }
+}
+
+const _envelopeCache = new LRUCache<RunEnvelope>(30);
+const _findingsCache = new LRUCache<unknown[]>(15);
+const _eventsCache = new LRUCache<StepEvent[]>(10);
+
 // --- Disk persistence (output/ directory) ---
 
 import fs from 'node:fs';
@@ -587,10 +620,16 @@ export function findRunById(id: string): RunRecord | null {
 export function loadRunEnvelope(record: RunRecord): RunEnvelope | null {
   const dirPath = record._dirPath;
   if (!dirPath) return null;
+
+  const cached = _envelopeCache.get(record.id);
+  if (cached) return cached;
+
   const envPath = path.join(dirPath, 'envelope.json');
   try {
     if (!fs.existsSync(envPath)) return null;
-    return JSON.parse(fs.readFileSync(envPath, 'utf-8'));
+    const envelope = JSON.parse(fs.readFileSync(envPath, 'utf-8'));
+    _envelopeCache.set(record.id, envelope);
+    return envelope;
   } catch (err) {
     console.warn(`[loadRunEnvelope] Failed for run ${record.id}:`, (err as Error).message);
     return null;
@@ -601,10 +640,16 @@ export function loadRunEnvelope(record: RunRecord): RunEnvelope | null {
 export function loadRunFindings(record: RunRecord): unknown[] {
   const dirPath = record._dirPath;
   if (!dirPath) return [];
+
+  const cached = _findingsCache.get(record.id);
+  if (cached) return cached;
+
   const findingsPath = path.join(dirPath, 'findings.json');
   try {
     if (!fs.existsSync(findingsPath)) return [];
-    return JSON.parse(fs.readFileSync(findingsPath, 'utf-8'));
+    const findings = JSON.parse(fs.readFileSync(findingsPath, 'utf-8'));
+    _findingsCache.set(record.id, findings);
+    return findings;
   } catch (err) {
     console.warn(`[loadRunFindings] Failed for run ${record.id}:`, (err as Error).message);
     return [];
@@ -696,6 +741,9 @@ export function loadRunEvents(record: RunRecord): StepEvent[] {
   // If events are already populated (current run, not from disk), return them
   if (record.events.length > 0) return record.events;
 
+  const cached = _eventsCache.get(record.id);
+  if (cached) return cached;
+
   // Tier 3: load from events.jsonl in run directory
   if (record._dirPath) {
     const eventsPath = path.join(record._dirPath, 'events.jsonl');
@@ -703,7 +751,9 @@ export function loadRunEvents(record: RunRecord): StepEvent[] {
       if (fs.existsSync(eventsPath)) {
         const content = fs.readFileSync(eventsPath, 'utf-8').trim();
         if (!content) return [];
-        return content.split('\n').map(line => JSON.parse(line));
+        const events = content.split('\n').map(line => JSON.parse(line));
+        _eventsCache.set(record.id, events);
+        return events;
       }
     } catch (err) {
       console.warn(`[loadRunEvents] Failed to load events.jsonl for run ${record.id}:`, (err as Error).message);
@@ -714,7 +764,9 @@ export function loadRunEvents(record: RunRecord): StepEvent[] {
   if (record._filePath) {
     try {
       const raw = JSON.parse(fs.readFileSync(record._filePath, 'utf-8'));
-      return raw.events ?? [];
+      const events = raw.events ?? [];
+      _eventsCache.set(record.id, events);
+      return events;
     } catch (err) {
       console.warn(`[loadRunEvents] Failed to load legacy events for run ${record.id}:`, (err as Error).message);
     }
@@ -764,7 +816,7 @@ function createSession(): AgentSession {
   return {
     status: 'idle',
     currentRun: null,
-    history: loadPersistedRuns(),
+    history: loadPersistedRuns({ limit: 50 }),
     result: null,
   };
 }
@@ -777,7 +829,7 @@ export function getSession(): AgentSession {
 }
 
 export function resetSession(): void {
-  const history = loadPersistedRuns();
+  const history = loadPersistedRuns({ limit: 50 });
   globalThis.__agentSession = {
     status: 'idle',
     currentRun: null,

@@ -42,6 +42,7 @@ describe('backward compatibility — parentRunId schema addition', () => {
     ];
 
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'statSync').mockReturnValue({ mtimeMs: Date.now() } as unknown as fs.Stats);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify(oldIndex));
 
@@ -83,6 +84,7 @@ describe('backward compatibility — parentRunId schema addition', () => {
     ];
 
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'statSync').mockReturnValue({ mtimeMs: Date.now() + 1 } as unknown as fs.Stats);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify(mixedIndex));
 

@@ -176,6 +176,7 @@ describe('agentSession — loadPersistedRuns', () => {
 
   it('loads entries from index.json, newest first', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'statSync').mockReturnValue({ mtimeMs: Date.now() } as unknown as fs.Stats);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify([
       {
@@ -207,6 +208,7 @@ describe('agentSession — loadPersistedRuns', () => {
 
   it('supports pagination with limit and offset', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'statSync').mockReturnValue({ mtimeMs: Date.now() + 1 } as unknown as fs.Stats);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify([
       { id: 'run-1', goal: 'audit', repoName: 'r1', startedAt: '2026-01-03T00:00:00Z' },
@@ -222,6 +224,7 @@ describe('agentSession — loadPersistedRuns', () => {
 
   it('preserves parentRunId from index entries', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'statSync').mockReturnValue({ mtimeMs: Date.now() + 2 } as unknown as fs.Stats);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify([
       {
