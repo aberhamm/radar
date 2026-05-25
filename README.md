@@ -1,12 +1,16 @@
-# repo-audit-delivery-agent
+# Radar
 
-Agentic consulting tool for headless CMS codebase analysis.
+AI-powered repository audit platform that investigates any codebase and produces structured, scored consulting deliverables.
 
 ## What it does
 
-repo-audit-delivery-agent investigates headless CMS codebases (Sitecore XM Cloud/JSS and Optimizely SaaS CMS, both with Next.js) and produces structured, scored onboarding briefs. The agent autonomously decides what to investigate using deterministic tools, records findings with file-level evidence, and assembles a 12-section consulting deliverable with an architecture scorecard. It is not a linter or static analysis wrapper -- it reasons like a senior consultant, following human-authored rules loaded from markdown files.
+Radar is an agentic analysis tool that autonomously investigates repositories — deciding what to look at, gathering evidence, and assembling client-ready reports with architecture scorecards, prioritized findings, and actionable recommendations. It is not a linter or static analysis wrapper. It reasons like a senior consultant, following human-authored rules loaded from markdown files.
 
-See also: [ARCHITECTURE.md](ARCHITECTURE.md) for system design and component map, [CHANGELOG.md](CHANGELOG.md) for release history.
+The agent supports 10 analysis goals out of the box: architecture audits, security reviews, Next.js health checks, accessibility compliance, performance analysis, migration readiness, onboarding briefs, and more. Goals are stack-agnostic by default, with deep specializations available for headless CMS platforms (Sitecore XM Cloud, Optimizely SaaS CMS).
+
+Point it at any repo — local path or GitHub URL — and get a scored report in under 2 minutes.
+
+See also: [ARCHITECTURE.md](ARCHITECTURE.md) for system design and component map, [CHANGELOG.md](CHANGELOG.md) for release history, [DESIGN.md](DESIGN.md) for the dashboard design system.
 
 ## Quick Start
 
@@ -17,20 +21,20 @@ pnpm install
 Create a `.env` file with your provider credentials (see [Provider Setup](#provider-setup) below), then run:
 
 ```bash
-npx tsx src/index.ts analyze --repo <path-or-url> --goal onboarding
+# Architecture audit on any repo
+radar analyze --repo <path-or-url> --goal audit-generic
+
+# Security review
+radar analyze --repo ../my-app --goal security-review --verbose
+
+# Next.js health check from a GitHub URL
+radar analyze --repo https://github.com/org/repo --goal nextjs
+
+# Full onboarding brief (CMS-specialized)
+radar analyze --repo ../xmcloud-starter-js --goal onboarding
 ```
 
-Example against a local repo:
-
-```bash
-npx tsx src/index.ts analyze --repo ../xmcloud-starter-js --goal onboarding --verbose
-```
-
-Example against a GitHub repo:
-
-```bash
-npx tsx src/index.ts analyze --repo https://github.com/Sitecore/xmcloud-starter-js --goal onboarding
-```
+`radar` is aliased to `npx tsx src/index.ts` during development.
 
 ## CLI Commands
 
@@ -39,20 +43,21 @@ npx tsx src/index.ts analyze --repo https://github.com/Sitecore/xmcloud-starter-
 Run an agentic investigation on a repository.
 
 ```
-npx tsx src/index.ts analyze [options]
+radar analyze [options]
 ```
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--repo <path>` | Repository local path or GitHub URL (required) | -- |
-| `--goal <type>` | Analysis goal (see [Goals](#goals)) | `onboarding` |
+| `--goal <type>` | Analysis goal (see [Goals](#goals)) | `audit-generic` |
 | `--platform <name>` | Platform override: `sitecore`, `optimizely` | auto-detected |
 | `--budget <n>` | Tool call budget | `45` |
 | `--output <dir>` | Output directory | `./output` |
 | `--verbose` | Show real-time agent reasoning and tool calls | off |
 | `--json` | Output summary as JSON (for CI integration) | off |
 | `--export` | Output full JSON export to stdout (all findings, log, metrics, sections) | off |
-| `--github-output` | Post results to GitHub (issue for onboarding, PR comment for ci-check) | off |
+| `--export-pdf` | Generate client-ready PDF report | off |
+| `--github-output` | Post results to GitHub (PR comment for ci-check) | off |
 | `--pr <number>` | PR number for ci-check goal comments (or set `GITHUB_PR_NUMBER`) | -- |
 | `--resume <path>` | Resume from a checkpoint file (path to `.jsonl`) | -- |
 | `--checkpoint-interval <n>` | Save checkpoint every N tool calls (0 to disable) | `5` |
@@ -63,15 +68,7 @@ npx tsx src/index.ts analyze [options]
 Run side-by-side comparison of two repositories. Produces individual briefs and a comparative summary highlighting relative strengths and gaps.
 
 ```
-npx tsx src/index.ts compare --repos <path1> <path2> [--goal <type>] [--budget <n>]
-```
-
-### `tools`
-
-List all registered tools and their parameters.
-
-```
-npx tsx src/index.ts tools --list
+radar compare --repos <path1> <path2> [--goal <type>] [--budget <n>]
 ```
 
 ### `diff`
@@ -79,58 +76,76 @@ npx tsx src/index.ts tools --list
 Compare findings between two runs. Matches by fingerprint, falls back to SHA-256 of category+filePath+title.
 
 ```
-npx tsx src/index.ts diff <run-a.json> <run-b.json>
+radar diff <run-a.json> <run-b.json>
 ```
 
 Output shows New, Resolved, and Persistent findings with a summary.
+
+### `tools`
+
+List all registered tools and their parameters.
+
+```
+radar tools --list
+```
 
 ### `rules`
 
 Validate that all expected consulting rule files exist for each goal/platform combination.
 
 ```
-npx tsx src/index.ts rules --validate
+radar rules --validate
+```
+
+### `dashboard`
+
+Launch the web dashboard for browsing runs, replaying agent reasoning, and comparing results.
+
+```
+radar dashboard [--port 3000]
 ```
 
 ## Goals
 
-| Goal | Description |
-|------|-------------|
-| `onboarding` | Full 12-section consultant onboarding brief with scorecard, risks, and recommendations |
-| `audit` | Scored architecture audit with weighted scoring rubric (type check 25%, lint 20%, tests 30%, dead code 15%, shell lint 10%) |
-| `migration` | Migration readiness assessment with prioritized hotspots and complexity estimates |
-| `component-map` | Structured component inventory showing CMS bindings, directives, and data fetching |
-| `ci-check` | Fast CI health check (under 15 tool calls) producing pass/fail with blocking issues |
-| `security-review` | Security audit across 6 categories with 22 false-positive exclusion rules and secrets archaeology (22 known credential prefixes) |
-| `nextjs` | Next.js framework health audit across 7 categories (routing, data fetching, caching, etc.) |
-| `accessibility` | WCAG 2.1 AA compliance audit across 6 categories with severity-mapped violations |
+| Goal | Stack | Description |
+|------|-------|-------------|
+| `audit-generic` | Any | Stack-agnostic architecture assessment across 8 categories |
+| `security-review` | Any | Security audit across 6 categories with secrets archaeology and FP exclusion |
+| `nextjs` | Next.js | Framework health audit across 7 categories (routing, data fetching, caching, etc.) |
+| `accessibility` | Any | WCAG 2.1 AA compliance audit across 6 categories with severity-mapped violations |
+| `performance` | Any | Web performance and Core Web Vitals analysis with prioritized findings |
+| `ci-check` | Any | Fast CI health check (under 15 tool calls) producing pass/fail for PR gates |
+| `migration` | Any | Migration readiness assessment with prioritized hotspots and complexity estimates |
+| `component-map` | Any | Structured component inventory with directives and data fetching patterns |
+| `audit` | CMS | CMS-specific architecture assessment with weighted scoring rubric |
+| `onboarding` | CMS | Full 12-section consultant onboarding brief with scorecard and recommendations |
 
 ## Architecture
 
 The system follows a strict separation: **tools are deterministic, orchestration is agentic, rules are human-authored, outputs are structured.**
 
 ```
-Goal Prompt
+Goal Prompt (any of 10 analysis goals)
     |
     v
 +--------------------------------------------------+
 |  Pi Agent (observe -> reason -> act)              |
 |                                                   |
 |  System instructions (consulting rules from .md)  |
-|  Reference knowledge (platform-specific .md)      |
+|  Reference knowledge (selectively loaded .md)     |
 |  Pi AgentTools (23 deterministic functions)       |
 |  Working state (findings, file cache, log)        |
 +--------------------------------------------------+
     |
     v
-Output Assembler -> scorecard + brief + JSON export
+Output Assembler -> scorecard + brief + JSON/PDF export
 ```
 
 - **Tools** -- Pure functions that return facts (file contents, parsed configs, grep results, npm versions). They never call an LLM. Wrapped as Pi `AgentTool[]` with TypeBox schemas. 23 tools total; 3 infrequently-used tools are deferred-loaded via the `tool_search` meta-tool to save context tokens.
 - **Rules** -- Plain English markdown files in `src/rules/` that shape the agent's priorities and quality standards. Editable by senior consultants without code changes.
 - **References** -- Static knowledge files in `src/references/` (platform best practices, known antipatterns, compatibility matrices) loaded selectively by the agent.
 - **Agent loop** -- Pi's `Agent` class handles tool dispatch, message threading, and loop control. `beforeToolCall`/`afterToolCall` hooks enforce budgets. The loop runs until `assemble_output` is called or the budget is spent.
-- **Dual-model** -- Investigation phase uses `AGENT_MODEL` (Sonnet, heavy reasoning). The agent calls `switch_to_fast_model` when it decides investigation is complete, switching to `FAST_MODEL` (Haiku, cheaper) for finding assembly and brief writing. Fallback: force-switch at 5 calls remaining.
+- **Dual-model** -- Investigation phase uses `AGENT_MODEL` (heavy reasoning). The agent calls `switch_to_fast_model` when it decides investigation is complete, switching to `FAST_MODEL` (cheaper, faster) for finding assembly and brief writing. Fallback: force-switch at 5 calls remaining.
 - **Tool concurrency** -- Pi's `toolExecution: 'parallel'` fires all tool calls from a single turn concurrently. Read-only tools (20 of 23) run fully parallel. Stateful tools (`record_finding`, `assemble_output`, `switch_to_fast_model`) self-serialize via an async mutex (`StatefulToolMutex`) so they never corrupt shared state, even when Pi fires them in the same batch.
 - **Cost controls** -- Per-tool result size limits (grep: 20K, read_file: 65K, fetch_url: 100K, default: 4K) with disk spill to tmpdir for oversized results. 3-tier context compression (recent 10 messages full, mid-age 15 at 600 chars, older at 120 chars, cached by tool call ID). **Snip boundary**: when the model switches to Haiku, compression thresholds drop aggressively (mid-age to 80 chars, old to 40 chars), reducing context size by ~60% since the writing phase doesn't need raw investigation data. `onPayload` injects prompt cache breakpoints. Default budget is 45 calls. Session cost tracking persists per-run costs to JSONL for cross-run analysis.
 - **Retry with per-error tiers** -- Each error class has its own retry limit: 429 rate-limit gets 8 attempts, 529 overload gets 3, 502/503 gets 5, connection errors (ECONNRESET/EPIPE/ETIMEDOUT) get 5. Respects `Retry-After` headers up to 2 minutes. Exponential backoff with 500ms base, 32s cap, 0-25% jitter. Stale connection detection triggers an `onStaleConnection` callback for diagnostics.
@@ -250,44 +265,55 @@ All verification is deterministic -- no LLM calls, no cost increase. Evidence in
 
 ## Dashboard
 
-A Next.js dashboard for browsing investigation runs, replaying agent reasoning, and comparing results across repos.
+A Next.js web app for browsing runs, replaying agent reasoning, and comparing results across repos.
 
-```bash
-pnpm dashboard
-```
-
-Features:
 - **Live event stream** -- Watch the agent investigate in real time with grouped tool calls and reasoning steps
 - **Replay mode** -- Step through completed investigations to understand the agent's decision-making
 - **Run history** -- Browse past runs with sidebar navigation, persisted to disk
 - **Dark/light/system theme** -- Manual toggle with system preference detection
 - **Command palette** -- Keyboard-driven navigation (`Cmd+K` / `Ctrl+K`)
-- **Radar branding** -- Terminal-inspired wordmark with typing animation
 
 ## Provider Setup
 
-The agent uses the Portkey AI gateway to route requests to Amazon Bedrock. Create a `.env` file in the project root:
+Radar is provider-agnostic — it works with any OpenAI-compatible endpoint. Create a `.env` file in the project root:
+
+**Portkey → Bedrock (recommended for production):**
 
 ```
+PROVIDER_TYPE=portkey
 PORTKEY_API_KEY=your-portkey-api-key
 PORTKEY_BASE_URL=https://portkeygateway.example.com/v1
 PORTKEY_PROVIDER=@aws-bedrock-use2
-PROVIDER_TYPE=portkey
-
 AGENT_MODEL=us.anthropic.claude-sonnet-4-6
 FAST_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
+**OpenAI direct:**
+
+```
+PROVIDER_TYPE=openai
+OPENAI_API_KEY=sk-...
+AGENT_MODEL=gpt-4o
+FAST_MODEL=gpt-4o-mini
+```
+
+**Any OpenAI-compatible endpoint (Ollama, Together, Groq, vLLM):**
+
+```
+PROVIDER_TYPE=generic
+GENERIC_BASE_URL=http://localhost:11434/v1
+GENERIC_API_KEY=ollama
+AGENT_MODEL=llama3.1:70b
+FAST_MODEL=llama3.1:8b
+```
+
 | Variable | Purpose |
 |----------|---------|
-| `PORTKEY_API_KEY` | Portkey gateway API key |
-| `PORTKEY_BASE_URL` | Portkey gateway base URL |
-| `PORTKEY_PROVIDER` | Portkey provider routing header (e.g. `@aws-bedrock-use2`) |
-| `PROVIDER_TYPE` | Provider type (`portkey` for production) |
+| `PROVIDER_TYPE` | Provider type: `portkey`, `openai`, `azure-openai`, `generic` |
 | `AGENT_MODEL` | Heavy model for investigation and reasoning (first half of budget) |
 | `FAST_MODEL` | Lightweight model for finding assembly and brief writing (second half) |
 
-Model IDs are provider-agnostic. Swap to any provider's model IDs without code changes. Both models are built by `src/config/piModel.ts`. The agent decides when to switch via the `switch_to_fast_model` tool.
+Model IDs are provider-agnostic env vars. Both models are built by `src/config/piModel.ts`. The agent decides when to switch via the `switch_to_fast_model` tool.
 
 ## Output Files
 
@@ -295,21 +321,19 @@ Each run writes to `output/<timestamp>/`:
 
 | File | Contents |
 |------|----------|
-| `brief.md` | Full consulting brief with all 12 sections |
-| `scorecard.json` | Architecture scorecard with per-category scores (red/yellow/green) |
-| `findings.json` | All recorded findings with evidence, severity, and categories |
+| `brief.md` | Consulting report (section count varies by goal) |
+| `scorecard.json` | Scored categories with red/yellow/green ratings |
+| `findings.json` | All findings with evidence, severity, confidence, and fingerprints |
 | `export.json` | Complete export: scorecard + findings + stack profile + investigation log |
 | `investigation.md` | Step-by-step log of agent reasoning and tool calls |
-| `investigation.html` | Browsable HTML investigation log with collapsible steps and inline scorecard |
-
+| `investigation.html` | Browsable HTML investigation log with collapsible steps |
+| `report.pdf` | Client-ready PDF (when `--export-pdf` is used) |
 | `*-checkpoint.jsonl` | Session checkpoints (append-only, for `--resume`) |
 | `session-costs.jsonl` | Cross-run cost tracking (append-only) |
 
-The onboarding brief includes these sections: Project Overview, Stack & Architecture, Key Files, CMS Integration, Preview & Editing, Configuration & Environment, Local Development Setup, Architecture Scorecard, Top Risks, First Week Reading List, Questions for the Client, and Suggested Next Actions.
-
 ## CI Integration
 
-Radar auto-detects the CI platform from environment variables. Every PR gets a scored comment, file-level annotations, trend tracking, and a quality gate. One YAML block to set up.
+Radar auto-detects CI platforms from environment variables and runs as a quality gate on every PR — scored comments, file-level annotations, trend tracking, and configurable pass/fail thresholds. One YAML block to set up.
 
 ### GitHub Actions Setup
 
@@ -355,7 +379,7 @@ jobs:
           AGENT_MODEL: us.anthropic.claude-sonnet-4-6
           FAST_MODEL: us.anthropic.claude-haiku-4-5-20251001-v1:0
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx tsx src/index.ts analyze --repo . --goal ci-check --json
+        run: radar analyze --repo . --goal ci-check --json
 
       - name: Upload findings
         if: always()
@@ -429,7 +453,7 @@ steps:
   - script: npm install -g pnpm && pnpm install
     displayName: 'Install dependencies'
 
-  - script: npx tsx src/index.ts analyze --repo . --goal ci-check --json
+  - script: radar analyze --repo . --goal ci-check --json
     displayName: 'Run Radar'
     env:
       PORTKEY_API_KEY: $(PORTKEY_API_KEY)
@@ -520,12 +544,12 @@ Run different goals on different triggers:
 # Fast check on every PR
 - name: Quick check
   if: github.event_name == 'pull_request'
-  run: npx tsx src/index.ts analyze --repo . --goal ci-check --json
+  run: radar analyze --repo . --goal ci-check --json
 
 # Deep security review on PRs touching auth/
 - name: Security review
   if: contains(github.event.pull_request.changed_files, 'auth/')
-  run: npx tsx src/index.ts analyze --repo . --goal security-review --budget 30 --json
+  run: radar analyze --repo . --goal security-review --budget 30 --json
 ```
 
 ### Webhook Notifications
@@ -552,7 +576,7 @@ Webhook URLs are validated against the domain blocklist (blocks localhost, priva
 Use `radar diff` to compare any two findings exports:
 
 ```bash
-npx tsx src/index.ts diff output/run-a/findings.json output/run-b/findings.json
+radar diff output/run-a/findings.json output/run-b/findings.json
 ```
 
 Output:
@@ -577,11 +601,11 @@ A multi-stage Docker image (`node:20-slim`) is published to GHCR on each release
 
 ```bash
 docker run --rm \
-  -e PORTKEY_API_KEY -e PORTKEY_BASE_URL -e PORTKEY_PROVIDER -e PROVIDER_TYPE \
-  -e AGENT_MODEL -e FAST_MODEL \
+  -e PROVIDER_TYPE -e AGENT_MODEL -e FAST_MODEL \
+  -e PORTKEY_API_KEY -e PORTKEY_BASE_URL -e PORTKEY_PROVIDER \
   -v "$(pwd):/repo:ro" \
-  ghcr.io/aberhamm/repo-audit-delivery-agent:latest \
-  analyze --repo /repo --goal ci-check --json
+  ghcr.io/aberhamm/radar:latest \
+  analyze --repo /repo --goal audit-generic --json
 ```
 
 The image includes all rules, references, and the quality gate config. No additional setup needed.
