@@ -1,0 +1,38 @@
+[
+  {
+    "id": "finding-onb-001",
+    "title": "No local development setup documentation",
+    "severity": "medium",
+    "category": "configuration",
+    "description": "The README.md lacks instructions for setting up a local development environment. New developers must reverse-engineer the setup from package.json scripts and config files.",
+    "evidence": [
+      {
+        "filePath": "README.md",
+        "snippet": "# example-repo\n\nA sample project.",
+        "lineNumber": 1
+      }
+    ],
+    "filePath": "README.md",
+    "tags": ["documentation", "onboarding"]
+  },
+  {
+    "id": "finding-onb-002",
+    "title": "Missing contribution guidelines",
+    "severity": "low",
+    "category": "configuration",
+    "description": "No CONTRIBUTING.md or equivalent document exists to guide new contributors on branching strategy, PR process, or code review expectations.",
+    "evidence": [],
+    "filePath": "",
+    "tags": ["documentation", "process"]
+  },
+  {
+    "id": "finding-onb-003",
+    "title": "No architecture decision records",
+    "severity": "low",
+    "category": "architecture",
+    "description": "The project lacks ADRs (Architecture Decision Records) documenting key technical decisions, making it harder for new team members to understand why certain patterns were chosen.",
+    "evidence": [],
+    "filePath": "",
+    "tags": ["documentation", "architecture"]
+  }
+]

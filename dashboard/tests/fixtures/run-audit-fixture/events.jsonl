@@ -1,0 +1,10 @@
+{"step":1,"type":"tool_call","action":"read_file","args":"{\"path\":\"package.json\"}","result":"Read 48 lines from package.json","timestamp":"2026-01-15T10:00:05.000Z"}
+{"step":2,"type":"tool_call","action":"read_file","args":"{\"path\":\"tsconfig.json\"}","result":"Read 22 lines from tsconfig.json","timestamp":"2026-01-15T10:00:15.000Z"}
+{"step":3,"type":"tool_call","action":"list_directory","args":"{\"path\":\"src\"}","result":"Found 12 entries in src/","timestamp":"2026-01-15T10:00:25.000Z"}
+{"step":4,"type":"tool_call","action":"read_file","args":"{\"path\":\"src/auth/provider.ts\"}","result":"Read 85 lines from src/auth/provider.ts","timestamp":"2026-01-15T10:00:35.000Z"}
+{"step":5,"type":"tool_call","action":"read_file","args":"{\"path\":\"src/api/middleware.ts\"}","result":"Read 60 lines from src/api/middleware.ts","timestamp":"2026-01-15T10:01:00.000Z"}
+{"step":6,"type":"record_finding","action":"record_finding","args":"{\"id\":\"finding-001\",\"title\":\"Outdated authentication library with known CVE\",\"severity\":\"critical\"}","timestamp":"2026-01-15T10:02:00.000Z"}
+{"step":7,"type":"record_finding","action":"record_finding","args":"{\"id\":\"finding-002\",\"title\":\"Missing rate limiting on API endpoints\",\"severity\":\"high\"}","timestamp":"2026-01-15T10:02:30.000Z"}
+{"step":8,"type":"record_finding","action":"record_finding","args":"{\"id\":\"finding-003\",\"title\":\"Inconsistent error handling patterns\",\"severity\":\"medium\"}","timestamp":"2026-01-15T10:03:00.000Z"}
+{"step":9,"type":"record_finding","action":"record_finding","args":"{\"id\":\"finding-004\",\"title\":\"Missing TypeScript strict mode in tsconfig\",\"severity\":\"low\"}","timestamp":"2026-01-15T10:03:30.000Z"}
+{"step":10,"type":"run_complete","action":"run_complete","result":"Analysis complete. 4 findings recorded.","timestamp":"2026-01-15T10:05:30.000Z"}

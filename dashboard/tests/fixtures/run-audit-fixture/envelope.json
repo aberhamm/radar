@@ -1,0 +1,121 @@
+{
+  "id": "fixture-audit-001",
+  "goal": "audit",
+  "repoName": "example-repo",
+  "startedAt": "2026-01-15T10:00:00.000Z",
+  "completedAt": "2026-01-15T10:05:30.000Z",
+  "scorecard": {
+    "repoName": "example-repo",
+    "goalType": "audit",
+    "generatedAt": "2026-01-15T10:05:30.000Z",
+    "overallScore": "yellow",
+    "categories": [
+      {
+        "category": "architecture",
+        "score": "green",
+        "findings": [],
+        "summary": "Well-structured component hierarchy with clear separation of concerns."
+      },
+      {
+        "category": "security",
+        "score": "yellow",
+        "findings": [],
+        "summary": "Some dependencies have known vulnerabilities that should be addressed."
+      },
+      {
+        "category": "dependencies",
+        "score": "red",
+        "findings": [],
+        "summary": "Multiple outdated dependencies with breaking changes available."
+      }
+    ],
+    "topRisks": [
+      {
+        "rank": 1,
+        "findingId": "finding-001",
+        "title": "Outdated authentication library with known CVE",
+        "severity": "critical",
+        "businessContext": "Potential security breach vector affecting user data."
+      },
+      {
+        "rank": 2,
+        "findingId": "finding-002",
+        "title": "Missing rate limiting on API endpoints",
+        "severity": "high",
+        "businessContext": "Service vulnerable to denial-of-service attacks."
+      }
+    ],
+    "metadata": {
+      "repoName": "example-repo",
+      "analysisDate": "2026-01-15T10:05:30.000Z",
+      "agentVersion": "1.0.0",
+      "goalType": "audit",
+      "detectedPlatform": "nextjs",
+      "toolCallsUsed": 25,
+      "webSearchesUsed": 0,
+      "urlFetchesUsed": 0,
+      "documentationSources": []
+    }
+  },
+  "metrics": {
+    "startedAt": "2026-01-15T10:00:00.000Z",
+    "completedAt": "2026-01-15T10:05:30.000Z",
+    "durationMs": 330000,
+    "toolCalls": 25,
+    "models": {
+      "agent": {
+        "bedrockModelId": "us.anthropic.claude-sonnet-4-6",
+        "calls": 20,
+        "inputTokens": 50000,
+        "outputTokens": 15000,
+        "cachedTokens": 10000,
+        "estimatedCostUsd": 0.25
+      },
+      "fast": {
+        "bedrockModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "calls": 5,
+        "inputTokens": 8000,
+        "outputTokens": 3000,
+        "cachedTokens": 2000,
+        "estimatedCostUsd": 0.02
+      }
+    },
+    "totalEstimatedCostUsd": 0.27
+  },
+  "briefMarkdown": "# Audit Report: example-repo\n\n## Executive Summary\n\nThe repository demonstrates solid architectural foundations but has critical dependency and security gaps that require immediate attention.\n\n## Key Findings\n\n- **Critical**: Outdated authentication library with known CVE\n- **High**: Missing rate limiting on API endpoints\n- **Medium**: Inconsistent error handling patterns\n- **Low**: Minor code style inconsistencies\n",
+  "terminationReason": "completed",
+  "findingsSummary": [
+    {
+      "id": "finding-001",
+      "severity": "critical",
+      "category": "dependencies",
+      "title": "Outdated authentication library with known CVE",
+      "evidenceFiles": ["package.json", "src/auth/provider.ts"],
+      "tags": ["security", "dependencies"]
+    },
+    {
+      "id": "finding-002",
+      "severity": "high",
+      "category": "security",
+      "title": "Missing rate limiting on API endpoints",
+      "evidenceFiles": ["src/api/middleware.ts"],
+      "tags": ["security", "api"]
+    },
+    {
+      "id": "finding-003",
+      "severity": "medium",
+      "category": "architecture",
+      "title": "Inconsistent error handling patterns",
+      "evidenceFiles": ["src/services/user.ts", "src/services/product.ts"],
+      "tags": ["architecture", "maintainability"]
+    },
+    {
+      "id": "finding-004",
+      "severity": "low",
+      "category": "configuration",
+      "title": "Missing TypeScript strict mode in tsconfig",
+      "evidenceFiles": ["tsconfig.json"],
+      "tags": ["configuration", "typescript"]
+    }
+  ]
+}

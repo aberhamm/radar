@@ -1,0 +1,106 @@
+{
+  "id": "fixture-onboarding-001",
+  "goal": "onboarding",
+  "repoName": "example-repo",
+  "startedAt": "2026-01-16T14:00:00.000Z",
+  "completedAt": "2026-01-16T14:04:00.000Z",
+  "scorecard": {
+    "repoName": "example-repo",
+    "goalType": "onboarding",
+    "generatedAt": "2026-01-16T14:04:00.000Z",
+    "overallScore": "green",
+    "categories": [
+      {
+        "category": "architecture",
+        "score": "green",
+        "findings": [],
+        "summary": "Clean architecture with well-defined module boundaries."
+      },
+      {
+        "category": "configuration",
+        "score": "green",
+        "findings": [],
+        "summary": "Configuration is well-documented and environment-driven."
+      },
+      {
+        "category": "dependencies",
+        "score": "yellow",
+        "findings": [],
+        "summary": "A few dependencies could be updated but nothing critical."
+      }
+    ],
+    "topRisks": [
+      {
+        "rank": 1,
+        "findingId": "finding-onb-001",
+        "title": "No local development setup documentation",
+        "severity": "medium",
+        "businessContext": "New developers will struggle to onboard without setup guide."
+      }
+    ],
+    "metadata": {
+      "repoName": "example-repo",
+      "analysisDate": "2026-01-16T14:04:00.000Z",
+      "agentVersion": "1.0.0",
+      "goalType": "onboarding",
+      "detectedPlatform": "nextjs",
+      "toolCallsUsed": 18,
+      "webSearchesUsed": 0,
+      "urlFetchesUsed": 0,
+      "documentationSources": []
+    }
+  },
+  "metrics": {
+    "startedAt": "2026-01-16T14:00:00.000Z",
+    "completedAt": "2026-01-16T14:04:00.000Z",
+    "durationMs": 240000,
+    "toolCalls": 18,
+    "models": {
+      "agent": {
+        "bedrockModelId": "us.anthropic.claude-sonnet-4-6",
+        "calls": 14,
+        "inputTokens": 35000,
+        "outputTokens": 10000,
+        "cachedTokens": 8000,
+        "estimatedCostUsd": 0.18
+      },
+      "fast": {
+        "bedrockModelId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "calls": 4,
+        "inputTokens": 6000,
+        "outputTokens": 2500,
+        "cachedTokens": 1500,
+        "estimatedCostUsd": 0.015
+      }
+    },
+    "totalEstimatedCostUsd": 0.195
+  },
+  "briefMarkdown": "# Onboarding Report: example-repo\n\n## Executive Summary\n\nThis repository is well-organized and suitable for onboarding new developers. The main gap is missing local development documentation.\n\n## Key Findings\n\n- **Medium**: No local development setup documentation\n- **Low**: Missing contribution guidelines\n- **Low**: No architecture decision records\n",
+  "terminationReason": "completed",
+  "findingsSummary": [
+    {
+      "id": "finding-onb-001",
+      "severity": "medium",
+      "category": "configuration",
+      "title": "No local development setup documentation",
+      "evidenceFiles": ["README.md"],
+      "tags": ["documentation", "onboarding"]
+    },
+    {
+      "id": "finding-onb-002",
+      "severity": "low",
+      "category": "configuration",
+      "title": "Missing contribution guidelines",
+      "evidenceFiles": [],
+      "tags": ["documentation", "process"]
+    },
+    {
+      "id": "finding-onb-003",
+      "severity": "low",
+      "category": "architecture",
+      "title": "No architecture decision records",
+      "evidenceFiles": [],
+      "tags": ["documentation", "architecture"]
+    }
+  ]
+}

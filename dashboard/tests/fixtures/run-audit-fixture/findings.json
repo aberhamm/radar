@@ -1,0 +1,76 @@
+[
+  {
+    "id": "finding-001",
+    "title": "Outdated authentication library with known CVE",
+    "severity": "critical",
+    "category": "dependencies",
+    "description": "The project uses passport@0.4.1 which has a known session fixation vulnerability (CVE-2022-25896). This allows an attacker to hijack authenticated sessions.",
+    "evidence": [
+      {
+        "filePath": "package.json",
+        "snippet": "\"passport\": \"^0.4.1\"",
+        "lineNumber": 15
+      },
+      {
+        "filePath": "src/auth/provider.ts",
+        "snippet": "import passport from 'passport';",
+        "lineNumber": 1
+      }
+    ],
+    "filePath": "package.json",
+    "tags": ["security", "dependencies"]
+  },
+  {
+    "id": "finding-002",
+    "title": "Missing rate limiting on API endpoints",
+    "severity": "high",
+    "category": "security",
+    "description": "Public API endpoints lack rate limiting middleware, making the service vulnerable to brute-force attacks and denial-of-service.",
+    "evidence": [
+      {
+        "filePath": "src/api/middleware.ts",
+        "snippet": "// No rate limiting configured",
+        "lineNumber": 22
+      }
+    ],
+    "filePath": "src/api/middleware.ts",
+    "tags": ["security", "api"]
+  },
+  {
+    "id": "finding-003",
+    "title": "Inconsistent error handling patterns",
+    "severity": "medium",
+    "category": "architecture",
+    "description": "Services mix try/catch with .catch() and some paths swallow errors silently. This makes debugging difficult and can mask production issues.",
+    "evidence": [
+      {
+        "filePath": "src/services/user.ts",
+        "snippet": "} catch (e) { /* ignore */ }",
+        "lineNumber": 45
+      },
+      {
+        "filePath": "src/services/product.ts",
+        "snippet": ".catch(() => null)",
+        "lineNumber": 78
+      }
+    ],
+    "filePath": "src/services/user.ts",
+    "tags": ["architecture", "maintainability"]
+  },
+  {
+    "id": "finding-004",
+    "title": "Missing TypeScript strict mode in tsconfig",
+    "severity": "low",
+    "category": "configuration",
+    "description": "The tsconfig.json does not enable strict mode, allowing potential type safety issues to go undetected at compile time.",
+    "evidence": [
+      {
+        "filePath": "tsconfig.json",
+        "snippet": "\"strict\": false",
+        "lineNumber": 5
+      }
+    ],
+    "filePath": "tsconfig.json",
+    "tags": ["configuration", "typescript"]
+  }
+]
