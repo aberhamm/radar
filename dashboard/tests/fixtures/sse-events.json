@@ -1,0 +1,121 @@
+[
+  {
+    "step": 1,
+    "type": "tool_call",
+    "action": "list_directory",
+    "args": "{\"path\":\".\"}",
+    "result": "Found 12 entries",
+    "timestamp": "2026-05-27T10:00:01.000Z"
+  },
+  {
+    "step": 2,
+    "type": "tool_call",
+    "action": "parse_package_json",
+    "args": "{\"path\":\"package.json\"}",
+    "result": "Parsed 24 dependencies",
+    "timestamp": "2026-05-27T10:00:02.000Z"
+  },
+  {
+    "step": 3,
+    "type": "tool_call",
+    "action": "read_file",
+    "args": "{\"filePath\":\"src/app/layout.tsx\"}",
+    "result": "Read 45 lines",
+    "timestamp": "2026-05-27T10:00:03.000Z"
+  },
+  {
+    "step": 4,
+    "type": "tool_call",
+    "action": "analyze_component_directives",
+    "args": "{\"path\":\"src/components\"}",
+    "result": "Found 8 client components, 3 server components",
+    "timestamp": "2026-05-27T10:00:04.000Z"
+  },
+  {
+    "step": 5,
+    "type": "tool_call",
+    "action": "check_gitignore",
+    "args": "{\"path\":\".\"}",
+    "result": "Standard gitignore with 15 patterns",
+    "timestamp": "2026-05-27T10:00:05.000Z"
+  },
+  {
+    "step": 6,
+    "type": "finding",
+    "action": "record_finding",
+    "args": "{\"finding\":{\"id\":\"f-001\",\"title\":\"Missing error boundary in root layout\",\"severity\":\"high\",\"category\":\"architecture\",\"description\":\"The root layout lacks an error boundary component.\",\"evidence\":[{\"filePath\":\"src/app/layout.tsx\",\"lineNumber\":12,\"snippet\":\"export default function RootLayout\"}]}}",
+    "result": "Finding recorded: f-001",
+    "timestamp": "2026-05-27T10:00:06.000Z"
+  },
+  {
+    "step": 7,
+    "type": "finding",
+    "action": "record_finding",
+    "args": "{\"finding\":{\"id\":\"f-002\",\"title\":\"Outdated dependency: next@13.2.0\",\"severity\":\"medium\",\"category\":\"dependencies\",\"description\":\"Next.js version is significantly behind latest stable.\",\"evidence\":[{\"filePath\":\"package.json\",\"lineNumber\":5,\"snippet\":\"\\\"next\\\": \\\"13.2.0\\\"\"}]}}",
+    "result": "Finding recorded: f-002",
+    "timestamp": "2026-05-27T10:00:07.000Z"
+  },
+  {
+    "step": 8,
+    "type": "finding",
+    "action": "record_finding",
+    "args": "{\"finding\":{\"id\":\"f-003\",\"title\":\"No CSP headers configured\",\"severity\":\"critical\",\"category\":\"security\",\"description\":\"Content Security Policy headers are not configured in middleware or next.config.\",\"evidence\":[{\"filePath\":\"next.config.js\",\"lineNumber\":1,\"snippet\":\"module.exports = {}\"}]}}",
+    "result": "Finding recorded: f-003",
+    "timestamp": "2026-05-27T10:00:08.000Z"
+  },
+  {
+    "step": 9,
+    "type": "finding",
+    "action": "record_finding",
+    "args": "{\"finding\":{\"id\":\"f-004\",\"title\":\"Client components overuse\",\"severity\":\"low\",\"category\":\"architecture\",\"description\":\"Several components use 'use client' unnecessarily.\",\"evidence\":[{\"filePath\":\"src/components/Header.tsx\",\"lineNumber\":1,\"snippet\":\"'use client'\"}]}}",
+    "result": "Finding recorded: f-004",
+    "timestamp": "2026-05-27T10:00:09.000Z"
+  },
+  {
+    "step": 10,
+    "type": "tool_call",
+    "action": "specialist_result",
+    "args": "{\"specialist\":\"nextjs\",\"summary\":\"Next.js configuration needs attention\"}",
+    "result": "Specialist analysis complete",
+    "timestamp": "2026-05-27T10:00:10.000Z"
+  },
+  {
+    "step": 11,
+    "type": "status",
+    "action": "startup",
+    "result": "Assembling final output...",
+    "timestamp": "2026-05-27T10:00:11.000Z"
+  },
+  {
+    "step": 12,
+    "type": "run_complete",
+    "action": "complete",
+    "result": {
+      "scorecard": {
+        "repoName": "mock-repo",
+        "goalType": "audit-generic",
+        "generatedAt": "2026-05-27T10:00:12.000Z",
+        "overallScore": "yellow",
+        "categories": [
+          { "category": "architecture", "score": "yellow", "findings": ["f-001", "f-004"], "summary": "Architecture needs improvement" },
+          { "category": "dependencies", "score": "yellow", "findings": ["f-002"], "summary": "Dependencies need updating" },
+          { "category": "security", "score": "red", "findings": ["f-003"], "summary": "Critical security gaps" }
+        ],
+        "topRisks": [
+          { "rank": 1, "findingId": "f-003", "title": "No CSP headers configured", "severity": "critical", "businessContext": "Exposes application to XSS attacks" },
+          { "rank": 2, "findingId": "f-001", "title": "Missing error boundary in root layout", "severity": "high", "businessContext": "Unhandled errors crash the entire app" }
+        ]
+      },
+      "metrics": {
+        "startedAt": "2026-05-27T10:00:00.000Z",
+        "completedAt": "2026-05-27T10:00:12.000Z",
+        "durationMs": 12000,
+        "toolCalls": 10,
+        "models": {},
+        "totalEstimatedCostUsd": 0.02
+      },
+      "terminationReason": "completed"
+    },
+    "timestamp": "2026-05-27T10:00:12.000Z"
+  }
+]
