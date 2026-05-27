@@ -153,3 +153,16 @@ Key routing rules:
 - Design system, brand → invoke design-consultation
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
+
+## mstack
+
+Plan-driven execution engine. Three commands users need to know:
+1. `/mstack-plan-backlog` — decompose a goal into ordered plans
+2. `/mstack-plan-doctor` — validate plans are implementation-ready
+3. `/mstack-run` — execute the backlog autonomously
+
+Routing rules:
+- "create a plan for...", "plan out...", "break this down" → invoke mstack-plan-backlog
+- "validate plans", "check the backlog", "are plans ready" → invoke mstack-plan-doctor
+- "run the plans", "execute the backlog" → invoke mstack-run
+- "where are we", "what's next" → invoke mstack-status

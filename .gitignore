@@ -41,3 +41,5 @@ dashboard/output/*
 .next/trace
 .next/trace-build
 .claude/scheduled_tasks.lock
+.mstack/
+.mstack-*
