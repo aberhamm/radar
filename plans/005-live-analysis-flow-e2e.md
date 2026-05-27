@@ -1,7 +1,7 @@
 ---
 id: 005
 title: Live analysis flow E2E test
-status: pending
+status: in-progress
 blocked-by: [003]
 needs-review: none
 created: 2026-05-27
