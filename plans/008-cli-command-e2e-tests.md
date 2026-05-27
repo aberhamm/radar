@@ -1,7 +1,10 @@
 ---
 id: 008
 title: CLI command E2E tests
-status: in-progress
+status: done
+completed: 2026-05-27
+reviewed: false
+qa: automated,verified
 blocked-by: []
 needs-review: none
 created: 2026-05-27

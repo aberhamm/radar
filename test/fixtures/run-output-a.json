@@ -1,0 +1,56 @@
+[
+  {
+    "id": "STACK-001",
+    "category": "stack",
+    "severity": "info",
+    "confidence": 9,
+    "title": "Next.js application with standard configuration",
+    "description": "The project uses Next.js 14 with App Router configuration.",
+    "evidence": [
+      {
+        "filePath": "package.json",
+        "lineNumber": 13,
+        "snippet": "\"next\": \"14.1.0\"",
+        "description": "Next.js detected in dependencies"
+      }
+    ],
+    "tags": ["nextjs", "stack"],
+    "fingerprint": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+  },
+  {
+    "id": "SEC-001",
+    "category": "security",
+    "severity": "medium",
+    "confidence": 8,
+    "title": "Environment variables documented with placeholders",
+    "description": "Env vars defined with placeholder values in .env.example.",
+    "evidence": [
+      {
+        "filePath": ".env.example",
+        "lineNumber": 1,
+        "snippet": "SITECORE_API_KEY=placeholder-api-key",
+        "description": ".env.example has placeholder values"
+      }
+    ],
+    "tags": ["security", "config"],
+    "fingerprint": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
+  },
+  {
+    "id": "ARCH-001",
+    "category": "architecture",
+    "severity": "info",
+    "confidence": 9,
+    "title": "App Router with catch-all route pattern",
+    "description": "Uses App Router with a catch-all route for CMS-driven pages.",
+    "evidence": [
+      {
+        "filePath": "src/app/[site]/[locale]/[[...path]]/page.tsx",
+        "lineNumber": 3,
+        "snippet": "export const dynamic = 'force-dynamic';",
+        "description": "Catch-all route with force-dynamic"
+      }
+    ],
+    "tags": ["routing"],
+    "fingerprint": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+  }
+]
