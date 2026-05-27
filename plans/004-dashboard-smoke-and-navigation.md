@@ -1,7 +1,10 @@
 ---
 id: 004
 title: Dashboard smoke and navigation E2E tests
-status: in-progress
+status: done
+completed: 2026-05-27
+reviewed: false
+qa: automated
 blocked-by: [003]
 needs-review: none
 created: 2026-05-27
