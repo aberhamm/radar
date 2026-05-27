@@ -1,7 +1,7 @@
 ---
 id: 003
 title: Dashboard fixture server for deterministic E2E
-status: pending
+status: in-progress
 blocked-by: [002]
 needs-review: none
 created: 2026-05-27
