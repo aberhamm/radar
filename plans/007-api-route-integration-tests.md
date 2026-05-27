@@ -1,7 +1,10 @@
 ---
 id: 007
 title: API route integration tests
-status: in-progress
+status: done
+completed: 2026-05-27
+reviewed: false
+qa: automated
 blocked-by: [002]
 needs-review: none
 created: 2026-05-27

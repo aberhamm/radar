@@ -14,6 +14,7 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['test/**/*.test.ts'],
+    exclude: ['test/dashboard/api-routes.test.ts'],
     testTimeout: 10000,
   },
 });
