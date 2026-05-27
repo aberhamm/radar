@@ -1,7 +1,10 @@
 ---
 id: 006
 title: Findings triage and interaction E2E tests
-status: in-progress
+status: done
+completed: 2026-05-27
+reviewed: false
+qa: automated
 blocked-by: [004, 005]
 needs-review: none
 created: 2026-05-27
