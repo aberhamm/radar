@@ -1,7 +1,7 @@
 ---
 id: 009
 title: Visual regression baseline
-status: pending
+status: in-progress
 blocked-by: [004]
 needs-review: none
 created: 2026-05-27
