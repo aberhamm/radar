@@ -1,7 +1,7 @@
 ---
 id: 008
 title: CLI command E2E tests
-status: pending
+status: in-progress
 blocked-by: []
 needs-review: none
 created: 2026-05-27
