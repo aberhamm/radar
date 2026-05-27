@@ -1,7 +1,7 @@
 ---
 id: 002
 title: Playwright infrastructure setup
-status: pending
+status: in-progress
 blocked-by: []
 needs-review: none
 created: 2026-05-27
