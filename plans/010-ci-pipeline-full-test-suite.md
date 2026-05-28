@@ -1,7 +1,7 @@
 ---
 id: 010
 title: CI pipeline for full test suite
-status: pending
+status: in-progress
 blocked-by: [002, 003, 004, 005, 006, 007, 008, 009]
 needs-review: none
 created: 2026-05-27
