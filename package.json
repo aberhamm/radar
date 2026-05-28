@@ -24,6 +24,7 @@
     "spike:cache": "tsx scripts/cache-probe.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:playwright": "pnpm --filter ./dashboard test:e2e",
+    "test:all": "pnpm build && pnpm test:unit && pnpm test:integration && pnpm test:playwright",
     "dashboard:dev": "cd dashboard && next dev --webpack --port 3000"
   },
   "keywords": [
