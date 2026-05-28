@@ -10,6 +10,17 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: [['html', { open: 'never' }]],
+
+  /* Visual regression snapshot settings */
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.002,
+      animations: 'disabled',
+    },
+  },
+  snapshotPathTemplate:
+    '{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}{ext}',
+
   use: {
     baseURL: 'http://localhost:3000',
     screenshot: 'only-on-failure',
@@ -18,7 +29,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: ['--font-render-hinting=none'],
+        },
+      },
     },
     {
       name: 'firefox',

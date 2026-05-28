@@ -8,7 +8,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visual": "playwright test tests/e2e/visual-regression.spec.ts --project=chromium"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
