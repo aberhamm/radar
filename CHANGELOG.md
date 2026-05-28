@@ -2,7 +2,44 @@
 
 All notable changes to repo-audit-delivery-agent (radar).
 
-## [Unreleased]
+## [Unreleased] — 2026-05-27
+
+### Added
+- **Specialist worker mode.** Sub-agents handle platform-specific checklists (Sitecore JSS 22.12, Optimizely dual-SDK) in parallel. Dedicated UI panel shows specialist progress inline.
+- **Performance goal.** New `--goal performance` audits Core Web Vitals, bundle size, and runtime performance across 6 categories.
+- **Timeline observability.** Step-by-step timeline view with inline specialist display, always-on traces, and continuous step numbering.
+- **In-app source file viewer.** Click any finding's file path to see the source code with highlighted evidence lines — no editor needed.
+- **Multi-select goal picker.** Choose multiple goals from the dashboard UI instead of running them one at a time.
+- **Unified findings accordion.** Goal → Category → Finding drill-down for multi-goal runs with deep-linkable findings and cross-run dedup.
+- **`load_reference` tool.** Agent can now selectively load knowledge files (updated to Next.js 16 era) instead of dumping all references into context.
+- **Extended thinking.** Investigation model uses extended thinking for deeper reasoning during complex analysis.
+- **Health endpoint and demo mode.** `/api/health` for monitoring, demo mode with well-known fixture run for onboarding.
+- **Structured logging.** Per-tool timing, golden snapshot tests, and typed error codes for observability.
+- **Dashboard changelog page.** View release history and updates directly in the sidebar.
+- **Server-side LRU cache.** Disk reads cached in-memory for faster dashboard page loads.
+- **E2E test infrastructure.** Playwright setup with fixture data, navigation/smoke tests, live analysis SSE mocks, findings interaction tests, visual regression baselines, API route integration tests, and CLI command coverage.
+- **GitHub Actions CI pipeline.** Full test suite runs on every PR: typecheck → unit → integration → E2E → visual regression.
+
+### Changed
+- **Runner decomposition.** `runner.ts` split into 8 focused modules with centralized constants for maintainability.
+- **Unified RunView shell.** `CompleteView` and `MultiGoalView` merged into a single component. Multi-goal runs collapse in Recent Runs list showing the full repo name.
+- **IdleView redesign.** Landing page redesigned with pre-computed run data and finding progress indicators.
+- **pi-agent-core upgraded to v0.70.2.** Tool details now thread through to the UI for richer interaction display.
+
+### Fixed
+- Budget pause modal no longer re-fires; extension offered at 60% before forcing recording. Heartbeat + timeout ensure reliable pause/resume.
+- Timeline tab hidden on multi-goal runs where it doesn't apply.
+- Runs page no longer empty when history only contains child runs.
+- Modern Sitecore/Optimizely SDK packages now correctly detected for specialist matching.
+- Dashboard scroll, findings table, copy, file preview, PDF export, and root detection issues resolved.
+- Dialog grid overflow, blinking cursor replaced with fade-in, timeline rail overshoot fixed.
+- 404 console noise eliminated, stale test tab names corrected.
+- All event types now persisted for CLI/dashboard parity.
+
+### Performance
+- 13 optimizations across agent runner and dashboard (pre-compute, lazy loading, reduced re-renders).
+
+<!-- commits: f99d3f8, 11ed4a9, c029020, ff3b963, ed4fe69, 49775cc, 6030584, 4b204b0, f70b7d7, c3981ae, d7f985d, 8a0c3ff, 43007b8, a5c9e49, c71ecb5, 143ba70, ae1ba55, a25217d, 0616387, 3bdd79c, 03f3d44, fc2fc15, 3221b69, b30f7c6, 6069926, c4074dd, e61cc80, cf36209, a53e5d4, e005981, 5074303, 4952023, 0741335, d8f37fa, d565bda, 3210d49, 91e8a5d, 69e9ee2, 81827c7, 20591ed, 8205c76, 048be65, 63f7aa1, c7bdca5, 79bf17e, a24165a, f390971, 245bab8, 7ceda63, 51746fb, acc759c, ce5d266, 287998f, b365418, aa242fe, 2128d6a, 48140f2 -->
 
 ## 2026-04-24
 
